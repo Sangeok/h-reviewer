@@ -1,5 +1,14 @@
-import Image from "next/image";
+import Logout from "@/module/auth/components/logout";
+import { requireAuth } from "@/module/auth/utils/auth-utils";
 
-export default function Home() {
-  return <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black"></div>;
+export default async function Home() {
+  await requireAuth();
+
+  return (
+    <div>
+      <Logout>
+        <button className="bg-red-500 text-white p-2 rounded-md">Logout</button>
+      </Logout>
+    </div>
+  );
 }
