@@ -169,6 +169,68 @@ GITHUB_CLIENT_SECRET="..."
 - Feature modules in `/module/[feature]/components/`
 - Shared utilities in `/lib/utils.ts` (includes `cn()` for className merging)
 
+#### Component Hierarchy Pattern
+
+**Complex components with sub-components use the `parts/` folder pattern** to maintain clear parent-child relationships:
+
+```
+components/[component-name]/
+├── ui/
+│   ├── [component-name].tsx    # Parent component
+│   └── parts/                  # Child components (internal use only)
+│       ├── logo.tsx
+│       ├── navigation.tsx
+│       └── footer.tsx
+├── hooks/
+├── constants/
+└── types/
+```
+
+**Example** (`components/app-sidebar/`):
+```
+components/app-sidebar/
+├── ui/
+│   ├── app-sidebar.tsx         # Main component
+│   └── parts/
+│       ├── logo.tsx
+│       ├── user-profile.tsx
+│       ├── user-avatar.tsx
+│       ├── navigation.tsx
+│       ├── nav-item.tsx
+│       ├── theme-toggle.tsx
+│       ├── logout-button.tsx
+│       └── footer.tsx
+├── hooks/
+│   ├── use-sidebar-state.ts
+│   └── use-sidebar-actions.ts
+├── constants/
+│   └── index.ts
+└── types/
+    └── index.ts
+```
+
+**Import convention**:
+```typescript
+// In parent component (app-sidebar.tsx)
+import { Logo } from './parts/logo';
+import { UserProfile } from './parts/user-profile';
+
+// From external files
+import AppSidebar from '@/components/app-sidebar/ui/app-sidebar';
+```
+
+**Naming conventions**:
+- ✅ Parent component: `[component-name].tsx` (e.g., `app-sidebar.tsx`)
+- ✅ Child components: No prefix needed (e.g., `logo.tsx`, not `sidebar-logo.tsx`)
+- ✅ Already scoped by folder structure, avoid redundant prefixes
+
+**Benefits**:
+- Clear visual hierarchy (parent vs child components)
+- Prevents namespace pollution at the same level
+- Easier to understand component relationships
+- Consistent pattern across the entire codebase
+- Child components are clearly marked as internal to the parent
+
 ### Styling
 
 - Tailwind CSS v4 with PostCSS
