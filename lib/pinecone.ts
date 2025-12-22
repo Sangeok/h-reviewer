@@ -4,4 +4,4 @@ export const pinecone = new Pinecone({
   apiKey: process.env.PINECONE_DB_API_KEY!,
 });
 
-export const pineconeIndex = pinecone.Index("hreviewer-vector-embeddings-v1");
+export const pineconeIndex = pinecone.Index("hreviewer");
