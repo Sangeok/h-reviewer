@@ -1,9 +1,9 @@
-import DashboardSetting from "@/components/dashboard-setting/ui";
+import SettingsPage from "@/module/settings/ui/settings-page";
 
-export default function SettingsPage() {
+export default function Settings() {
   return (
     <div>
-      <DashboardSetting />
+      <SettingsPage />
     </div>
   );
 }
