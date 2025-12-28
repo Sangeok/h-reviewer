@@ -6,7 +6,7 @@ import ContributionGraph from "@/module/dashboard/components/contribution-graph"
 import { useQuery } from "@tanstack/react-query";
 import { GitBranch, GitCommit, GitPullRequest, MessageCircle } from "lucide-react";
 
-export default function DashboardMain() {
+export default function StatsOverview() {
   const { data: stats, isLoading } = useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: async () => await getDashboardStats(),

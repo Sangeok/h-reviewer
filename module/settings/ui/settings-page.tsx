@@ -1,9 +1,9 @@
 "use client";
 
-import ProfileForm from "@/module/settings/actions/components/profile-form";
-import RepositoryList from "@/module/settings/actions/components/repository-list";
+import ProfileForm from "./profile-form";
+import RepositoryList from "./repository-list";
 
-export default function DashboardSetting() {
+export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <div>

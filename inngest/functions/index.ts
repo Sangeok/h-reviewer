@@ -1,5 +1,5 @@
 import prisma from "@/lib/db";
-import { inngest } from "./client";
+import { inngest } from "../client";
 import { getRepoFileContents } from "@/module/github/lib/github";
 import { indexCodebase } from "@/module/ai/lib/rag";
 

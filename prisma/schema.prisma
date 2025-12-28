@@ -24,6 +24,9 @@ model User {
   sessions      Session[]
   accounts      Account[]
   repositories  Repository[]
+  usage UserUsage?
+  subscriptionTier String @default("FREE")
+  subscriptionStatus String? // ACTIVE, CANCELLED, EXPIRED
 
   @@unique([email])
   @@map("user")
@@ -74,12 +77,41 @@ model Repository {
   url String
   userId String
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviews Review[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([userId])
   @@map("repository")
+}
+
+model Review {
+  id  String @id @default(cuid())
+  repositoryId  String
+  repository Repository @relation(fields: [repositoryId], references:[id], onDelete: Cascade)
+  prNumber  Int
+  prTitle   String
+  prUrl     String
+  review    String  @db.Text
+  status    String  @default("completed") // completed, failed, pending
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([repositoryId])
+  @@map("review")
+}
+
+model UserUsage {
+  id  String @id @default(cuid())
+  userId String @unique
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repositoryCount Int @default(0)
+  reviewCounts Json @default("{}") // {"repoId" : count}
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_usage")
 }
 
 model Verification {

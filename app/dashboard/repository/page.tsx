@@ -1,9 +1,9 @@
-import DashboardRepo from "@/components/dashboard-repo/ui";
+import RepositoryList from "@/module/repository/ui/repository-list";
 
 export default function RepositoryPage() {
   return (
     <div>
-      <DashboardRepo />
+      <RepositoryList />
     </div>
   );
 }

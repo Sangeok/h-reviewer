@@ -21,7 +21,7 @@ interface Repository {
   isConnected?: boolean;
 }
 
-export default function DashboardRepo() {
+export default function RepositoryList() {
   const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } = useRepositories();
 
   const [searchQuery, setSearchQuery] = useState<string>("");

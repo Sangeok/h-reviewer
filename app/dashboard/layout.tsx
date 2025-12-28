@@ -1,4 +1,4 @@
-import AppSidebar from "@/components/app-sidebar/ui/app-sidebar";
+import AppSidebar from "@/components/layouts/app-sidebar/ui/app-sidebar";
 import { requireAuth } from "@/module/auth/utils/auth-utils";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
