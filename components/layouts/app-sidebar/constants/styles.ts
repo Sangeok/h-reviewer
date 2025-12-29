@@ -2,23 +2,23 @@ export const SIDEBAR_STYLES = {
   container: {
     collapsed: "w-20",
     expanded: "w-64",
-    base: "relative h-screen border-r border-gray-800 bg-[#12121a]/90 backdrop-blur-xl transition-all duration-300",
+    base: "relative h-screen border-r border-[#1a1a1a] bg-gradient-to-b from-[#0a0a0a] to-black backdrop-blur-xl transition-all duration-300",
   },
   button: {
-    base: "rounded-xl px-3 py-3 transition-all duration-200",
+    base: "rounded-lg px-3 py-3 transition-all duration-300",
     active:
-      "bg-gradient-to-r from-cyan-500/10 to-blue-600/10 text-cyan-400 shadow-lg shadow-cyan-500/5",
-    hover: "text-gray-400 hover:bg-white/5 hover:text-white",
-    logout: "text-gray-400 hover:bg-red-500/10 hover:text-red-400",
+      "bg-gradient-to-r from-[#2d3e2d]/20 to-[#3d523d]/10 text-[#4a6a4a] border border-[#2d3e2d]/30",
+    hover: "text-[#707070] hover:bg-[#1a1a1a] hover:text-[#d0d0d0]",
+    logout: "text-[#707070] hover:bg-[#3a1a1a] hover:text-[#ff6b6b]",
   },
   gradient: {
-    primary: "from-cyan-400 to-blue-600",
-    glow: "from-cyan-500/20 to-blue-600/20",
-    logo: "from-cyan-400 to-blue-600",
+    primary: "from-[#1a1a1a] to-[#0a0a0a]",
+    glow: "from-[#2d3e2d]/10 to-transparent",
+    logo: "from-[#1a1a1a] to-[#0a0a0a]",
   },
   animation: {
     shimmer:
-      "absolute inset-0 rounded-xl bg-gradient-to-r from-transparent via-white/5 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 pointer-events-none",
+      "absolute inset-0 rounded-lg bg-gradient-to-r from-transparent via-[#2d3e2d]/5 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 pointer-events-none",
     float: "animate-float",
     floatDelayed: "animate-float-delayed",
   },

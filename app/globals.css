@@ -82,37 +82,62 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Sophisticated Black Theme - Matching Login/Sidebar */
+  --background: #000000;
+  --foreground: #e0e0e0;
+
+  /* Cards with dark gradient feel */
+  --card: #0a0a0a;
+  --card-foreground: #e0e0e0;
+
+  /* Popovers and dropdowns */
+  --popover: #0a0a0a;
+  --popover-foreground: #e0e0e0;
+
+  /* Primary - Dark green terminal accent */
+  --primary: #4a6a4a;
+  --primary-foreground: #000000;
+
+  /* Secondary - Very dark gray */
+  --secondary: #1a1a1a;
+  --secondary-foreground: #d0d0d0;
+
+  /* Muted - Dark grays for less emphasis */
+  --muted: #1a1a1a;
+  --muted-foreground: #707070;
+
+  /* Accent - Subtle dark green */
+  --accent: #1a1a1a;
+  --accent-foreground: #d0d0d0;
+
+  /* Destructive - Refined red for danger actions */
+  --destructive: #ff6b6b;
+
+  /* Borders - Very dark gray, barely visible */
+  --border: #1a1a1a;
+
+  /* Input - Slightly lighter than background */
+  --input: #1a1a1a;
+
+  /* Ring - Dark green for focus states */
+  --ring: #2d3e2d;
+
+  /* Charts - Muted dark palette */
+  --chart-1: #4a6a4a;
+  --chart-2: #3d523d;
+  --chart-3: #2d3e2d;
+  --chart-4: #606060;
+  --chart-5: #707070;
+
+  /* Sidebar - Matching component styles */
+  --sidebar: #0a0a0a;
+  --sidebar-foreground: #e0e0e0;
+  --sidebar-primary: #4a6a4a;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #1a1a1a;
+  --sidebar-accent-foreground: #d0d0d0;
+  --sidebar-border: #1a1a1a;
+  --sidebar-ring: #2d3e2d;
 }
 
 @layer base {
@@ -172,6 +197,15 @@
   }
 }
 
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 .animate-grid-slide {
   animation: gridSlide 20s linear infinite;
 }
@@ -191,4 +225,8 @@
 .animate-fade-in {
   animation: fadeIn 0.6s ease-out forwards;
   opacity: 0;
+}
+
+.animate-shimmer {
+  animation: shimmer 1s ease-in-out;
 }

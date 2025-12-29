@@ -13,7 +13,7 @@ export function UserAvatar({
   className = "",
 }: UserAvatarProps) {
   const borderClass = showBorder
-    ? "border-2 border-cyan-500/30 ring-2 ring-cyan-500/10"
+    ? "border-2 border-[#2d3e2d]/30 ring-2 ring-[#2d3e2d]/10"
     : "";
 
   if (user.image) {
@@ -28,9 +28,9 @@ export function UserAvatar({
 
   return (
     <div
-      className={`${sizeClasses[size]} rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center ${className}`}
+      className={`${sizeClasses[size]} rounded-full bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] border border-[#2d3e2d]/30 flex items-center justify-center ${className}`}
     >
-      <span className="text-[#0a0a0f] font-bold">
+      <span className="text-[#4a6a4a] font-medium">
         {user.name?.charAt(0) || "U"}
       </span>
     </div>

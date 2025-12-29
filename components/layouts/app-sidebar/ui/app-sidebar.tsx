@@ -34,10 +34,23 @@ export default function AppSidebar({
           : SIDEBAR_STYLES.container.expanded
       } ${className}`}
     >
-      {/* Animated Gradient Background */}
-      <div className="absolute inset-0 opacity-30 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-50%] right-[-50%] w-[300px] h-[300px] rounded-full bg-gradient-to-br from-cyan-500/20 to-blue-600/20 blur-[80px] animate-float" />
-        <div className="absolute bottom-[-30%] left-[-30%] w-[250px] h-[250px] rounded-full bg-gradient-to-tr from-purple-500/10 to-pink-500/10 blur-[60px] animate-float-delayed" />
+      {/* Extremely Subtle Background Gradient Orbs */}
+      <div className="absolute inset-0 opacity-[0.06] overflow-hidden pointer-events-none">
+        <div
+          className="absolute top-[10%] right-[-20%] w-[250px] h-[250px] rounded-full blur-[100px] animate-pulse-slow"
+          style={{
+            background: "radial-gradient(circle, rgba(45, 62, 45, 0.4) 0%, transparent 70%)",
+            animationDuration: "8s",
+          }}
+        />
+        <div
+          className="absolute bottom-[20%] left-[-20%] w-[200px] h-[200px] rounded-full blur-[90px] animate-pulse-slow"
+          style={{
+            background: "radial-gradient(circle, rgba(30, 30, 40, 0.3) 0%, transparent 70%)",
+            animationDuration: "10s",
+            animationDelay: "2s",
+          }}
+        />
       </div>
 
       {/* Content */}
@@ -52,7 +65,7 @@ export default function AppSidebar({
 
         <Navigation isCollapsed={isCollapsed} />
 
-        <div className="pt-4 border-t border-gray-800 space-y-2">
+        <div className="pt-4 border-t border-[#1a1a1a] space-y-2">
           <ThemeToggle isCollapsed={isCollapsed} onToggle={toggleTheme} />
           <LogoutButton isCollapsed={isCollapsed} onLogout={handleLogout} />
         </div>
@@ -60,8 +73,23 @@ export default function AppSidebar({
         <Footer isCollapsed={isCollapsed} />
       </div>
 
-      {/* Right Edge Glow */}
-      <div className="absolute top-0 right-0 h-full w-px bg-gradient-to-b from-transparent via-cyan-500/20 to-transparent" />
+      {/* Right Edge Subtle Glow */}
+      <div className="absolute top-0 right-0 h-full w-[1px] bg-gradient-to-b from-transparent via-[#2d3e2d]/10 to-transparent" />
+
+      <style jsx>{`
+        @keyframes pulse-slow {
+          0%, 100% {
+            opacity: 0.06;
+          }
+          50% {
+            opacity: 0.10;
+          }
+        }
+
+        .animate-pulse-slow {
+          animation: pulse-slow ease-in-out infinite;
+        }
+      `}</style>
     </aside>
   );
 }

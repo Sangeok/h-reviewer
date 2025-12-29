@@ -7,25 +7,28 @@ export function Logo({ isCollapsed, onToggleCollapse }: LogoProps) {
     <div className="mb-8 flex items-center justify-between">
       <Link href="/dashboard" className="flex items-center gap-2 group">
         <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-500 blur-lg opacity-50 group-hover:opacity-70 transition-opacity" />
-          <div className="relative flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 shadow-lg shadow-cyan-500/25">
+          {/* Subtle glow */}
+          <div className="absolute inset-0 bg-[#2d3e2d] blur-xl opacity-15 group-hover:opacity-25 transition-opacity duration-300" />
+
+          {/* Icon container */}
+          <div className="relative flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] border border-[#2d3e2d]/30 shadow-lg">
             <svg
-              className="h-6 w-6 text-[#0a0a0f]"
+              className="h-6 w-6 text-[#4a6a4a]"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
+              strokeWidth={2}
             >
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                strokeWidth={2.5}
                 d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
               />
             </svg>
           </div>
         </div>
         {!isCollapsed && (
-          <span className="font-mono text-xl font-black tracking-tighter text-white">
+          <span className="font-mono text-xl font-medium tracking-tight text-[#d0d0d0]">
             HReviewer
           </span>
         )}
@@ -33,7 +36,7 @@ export function Logo({ isCollapsed, onToggleCollapse }: LogoProps) {
 
       <button
         onClick={onToggleCollapse}
-        className="rounded-lg p-2 text-gray-400 hover:bg-white/5 hover:text-cyan-400 transition-all duration-200"
+        className="rounded-lg p-2 text-[#606060] hover:bg-[#1a1a1a] hover:text-[#4a6a4a] transition-all duration-300"
         aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
       >
         {isCollapsed ? (

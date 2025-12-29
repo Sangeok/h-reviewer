@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { Loader2, User } from "lucide-react";
 
 export default function ProfileForm() {
   const queryClient = useQueryClient();
@@ -53,15 +54,17 @@ export default function ProfileForm() {
 
   if (isLoading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Profile Settings</CardTitle>
-          <CardDescription>Update your profile information</CardDescription>
+      <Card className="relative overflow-hidden bg-gradient-to-b from-[#0a0a0a] to-black border-[#1a1a1a]">
+        <CardHeader className="relative z-10">
+          <CardTitle className="text-lg font-medium text-[#e0e0e0]">Profile Settings</CardTitle>
+          <CardDescription className="text-[#707070] font-light">
+            Update your profile information
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="animate-pulse space-y-4">
-            <div className="h-10 bg-muted rounded-md"></div>
-            <div className="h-10 bg-muted rounded-md"></div>
+        <CardContent className="relative z-10">
+          <div className="space-y-4">
+            <div className="h-10 bg-[#1a1a1a] rounded-lg animate-pulse" />
+            <div className="h-10 bg-[#1a1a1a] rounded-lg animate-pulse" />
           </div>
         </CardContent>
       </Card>
@@ -69,15 +72,24 @@ export default function ProfileForm() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Profile Settings</CardTitle>
-        <CardDescription>Update your profile information</CardDescription>
+    <Card className="relative overflow-hidden bg-gradient-to-b from-[#0a0a0a] to-black border-[#1a1a1a]">
+      {/* Subtle background gradient */}
+      <div className="absolute inset-0 bg-gradient-to-br from-[#2d3e2d]/3 to-transparent pointer-events-none" />
+
+      <CardHeader className="relative z-10">
+        <CardTitle className="text-lg font-medium text-[#e0e0e0]">Profile Settings</CardTitle>
+        <CardDescription className="text-[#707070] font-light">
+          Update your profile information
+        </CardDescription>
       </CardHeader>
-      <CardContent>
+
+      <CardContent className="relative z-10">
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Full Name Field */}
           <div className="space-y-2">
-            <div>Full Name</div>
+            <label htmlFor="name" className="text-sm font-medium text-[#d0d0d0]">
+              Full Name
+            </label>
             <Input
               id="name"
               type="text"
@@ -85,10 +97,15 @@ export default function ProfileForm() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={updateMutation.isPending}
+              className="bg-[#0a0a0a] border-[#1a1a1a] text-[#e0e0e0] placeholder:text-[#606060] hover:border-[#2d3e2d]/50 focus:border-[#2d3e2d] focus:ring-[#2d3e2d]/20 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
             />
           </div>
+
+          {/* Email Field */}
           <div className="space-y-2">
-            <div>Email</div>
+            <label htmlFor="email" className="text-sm font-medium text-[#d0d0d0]">
+              Email
+            </label>
             <Input
               id="email"
               type="email"
@@ -96,10 +113,24 @@ export default function ProfileForm() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={updateMutation.isPending}
+              className="bg-[#0a0a0a] border-[#1a1a1a] text-[#e0e0e0] placeholder:text-[#606060] hover:border-[#2d3e2d]/50 focus:border-[#2d3e2d] focus:ring-[#2d3e2d]/20 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
             />
           </div>
-          <Button type="submit" disabled={updateMutation.isPending}>
-            {updateMutation.isPending ? "Saving..." : "Save Changes"}
+
+          {/* Submit Button */}
+          <Button
+            type="submit"
+            disabled={updateMutation.isPending}
+            className="bg-gradient-to-r from-[#4a6a4a] to-[#3d523d] hover:from-[#5a7a5a] hover:to-[#4d624d] text-black font-medium shadow-lg shadow-[#2d3e2d]/10 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {updateMutation.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              "Save Changes"
+            )}
           </Button>
         </form>
       </CardContent>
