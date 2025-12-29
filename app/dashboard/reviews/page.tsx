@@ -1,4 +1,4 @@
-import ReviewList from "@/module/review/ui/review-list";
+import { ReviewList } from "@/module/review";
 
 export default function ReviewsPage() {
   return (

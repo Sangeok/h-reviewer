@@ -1,4 +1,4 @@
-import RepositoryList from "@/module/repository/ui/repository-list";
+import { RepositoryList } from "@/module/repository";
 
 export default function RepositoryPage() {
   return (

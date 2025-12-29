@@ -2,9 +2,9 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { getReviews } from "@/module/review/actions";
+import { getReviews } from "@/module/review";
 import { useQuery } from "@tanstack/react-query";
-import { Badge, ExternalLink, EyeIcon } from "lucide-react";
+import { Badge, ExternalLink } from "lucide-react";
 import { formatDistanceToNow } from "@/lib/formatDistanceToNow";
 
 export default function ReviewList() {

@@ -2,7 +2,7 @@
 
 import { signIn } from "@/lib/auth-client";
 import { useState } from "react";
-import { LOGIN_FEATURES } from "@/module/auth/constants";
+import { LOGIN_FEATURES } from "@/module/auth";
 
 export default function LoginUI() {
   const [isLoading, setIsLoading] = useState<boolean>(false);

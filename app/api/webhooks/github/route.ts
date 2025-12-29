@@ -1,4 +1,4 @@
-import { reviewPullRequest } from "@/module/ai/actions";
+import { reviewPullRequest } from "@/module/ai";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {

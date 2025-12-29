@@ -7,7 +7,7 @@ import {
   CardDescription,
   CardContent,
   CardFooter,
-} from "@/shared/card";
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 export default function CardDemoPage() {

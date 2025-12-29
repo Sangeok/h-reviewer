@@ -3,9 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { RepositoryListSkeleton } from "@/module/repository/components/RepositoryCardSkeleton";
-import { useConnectRepository } from "@/module/repository/hooks/use-connect-repository";
-import { useRepositories } from "@/module/repository/hooks/use-repositories";
+import { RepositoryListSkeleton, useConnectRepository, useRepositories } from "@/module/repository";
 import { Badge, ExternalLink, Search, Star } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 

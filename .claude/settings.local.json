@@ -5,7 +5,9 @@
       "Bash(git mv:*)",
       "Bash(npm run build:*)",
       "Bash(ls:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(npx tsc:*)",
+      "Bash(wc:*)"
     ]
   }
 }

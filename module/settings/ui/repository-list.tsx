@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { deleteRepository, disconnectAllRepositories, getConnectedRepositories } from "@/module/settings/actions";
+import { deleteRepository, disconnectAllRepositories, getConnectedRepositories } from "@/module/settings";
 import { useSession } from "@/lib/auth-client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

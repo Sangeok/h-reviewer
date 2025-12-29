@@ -1,4 +1,4 @@
-import SettingsPage from "@/module/settings/ui/settings-page";
+import { SettingsPage } from "@/module/settings";
 
 export default function Settings() {
   return (

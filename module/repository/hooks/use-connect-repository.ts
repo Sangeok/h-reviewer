@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { connectRepository } from "@/module/repository/actions";
+import { connectRepository } from "@/module/repository";
 import { useSession } from "@/lib/auth-client";
 
 export const useConnectRepository = () => {

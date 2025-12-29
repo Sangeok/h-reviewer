@@ -1,6 +1,6 @@
 "use server";
 
-import { fetchUserContribution, getGithubAccessToken } from "@/module/github/lib/github";
+import { fetchUserContribution, getGithubAccessToken } from "@/module/github";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { Octokit } from "octokit";

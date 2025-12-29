@@ -1,8 +1,7 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { getDashboardStats, getMonthlyActivity } from "@/module/dashboard/actions";
-import ContributionGraph from "@/module/dashboard/components/contribution-graph";
+import { getDashboardStats, getMonthlyActivity, ContributionGraph } from "@/module/dashboard";
 import { useQuery } from "@tanstack/react-query";
 import { GitBranch, GitCommit, GitPullRequest, MessageCircle } from "lucide-react";
 

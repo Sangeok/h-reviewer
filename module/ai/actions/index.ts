@@ -1,6 +1,6 @@
 import { inngest } from "@/inngest/client";
 import prisma from "@/lib/db";
-import { getPullRequestDiff } from "@/module/github/lib/github";
+import { getPullRequestDiff } from "@/module/github";
 
 export async function reviewPullRequest(owner: string, repo: string, prNumber: number) {
   try {

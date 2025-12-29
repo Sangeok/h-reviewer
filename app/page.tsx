@@ -1,5 +1,4 @@
-import Logout from "@/module/auth/components/logout";
-import { requireAuth } from "@/module/auth/utils/auth-utils";
+import { Logout, requireAuth } from "@/module/auth";
 import { redirect } from "next/navigation";
 
 export default async function Home() {

@@ -2,10 +2,9 @@
 
 import { ActivityCalendar } from "react-activity-calendar";
 import { useTheme } from "next-themes";
-import { getContributionStats } from "../actions";
+import { getContributionStats } from "../../actions";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-// import {getContribution}
 
 export default function ContributionGraph() {
   const { theme } = useTheme();

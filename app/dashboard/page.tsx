@@ -1,4 +1,4 @@
-import StatsOverview from "@/module/dashboard/ui/stats-overview";
+import { StatsOverview } from "@/module/dashboard";
 
 export default function DashboardPage() {
   return (
