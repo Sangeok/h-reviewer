@@ -1,20 +1,13 @@
 "use server";
 
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { deleteWebhook } from "@/module/github";
 
 export async function getUserProfile() {
   try {
-    const session = await auth.api.getSession({
-      headers: await headers(),
-    });
-
-    if (!session?.user) {
-      throw new Error("Unauthorized");
-    }
+    const session = await requireAuthSession();
 
     const user = await prisma.user.findUnique({
       where: {
@@ -38,13 +31,7 @@ export async function getUserProfile() {
 
 export async function updateUserProfile(data: { name?: string; email?: string }) {
   try {
-    const session = await auth.api.getSession({
-      headers: await headers(),
-    });
-
-    if (!session?.user) {
-      throw new Error("Unauthorized");
-    }
+    const session = await requireAuthSession();
 
     const updatedUser = await prisma.user.update({
       where: {
@@ -73,13 +60,7 @@ export async function updateUserProfile(data: { name?: string; email?: string })
 
 export async function getConnectedRepositories() {
   try {
-    const session = await auth.api.getSession({
-      headers: await headers(),
-    });
-
-    if (!session?.user) {
-      throw new Error("Unauthorized");
-    }
+    const session = await requireAuthSession();
 
     const repositories = await prisma.repository.findMany({
       where: {
@@ -106,13 +87,7 @@ export async function getConnectedRepositories() {
 
 export async function deleteRepository(repositoryId: string) {
   try {
-    const session = await auth.api.getSession({
-      headers: await headers(),
-    });
-
-    if (!session?.user) {
-      throw new Error("Unauthorized");
-    }
+    const session = await requireAuthSession();
 
     const repository = await prisma.repository.findUnique({
       where: {
@@ -149,13 +124,7 @@ export async function deleteRepository(repositoryId: string) {
 
 export async function disconnectAllRepositories() {
   try {
-    const session = await auth.api.getSession({
-      headers: await headers(),
-    });
-
-    if (!session?.user) {
-      throw new Error("Unauthorized");
-    }
+    const session = await requireAuthSession();
 
     const repositories = await prisma.repository.findMany({
       where: {

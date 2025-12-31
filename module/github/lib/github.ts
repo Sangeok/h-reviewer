@@ -1,7 +1,6 @@
 import { Octokit } from "octokit";
-import { auth } from "@/lib/auth";
+import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
-import { headers } from "next/headers";
 
 // type contributionData = {
 //   user: {
@@ -20,12 +19,7 @@ import { headers } from "next/headers";
 
 // Getting the github access token
 export const getGithubAccessToken = async () => {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-  if (!session) {
-    throw new Error("Unauthorized");
-  }
+  const session = await requireAuthSession();
 
   const account = await prisma.account.findFirst({
     where: {
