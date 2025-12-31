@@ -3,21 +3,14 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { RepositoryListSkeleton, useConnectRepository, useRepositories } from "@/module/repository";
+import {
+  RepositoryListSkeleton,
+  useConnectRepository,
+  useRepositories,
+  type Repository,
+} from "@/module/repository";
 import { Badge, ExternalLink, Search, Star } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-
-interface Repository {
-  id: number;
-  name: string;
-  full_name: string;
-  description: string;
-  html_url: string;
-  stargazers_count: number;
-  language: string;
-  topics: string[];
-  isConnected?: boolean;
-}
 
 export default function RepositoryList() {
   const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } = useRepositories();

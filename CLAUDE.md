@@ -318,6 +318,25 @@ import AppSidebar from "@/components/app-sidebar/ui/app-sidebar";
 3. Webhook events trigger background jobs for code review
 4. Review results stored in `Review` table with AI analysis
 
+## Documentation
+
+프로젝트 문서는 `docs/` 폴더에서 관리. 작업 전 관련 문서 확인 필수.
+
+```
+docs/
+├── README.md              # 문서 인덱스 (가장 먼저 확인)
+├── conventions/           # 코딩 표준 (반드시 준수)
+├── specs/                 # 기능 구현 명세
+└── archive/               # 완료된 분석 (참고용)
+```
+
+### 기능 구현 시
+1. `docs/conventions/` 확인 → 코딩 표준 준수
+2. `docs/specs/` 확인 → 구현 명세 참조
+3. `docs/archive/` → 참고용, 규칙 아님
+
+---
+
 ## Important Notes
 
 1. **Always regenerate Prisma client after schema changes**:
@@ -341,30 +360,6 @@ import AppSidebar from "@/components/app-sidebar/ui/app-sidebar";
 8. **Subscription tiers**: User model tracks `subscriptionTier` (FREE by default) and `subscriptionStatus`
 
 9. **Strict TypeScript**: The project uses strict mode; null checks and type safety are enforced
-
-## Plans
-
-- At the end of each plan, give me a list of unresolved questions to answer, if any. Make the questions extremely concise. Sacrifice grammar for the sake of concision.
-
-## CRITICAL: File Editing on Windows
-
-### ⚠️ MANDATORY: Always Use Backslashes on Windows for File Paths
-
-**When using Edit or MultiEdit tools on Windows, you MUST use backslashes (`\`) in file paths, NOT forward slashes (`/`).**
-
-#### ❌ WRONG - Will cause errors:
-
-```
-Edit(file_path: "D:/repos/project/file.tsx", ...)
-MultiEdit(file_path: "D:/repos/project/file.tsx", ...)
-```
-
-#### ✅ CORRECT - Always works:
-
-```
-Edit(file_path: "D:\repos\project\file.tsx", ...)
-MultiEdit(file_path: "D:\repos\project\file.tsx", ...)
-```
 
 ## Plans
 

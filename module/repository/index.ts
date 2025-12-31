@@ -13,5 +13,4 @@ export { default as RepositoryList } from "./ui/repository-list";
 export { RepositoryListSkeleton } from "./ui/parts/repository-card-skeleton";
 
 // ===== Types =====
-// 나중에 types/ 디렉토리 생성 시 추가
-// export * from "./types";
+export * from "./types";
