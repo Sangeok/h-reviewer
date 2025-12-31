@@ -35,10 +35,16 @@ export const getGithubAccessToken = async () => {
   return account.accessToken;
 };
 
+/**
+ * Create Octokit client instance with authentication token.
+ * Centralizes Octokit initialization to avoid code duplication.
+ */
+function createOctokitClient(token: string): Octokit {
+  return new Octokit({ auth: token });
+}
+
 export async function fetchUserContribution(token: string, username: string) {
-  const octokit = new Octokit({
-    auth: token,
-  });
+  const octokit = createOctokitClient(token);
 
   const query = `
   query($username:String!){
@@ -71,9 +77,7 @@ export async function fetchUserContribution(token: string, username: string) {
 
 export const getRepositories = async (page: number = 1, perPage: number = 10) => {
   const token = await getGithubAccessToken();
-  const octokit = new Octokit({
-    auth: token,
-  });
+  const octokit = createOctokitClient(token);
 
   const { data } = await octokit.rest.repos.listForAuthenticatedUser({
     sort: "updated",
@@ -88,9 +92,7 @@ export const getRepositories = async (page: number = 1, perPage: number = 10) =>
 
 export const createWebhook = async (owner: string, repo: string) => {
   const token = await getGithubAccessToken();
-  const octokit = new Octokit({
-    auth: token,
-  });
+  const octokit = createOctokitClient(token);
 
   const webhookUrl = `${process.env.NEXT_PUBLIC_APP_BASE_URL}/api/webhooks/github`;
 
@@ -120,9 +122,7 @@ export const createWebhook = async (owner: string, repo: string) => {
 
 export const deleteWebhook = async (owner: string, repo: string) => {
   const token = await getGithubAccessToken();
-  const octokit = new Octokit({
-    auth: token,
-  });
+  const octokit = createOctokitClient(token);
 
   const webhookUrl = `${process.env.NEXT_PUBLIC_APP_BASE_URL}/api/webhooks/github`;
   try {
@@ -156,9 +156,7 @@ export async function getRepoFileContents(
   repo: string,
   path: string = ""
 ): Promise<{ path: string; content: string }[]> {
-  const octokit = new Octokit({
-    auth: token,
-  });
+  const octokit = createOctokitClient(token);
 
   const { data } = await octokit.rest.repos.getContent({
     owner,
@@ -209,9 +207,7 @@ export async function getRepoFileContents(
 }
 
 export async function getPullRequestDiff(token: string, owner: string, repo: string, prNumber: number) {
-  const octokit = new Octokit({
-    auth: token,
-  });
+  const octokit = createOctokitClient(token);
 
   const { data: pr } = await octokit.rest.pulls.get({
     owner,
@@ -236,9 +232,7 @@ export async function getPullRequestDiff(token: string, owner: string, repo: str
 }
 
 export async function postReviewComment(token: string, owner: string, repo: string, prNumber: number, review: string) {
-  const octokit = new Octokit({
-    auth: token,
-  });
+  const octokit = createOctokitClient(token);
 
   await octokit.rest.issues.createComment({
     owner,

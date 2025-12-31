@@ -70,26 +70,6 @@
 
 ### 🔴 심각도: 높음
 
-#### 2.1 인증 세션 추출 (3곳 이상)
-
-**위치**:
-
-- `module/repository/actions/index.ts:10-16`
-- `module/dashboard/actions/index.ts:10-16`
-- `module/review/actions/index.ts:8-14`
-- `module/settings/actions/index.ts` (동일 패턴 예상)
-
-**중복 코드**:
-
-```typescript
-const session = await auth.api.getSession({
-  headers: await headers(),
-});
-if (!session?.user) {
-  throw new Error("Unauthorized");
-}
-```
-
 #### 2.2 Octokit 초기화 (9회 이상)
 
 **파일**: `module/github/lib/github.ts`
