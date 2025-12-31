@@ -1,0 +1,576 @@
+# hreviewer 기능 로드맵
+
+> CodeRabbit, Gemini Code Assist 등 주요 AI 코드 리뷰 도구 분석을 기반으로 한 기능 제안
+
+## 현재 구현된 기능
+
+| 기능 | 상태 | 설명 |
+|------|------|------|
+| GitHub OAuth | ✅ | Better-Auth 기반 인증 |
+| PR 자동 리뷰 | ✅ | PR 열림/동기화 시 AI 리뷰 생성 |
+| RAG 코드 분석 | ✅ | Pinecone + Gemini 기반 |
+| 리뷰 히스토리 | ✅ | 과거 리뷰 목록 조회 |
+| 대시보드 | ✅ | 통계, 기여 그래프 |
+| Repository 연결 | ✅ | GitHub 저장소 연동 |
+| PR 요약 | 🚧 | `/hreviewer summary` 명령어 (설계 완료) |
+
+---
+
+## Phase 1: 핵심 기능 강화
+
+### 1.1 인터랙티브 리뷰 명령어 시스템
+
+**우선순위**: 🔴 높음
+**참고**: [CodeRabbit](https://www.coderabbit.ai/), [Gemini Code Assist](https://github.com/marketplace/gemini-code-assist)
+
+PR 코멘트에서 다양한 명령어로 AI와 상호작용:
+
+```
+/hreviewer summary      # PR 요약 생성 (이미 설계됨)
+/hreviewer review       # 전체 리뷰 재생성
+/hreviewer explain      # 특정 코드 설명 요청
+/hreviewer suggest      # 개선 제안 요청
+/hreviewer security     # 보안 취약점 집중 분석
+/hreviewer performance  # 성능 이슈 분석
+```
+
+**구현 범위**:
+- `module/ai/utils/command-parser.ts` 확장
+- 명령어별 프롬프트 템플릿
+- `issue_comment` 웹훅 핸들러 확장
+
+---
+
+### 1.2 원클릭 코드 수정 제안
+
+**우선순위**: 🔴 높음
+**참고**: CodeRabbit의 "committable fixes"
+
+AI가 제안한 수정사항을 GitHub에서 바로 커밋할 수 있는 형태로 제공:
+
+```markdown
+## 🔧 수정 제안
+
+\`\`\`suggestion
+- const data = await fetch(url)
++ const data = await fetch(url, { cache: 'no-store' })
+\`\`\`
+```
+
+**구현 범위**:
+- GitHub suggestion 형식으로 코멘트 포맷팅
+- 파일별 라인 번호 매핑
+- 다중 파일 수정 제안 지원
+
+---
+
+### 1.3 커스텀 리뷰 스타일 가이드
+
+**우선순위**: 🟡 중간
+**참고**: Gemini Code Assist의 `.gemini/styleguide.md`
+
+저장소별 코딩 컨벤션 및 리뷰 지침 설정:
+
+```
+.hreviewer/
+├── config.yaml        # 기본 설정
+├── styleguide.md      # 코딩 스타일 가이드
+└── ignore.md          # 리뷰 제외 패턴
+```
+
+**config.yaml 예시**:
+```yaml
+review:
+  language: ko          # 리뷰 언어
+  focus:
+    - security
+    - performance
+    - accessibility
+  ignore:
+    - "*.test.ts"
+    - "*.spec.ts"
+  severity:
+    security: critical
+    style: info
+```
+
+**구현 범위**:
+- Repository 연결 시 설정 파일 파싱
+- 리뷰 생성 시 컨텍스트에 스타일 가이드 주입
+- 설정 UI (대시보드에서 편집)
+
+---
+
+### 1.4 리뷰 심각도 분류
+
+**우선순위**: 🟡 중간
+
+리뷰 결과를 심각도별로 분류하여 표시:
+
+| 레벨 | 아이콘 | 설명 |
+|------|--------|------|
+| Critical | 🚨 | 보안 취약점, 데이터 손실 위험 |
+| Warning | ⚠️ | 버그 가능성, 성능 이슈 |
+| Suggestion | 💡 | 개선 제안, 베스트 프랙티스 |
+| Info | ℹ️ | 참고 사항, 문서화 제안 |
+
+**구현 범위**:
+- AI 프롬프트에 심각도 분류 지침 추가
+- 리뷰 결과 파싱 및 구조화
+- UI에서 심각도별 필터링
+
+---
+
+## Phase 2: 정적 분석 도구 통합
+
+### 2.1 린터/포맷터 통합
+
+**우선순위**: 🟡 중간
+**참고**: CodeRabbit의 40+ 산업 표준 도구 통합
+
+AI 리뷰와 함께 정적 분석 결과 제공:
+
+```
+지원 도구:
+├── ESLint (JavaScript/TypeScript)
+├── Prettier (코드 포맷팅)
+├── TypeScript Compiler (타입 체크)
+├── Biome (Rust 기반 린터)
+└── Custom rules (저장소별)
+```
+
+**구현 범위**:
+- Inngest 함수에서 린터 실행
+- 결과를 AI 리뷰와 병합
+- 도구별 설정 지원
+
+---
+
+### 2.2 보안 취약점 스캐닝
+
+**우선순위**: 🔴 높음
+
+의존성 및 코드 보안 분석:
+
+```
+스캔 영역:
+├── 의존성 취약점 (npm audit, Snyk)
+├── 하드코딩된 시크릿 (API 키, 비밀번호)
+├── SQL 인젝션 패턴
+├── XSS 취약점
+└── OWASP Top 10
+```
+
+**구현 범위**:
+- 보안 전용 AI 프롬프트
+- `npm audit` 결과 통합
+- 시크릿 탐지 정규식
+
+---
+
+### 2.3 테스트 커버리지 분석
+
+**우선순위**: 🟢 낮음
+
+변경된 코드의 테스트 커버리지 확인:
+
+```
+📊 테스트 커버리지 분석
+
+변경된 파일:
+├── src/utils/auth.ts - 커버리지: 45% ⚠️
+├── src/api/users.ts - 커버리지: 82% ✅
+└── src/hooks/useAuth.ts - 테스트 없음 ❌
+
+💡 제안: useAuth.ts에 대한 테스트 추가 권장
+```
+
+**구현 범위**:
+- Jest/Vitest 커버리지 리포트 파싱
+- 변경 파일과 커버리지 매핑
+- 테스트 생성 제안
+
+---
+
+## Phase 3: 에이전트 기능
+
+### 3.1 자동 테스트 생성
+
+**우선순위**: 🟡 중간
+**참고**: CodeRabbit의 에이전트 워크플로우
+
+PR 코멘트로 테스트 자동 생성 요청:
+
+```
+/hreviewer generate-tests src/utils/auth.ts
+```
+
+**출력 예시**:
+```typescript
+// 생성된 테스트
+describe('validateToken', () => {
+  it('should return true for valid token', () => {
+    expect(validateToken('valid-token')).toBe(true);
+  });
+
+  it('should return false for expired token', () => {
+    expect(validateToken('expired-token')).toBe(false);
+  });
+});
+```
+
+**구현 범위**:
+- 테스트 프레임워크 감지 (Jest, Vitest, Mocha)
+- 함수 시그니처 분석
+- 테스트 파일 생성 및 PR 커밋
+
+---
+
+### 3.2 자동 문서 생성
+
+**우선순위**: 🟢 낮음
+
+코드 변경에 따른 문서 자동 업데이트:
+
+```
+/hreviewer docs          # 전체 문서 생성
+/hreviewer docs api      # API 문서만 생성
+/hreviewer docs readme   # README 업데이트
+```
+
+**구현 범위**:
+- JSDoc/TSDoc 생성
+- README.md 업데이트 제안
+- API 문서 자동화
+
+---
+
+### 3.3 이슈 자동 생성
+
+**우선순위**: 🟢 낮음
+**참고**: CodeRabbit의 Jira/Linear/GitHub 이슈 생성
+
+리뷰에서 발견된 문제를 이슈로 자동 생성:
+
+```
+/hreviewer create-issue "성능 최적화 필요"
+```
+
+**구현 범위**:
+- GitHub Issues API 연동
+- 이슈 템플릿 지원
+- 라벨 자동 지정
+
+---
+
+## Phase 4: 사용자 경험 개선
+
+### 4.1 리뷰 히스토리 검색 및 필터링
+
+**우선순위**: 🟡 중간
+
+리뷰 목록에서 고급 검색 기능:
+
+```
+필터 옵션:
+├── 상태 (Completed, Failed, Pending)
+├── 저장소
+├── 날짜 범위
+├── 심각도 (Critical, Warning, Info)
+└── 키워드 검색
+```
+
+**구현 범위**:
+- 검색 API 엔드포인트
+- 필터 UI 컴포넌트
+- Prisma 쿼리 최적화
+
+---
+
+### 4.2 실시간 알림
+
+**우선순위**: 🟡 중간
+
+리뷰 완료 시 알림 발송:
+
+```
+알림 채널:
+├── 이메일 (SendGrid/Resend)
+├── Slack 웹훅
+├── Discord 웹훅
+└── 브라우저 푸시 알림
+```
+
+**구현 범위**:
+- 알림 설정 UI
+- 웹훅 발송 로직
+- 알림 히스토리
+
+---
+
+### 4.3 팀 대시보드
+
+**우선순위**: 🟢 낮음
+
+팀 단위 리뷰 현황 조회:
+
+```
+팀 통계:
+├── 팀원별 리뷰 수
+├── 저장소별 이슈 트렌드
+├── 주간/월간 리포트
+└── 코드 품질 점수 추이
+```
+
+**구현 범위**:
+- 팀/조직 모델 추가
+- 팀 초대 시스템
+- 집계 대시보드
+
+---
+
+### 4.4 다크 모드 테마 개선
+
+**우선순위**: 🟢 낮음
+
+현재 터미널 스타일 테마 외 추가 테마:
+
+```
+테마 옵션:
+├── Terminal (현재)
+├── GitHub Dark
+├── GitHub Light
+└── Custom (사용자 정의)
+```
+
+---
+
+## Phase 5: 엔터프라이즈 기능
+
+### 5.1 구독 티어 적용
+
+**우선순위**: 🔴 높음
+
+현재 DB에 있는 구독 필드 활성화:
+
+| 티어 | 가격 | 리뷰/월 | 저장소 | 기능 |
+|------|------|---------|--------|------|
+| Free | $0 | 50 | 3 | 기본 리뷰 |
+| Pro | $19 | 500 | 무제한 | + 보안 스캔, 커스텀 가이드 |
+| Enterprise | 문의 | 무제한 | 무제한 | + SSO, 감사 로그, SLA |
+
+**구현 범위**:
+- Stripe 결제 연동
+- 사용량 추적 강화
+- 티어별 기능 게이팅
+
+---
+
+### 5.2 SSO 인증
+
+**우선순위**: 🟢 낮음
+
+기업 고객을 위한 SSO 지원:
+
+```
+지원 프로토콜:
+├── SAML 2.0
+├── OIDC
+└── Google Workspace
+```
+
+---
+
+### 5.3 감사 로그
+
+**우선순위**: 🟢 낮음
+
+모든 활동에 대한 감사 추적:
+
+```
+로그 항목:
+├── 사용자 로그인/로그아웃
+├── 저장소 연결/해제
+├── 리뷰 요청/완료
+├── 설정 변경
+└── API 호출
+```
+
+---
+
+### 5.4 웹훅 보안 강화
+
+**우선순위**: 🔴 높음
+
+GitHub 웹훅 서명 검증:
+
+```typescript
+// 현재: 서명 검증 없음
+// 개선: HMAC-SHA256 검증 추가
+
+const signature = headers['x-hub-signature-256'];
+const isValid = verifyWebhookSignature(payload, signature, secret);
+```
+
+**구현 범위**:
+- `crypto` 모듈로 서명 검증
+- 환경 변수에 웹훅 시크릿 추가
+- 실패 시 요청 거부
+
+---
+
+## Phase 6: CLI 및 IDE 통합
+
+### 6.1 CLI 도구
+
+**우선순위**: 🟡 중간
+**참고**: CodeRabbit CLI, Gemini CLI Extension
+
+로컬에서 코드 리뷰 실행:
+
+```bash
+# 설치
+npm install -g @hreviewer/cli
+
+# 사용
+hreviewer review ./src          # 디렉토리 리뷰
+hreviewer review --staged       # 스테이징된 변경 리뷰
+hreviewer review --diff HEAD~1  # 최근 커밋 리뷰
+```
+
+**구현 범위**:
+- npm 패키지 생성
+- API 연동
+- 터미널 UI (chalk, ora)
+
+---
+
+### 6.2 VS Code 확장
+
+**우선순위**: 🟢 낮음
+**참고**: CodeRabbit VS Code Extension
+
+에디터에서 실시간 코드 리뷰:
+
+```
+기능:
+├── 저장 시 자동 리뷰
+├── 인라인 피드백 표시
+├── Quick Fix 제안
+└── 설정 동기화
+```
+
+---
+
+## Phase 7: AI 고도화
+
+### 7.1 컨텍스트 메모리
+
+**우선순위**: 🟡 중간
+**참고**: Gemini Code Assist의 Persistent Memory
+
+이전 리뷰 히스토리를 기반으로 맥락 유지:
+
+```
+학습 항목:
+├── 자주 발생하는 이슈 패턴
+├── 사용자/팀의 코딩 스타일
+├── 이전 리뷰 피드백
+└── 수정 이력
+```
+
+**구현 범위**:
+- 리뷰 임베딩 저장 확장
+- 사용자별 컨텍스트 벡터
+- 리뷰 생성 시 히스토리 조회
+
+---
+
+### 7.2 멀티 모델 지원
+
+**우선순위**: 🟡 중간
+
+다양한 AI 모델 선택:
+
+```
+지원 모델:
+├── Google Gemini (현재)
+├── OpenAI GPT-4
+├── Anthropic Claude
+├── DeepSeek
+└── 로컬 모델 (Ollama)
+```
+
+**구현 범위**:
+- AI SDK 추상화 레이어
+- 모델별 프롬프트 최적화
+- 폴백 메커니즘
+
+---
+
+### 7.3 코드베이스 건강 리포트
+
+**우선순위**: 🟢 낮음
+
+저장소 전체에 대한 종합 분석:
+
+```
+📊 코드베이스 건강 리포트
+
+전체 점수: 78/100
+
+영역별 점수:
+├── 보안: 85/100 ✅
+├── 성능: 72/100 ⚠️
+├── 유지보수성: 68/100 ⚠️
+├── 테스트 커버리지: 45/100 ❌
+└── 문서화: 90/100 ✅
+
+주요 개선 항목:
+1. 테스트 커버리지 확대 필요
+2. 복잡도 높은 함수 리팩토링 권장
+3. 사용하지 않는 의존성 제거
+```
+
+---
+
+## 구현 우선순위 요약
+
+### 🔴 즉시 구현 (Phase 1-2 핵심)
+
+1. **인터랙티브 명령어 시스템** - 사용자 상호작용의 핵심
+2. **원클릭 코드 수정** - 가치 제공의 핵심
+3. **보안 취약점 스캐닝** - 경쟁력 확보
+4. **웹훅 보안 강화** - 보안 필수 사항
+5. **구독 티어 적용** - 수익화
+
+### 🟡 단기 구현 (1-3개월)
+
+6. 커스텀 리뷰 스타일 가이드
+7. 리뷰 심각도 분류
+8. 린터/포맷터 통합
+9. 리뷰 히스토리 검색
+10. 실시간 알림
+11. CLI 도구
+
+### 🟢 중장기 구현 (3-6개월)
+
+12. 자동 테스트 생성
+13. 자동 문서 생성
+14. 팀 대시보드
+15. 컨텍스트 메모리
+16. 멀티 모델 지원
+17. VS Code 확장
+18. 코드베이스 건강 리포트
+
+---
+
+## 참고 자료
+
+- [CodeRabbit - AI Code Reviews](https://www.coderabbit.ai/)
+- [CodeRabbit Documentation](https://docs.coderabbit.ai/)
+- [Gemini Code Assist - GitHub Marketplace](https://github.com/marketplace/gemini-code-assist)
+- [Gemini Code Assist Documentation](https://developers.google.com/gemini-code-assist/docs/review-github-code)
+- [State of AI Code Review Tools in 2025](https://www.devtoolsacademy.com/blog/state-of-ai-code-review-tools-2025/)
+- [CodeRabbit $60M Series B](https://siliconangle.com/2025/09/16/coderabbit-gets-60m-fix-ai-generated-code-quality/)
+- [Gemini Code Assist Updates - Google I/O 2025](https://blog.google/technology/developers/gemini-code-assist-updates-google-io-2025/)
