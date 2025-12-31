@@ -1,19 +1,12 @@
 "use server";
 
 import prisma from "@/lib/db";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { requireAuthSession } from "@/lib/server-utils";
 import { createWebhook, getRepositories } from "@/module/github";
 import { inngest } from "@/inngest/client";
 
 export const fetchRepositories = async (page: number = 1, perPage: number = 10) => {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-
-  if (!session?.user) {
-    throw new Error("Unauthorized");
-  }
+  const session = await requireAuthSession();
 
   const githubRepos = await getRepositories(page, perPage);
 
@@ -32,13 +25,7 @@ export const fetchRepositories = async (page: number = 1, perPage: number = 10) 
 };
 
 export const connectRepository = async (owner: string, repo: string, githubId: number) => {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-
-  if (!session?.user) {
-    throw new Error("Unauthorized");
-  }
+  const session = await requireAuthSession();
 
   const webhook = await createWebhook(owner, repo);
 

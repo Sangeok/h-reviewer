@@ -1,17 +1,10 @@
 "use server";
 
-import { auth } from "@/lib/auth";
+import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
-import { headers } from "next/headers";
 
 export async function getReviews() {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-
-  if (!session?.user) {
-    throw new Error("Unauthorized");
-  }
+  const session = await requireAuthSession();
 
   const reviews = await prisma.review.findMany({
     where: {
