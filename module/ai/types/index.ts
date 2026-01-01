@@ -1,5 +1,5 @@
 export interface PRCommand {
-  type: "summary" | "review" | null;
+  type: "summary" | "review";
 }
 
 export interface SearchResult {
