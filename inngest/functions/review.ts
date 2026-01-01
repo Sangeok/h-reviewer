@@ -5,6 +5,32 @@ import { retrieveContext } from "@/module/ai/lib/rag";
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
 
+function sanitizeMermaidSequenceDiagrams(markdown: string): string {
+  // GitHub Mermaid rendering is strict. The most common break we see is mismatched activation
+  // (activate/deactivate or arrow +/-). Safest fix: strip activation syntax entirely.
+  return markdown.replace(/```mermaid\s*\n([\s\S]*?)\n```/g, (fullMatch, mermaidBody: string) => {
+    if (!/^\s*sequenceDiagram\b/m.test(mermaidBody)) {
+      return fullMatch;
+    }
+
+    const sanitizedBody = mermaidBody
+      .split(/\r?\n/)
+      .filter((line) => {
+        const trimmed = line.trimStart();
+        if (trimmed.startsWith("activate ")) return false;
+        if (trimmed.startsWith("deactivate ")) return false;
+        return true;
+      })
+      .map((line) =>
+        // Remove activation markers on arrows (e.g. ->>+ , -->>-). Keep the arrow itself.
+        line.replace(/(->>|-->>|->|-->)[ \t]*[+-]/g, "$1")
+      )
+      .join("\n");
+
+    return `\`\`\`mermaid\n${sanitizedBody}\n\`\`\``;
+  });
+}
+
 export const generateReview = inngest.createFunction(
   { id: "generate-review" },
   { event: "pr.review.requested" },
@@ -49,7 +75,7 @@ export const generateReview = inngest.createFunction(
         
         Please provide:
         1. **Walkthrough**: A file-by-file explanation of the changes.
-        2. **Sequence Diagram**: A Mermaid JS sequence diagram visualizing the flow of the changes (if applicable). Use \`\`\`mermaid ... \`\`\` block. **IMPORTANT**: Ensure the Mermaid syntax is valid. Do not use special characters (like quotes, braces, parentheses) inside Note text or labels as it breaks rendering. Keep the diagram simple.
+        2. **Sequence Diagram**: A Mermaid JS sequence diagram visualizing the flow of the changes (if applicable). Use \`\`\`mermaid ... \`\`\` block. **IMPORTANT**: Ensure the Mermaid syntax is valid on GitHub. Do NOT use Mermaid activation controls (no \`activate\`, \`deactivate\`, and no \`+\` or \`-\` on arrows like \`->>+\` or \`-->>-\`). Also avoid special characters (quotes, braces, parentheses) inside Note text or labels as it can break rendering. Keep the diagram simple.
         3. **Summary**: Brief overview.
         4. **Strengths**: What's done well.
         5. **Issues**: Bugs, security concerns, code smells.
@@ -59,11 +85,11 @@ export const generateReview = inngest.createFunction(
         Format your response in markdown.`;
 
       const { text } = await generateText({
-        model: google("gemini-2.5-flash-lite"),
+        model: google("gemini-2.5-flash"),
         prompt,
       });
 
-      return text;
+      return sanitizeMermaidSequenceDiagrams(text);
     });
 
     await step.run("post-comment", async () => {
