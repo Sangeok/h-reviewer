@@ -2,21 +2,6 @@ import { Octokit } from "octokit";
 import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
 
-// type contributionData = {
-//   user: {
-//     contributionsCollection: {
-//       contributionCalendar: {
-//         totalContributions: number;
-//         weeks: {
-//           contributionCount: number;
-//           data: string | Date;
-//           color: string;
-//         };
-//       };
-//     };
-//   };
-// };
-
 // Getting the github access token
 export const getGithubAccessToken = async () => {
   const session = await requireAuthSession();

@@ -5,14 +5,7 @@ import { searchSimilarCode } from "@/module/ai/lib/rag";
 import type { SearchResult } from "@/module/ai/types";
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
-
-function stripFencedCodeBlocks(input: string): string {
-  // Defensive post-processing: keep the summary concise and avoid leaking large code snippets.
-  return input
-    .replace(/```[\s\S]*?```/g, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
+import { stripFencedCodeBlocks } from "@/module/ai/utils/text-sanitizer";
 
 export const generateSummary = inngest.createFunction(
   { id: "generate-summary" },
