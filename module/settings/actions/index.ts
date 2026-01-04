@@ -19,6 +19,7 @@ export async function getUserProfile() {
         email: true,
         image: true,
         createdAt: true,
+        preferredLanguage: true,
       },
     });
 
@@ -29,7 +30,7 @@ export async function getUserProfile() {
   }
 }
 
-export async function updateUserProfile(data: { name?: string; email?: string }) {
+export async function updateUserProfile(data: { name?: string; email?: string; preferredLanguage?: string }) {
   try {
     const session = await requireAuthSession();
 
@@ -40,11 +41,13 @@ export async function updateUserProfile(data: { name?: string; email?: string })
       data: {
         name: data.name,
         email: data.email,
+        preferredLanguage: data.preferredLanguage,
       },
       select: {
         id: true,
         name: true,
         email: true,
+        preferredLanguage: true,
       },
     });
 
@@ -154,5 +157,23 @@ export async function disconnectAllRepositories() {
       success: false,
       message: "Failed to disconnect all repositories",
     };
+  }
+}
+
+export async function getUserLanguageByUserId(userId: string): Promise<string> {
+  try {
+    const user = await prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      select: {
+        preferredLanguage: true,
+      },
+    });
+
+    return user?.preferredLanguage ?? "en";
+  } catch (error) {
+    console.error("Error fetching user language by user id:", error);
+    return "en";
   }
 }

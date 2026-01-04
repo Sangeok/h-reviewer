@@ -14,7 +14,6 @@
 | `conventions/file-naming.md` | 파일 네이밍 규칙 |
 | `conventions/folder-structure.md` | 컴포넌트 폴더 구조 |
 | `conventions/writing-docs.md` | 문서 작성 가이드 |
-
 ---
 
 ## 📝 Specs (to implement)
@@ -24,6 +23,7 @@
 | 문서 | 상태 | 설명 |
 |------|------|------|
 | `specs/pr-summary-feature.md` | `IN_PROGRESS` | PR 요약 기능 |
+| `specs/review-language-feature.md` | `TODO` | 언어 설정 기능 명세 |
 
 ---
 

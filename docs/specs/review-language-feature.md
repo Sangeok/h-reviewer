@@ -1,19 +1,22 @@
-# PR 리뷰 언어 설정 기능 구현 명세서
+# PR 리뷰 언어 설정 기능 구현 명세서(완료료)
 
 ## 개요
 
 ### 목적
+
 사용자가 설정한 언어로 AI PR 리뷰를 생성하는 기능을 구현한다.
 
 ### 지원 언어
-| 코드 | 언어 | 네이티브 표기 |
-|------|------|--------------|
-| `en` | English | English |
-| `ko` | Korean | 한국어 |
+
+| 코드 | 언어    | 네이티브 표기 |
+| ---- | ------- | ------------- |
+| `en` | English | English       |
+| `ko` | Korean  | 한국어        |
 
 ### 기본값
+
 - 기본 언어: `en` (영어)
-- 번역 범위: 섹션 헤더 포함 리뷰 전체
+- 번역 범위: 섹션 헤더 포함 리뷰 전체 (단, 기술 용어는 문맥에 따라 영어 유지)
 
 ---
 
@@ -61,6 +64,27 @@ export const SUPPORTED_LANGUAGES: SupportedLanguage[] = [
 export const DEFAULT_LANGUAGE = "en";
 
 export type LanguageCode = "en" | "ko";
+
+export const SECTION_HEADERS = {
+  en: {
+    walkthrough: "Walkthrough",
+    sequenceDiagram: "Sequence Diagram",
+    summary: "Summary",
+    strengths: "Strengths",
+    issues: "Issues",
+    suggestions: "Suggestions",
+    poem: "Poem",
+  },
+  ko: {
+    walkthrough: "변경 사항 상세",
+    sequenceDiagram: "시퀀스 다이어그램",
+    summary: "요약",
+    strengths: "강점",
+    issues: "발견된 문제점",
+    suggestions: "개선 제안",
+    poem: "마무리 시",
+  },
+} as const;
 ```
 
 ---
@@ -83,7 +107,7 @@ export async function getUserProfile() {
       email: true,
       image: true,
       createdAt: true,
-      preferredLanguage: true,  // 추가
+      preferredLanguage: true, // 추가
     },
   });
 
@@ -94,25 +118,35 @@ export async function getUserProfile() {
 ### 3.2 updateUserProfile 수정
 
 ```typescript
+import { SUPPORTED_LANGUAGES } from "../constants";
+
 export async function updateUserProfile(data: {
   name?: string;
   email?: string;
-  preferredLanguage?: string;  // 추가
+  preferredLanguage?: string; // 추가
 }) {
   // ... 기존 인증 로직
+
+  // 입력값 검증
+  if (data.preferredLanguage) {
+    const isValidLanguage = SUPPORTED_LANGUAGES.some((lang) => lang.code === data.preferredLanguage);
+    if (!isValidLanguage) {
+      return { success: false, error: "Invalid language code" };
+    }
+  }
 
   const updatedUser = await prisma.user.update({
     where: { id: session.user.id },
     data: {
       name: data.name,
       email: data.email,
-      preferredLanguage: data.preferredLanguage,  // 추가
+      preferredLanguage: data.preferredLanguage, // 추가
     },
     select: {
       id: true,
       name: true,
       email: true,
-      preferredLanguage: true,  // 추가
+      preferredLanguage: true, // 추가
     },
   });
 
@@ -239,13 +273,7 @@ export { Select, SelectGroup, SelectValue, SelectTrigger, SelectContent, SelectI
 ```typescript
 "use client";
 
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SUPPORTED_LANGUAGES, type LanguageCode } from "../../constants";
 
 interface LanguageSelectorProps {
@@ -254,17 +282,9 @@ interface LanguageSelectorProps {
   disabled?: boolean;
 }
 
-export default function LanguageSelector({
-  value,
-  onChange,
-  disabled
-}: LanguageSelectorProps) {
+export default function LanguageSelector({ value, onChange, disabled }: LanguageSelectorProps) {
   return (
-    <Select
-      value={value}
-      onValueChange={(val) => onChange(val as LanguageCode)}
-      disabled={disabled}
-    >
+    <Select value={value} onValueChange={(val) => onChange(val as LanguageCode)} disabled={disabled}>
       <SelectTrigger>
         <SelectValue placeholder="Select language" />
       </SelectTrigger>
@@ -312,15 +332,9 @@ const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
   <label htmlFor="language" className="text-sm font-medium text-[#d0d0d0]">
     Review Language
   </label>
-  <p className="text-xs text-[#606060]">
-    AI-generated PR reviews will be written in this language
-  </p>
-  <LanguageSelector
-    value={preferredLanguage}
-    onChange={setPreferredLanguage}
-    disabled={updateMutation.isPending}
-  />
-</div>
+  <p className="text-xs text-[#606060]">AI-generated PR reviews will be written in this language</p>
+  <LanguageSelector value={preferredLanguage} onChange={setPreferredLanguage} disabled={updateMutation.isPending} />
+</div>;
 ```
 
 ---
@@ -347,7 +361,7 @@ export async function reviewPullRequest(owner: string, repo: string, prNumber: n
       repo,
       prNumber,
       userId: repository.user.id,
-      preferredLanguage,  // 추가
+      preferredLanguage, // 추가
     },
   });
 
@@ -359,7 +373,9 @@ export async function reviewPullRequest(owner: string, repo: string, prNumber: n
 
 **파일**: `inngest/functions/review.ts`
 
-```typescript
+````typescript
+import { SECTION_HEADERS, type LanguageCode } from "@/module/settings/constants";
+
 // 언어 이름 매핑 헬퍼 함수 추가
 function getLanguageName(code: string): string {
   const languages: Record<string, string> = {
@@ -376,13 +392,20 @@ export const generateReview = inngest.createFunction(
     // preferredLanguage 추출 (기본값: en)
     const { owner, repo, prNumber, userId, preferredLanguage = "en" } = event.data;
 
+    // 섹션 헤더 가져오기 (타입 안전성 보장)
+    const langCode = (preferredLanguage as LanguageCode) || "en";
+    const headers = SECTION_HEADERS[langCode] || SECTION_HEADERS["en"];
+
     // ... fetch-pr-data, generate-context steps
 
     const review = await step.run("generate-ai-review", async () => {
-      // 언어 지시 생성 (영어가 아닌 경우에만)
-      const languageInstruction = preferredLanguage !== "en"
-        ? `\n\nIMPORTANT: Write the entire review in ${getLanguageName(preferredLanguage)}. All section headers (like "Walkthrough", "Summary", "Strengths", "Issues", "Suggestions", "Poem"), explanations, and comments must be in ${getLanguageName(preferredLanguage)}.`
-        : "";
+      // 언어 지시 생성 (영어가 아닌 경우에만, 단 기술 용어는 유지)
+      const languageInstruction =
+        preferredLanguage !== "en"
+          ? `\n\nIMPORTANT: Write the entire review in ${getLanguageName(
+              preferredLanguage
+            )}. All section headers must be exactly as specified below. However, keep technical terms (e.g., library names, standard coding terms like "Pull Request", "Commit") in English where appropriate for clarity.`
+          : "";
 
       const prompt = `You are an expert code reviewer. Analyze the following pull request and provide a detailed, constructive code review.${languageInstruction}
         PR Title: ${title}
@@ -392,18 +415,35 @@ export const generateReview = inngest.createFunction(
         ${context.join("\n\n")}
 
         Code Changes:
-        \`\`\`diff
-        ${diff}
-        \`\`\`
+        \
+```diff
+${diff}
+\
+````
 
-        Please provide:
-        1. **Walkthrough**: A file-by-file explanation of the changes.
-        2. **Sequence Diagram**: A Mermaid JS sequence diagram visualizing the flow of the changes (if applicable). Use \`\`\`mermaid ... \`\`\` block. **IMPORTANT**: Ensure the Mermaid syntax is valid. Do not use special characters (like quotes, braces, parentheses) inside Note text or labels as it breaks rendering. Keep the diagram simple.
-        3. **Summary**: Brief overview.
-        4. **Strengths**: What's done well.
-        5. **Issues**: Bugs, security concerns, code smells.
-        6. **Suggestions**: Specific code improvements.
-        7. **Poem**: A short, creative poem summarizing the changes at the very end.
+        Please provide the review with the following specific sections:
+        1. **${headers.walkthrough}**: A file-by-file explanation of the changes.
+        2. **${headers.sequenceDiagram}**: A Mermaid JS sequence diagram visualizing the flow of the changes (if applicable). Use \
+
+````mermaid ... \
+``` block. **IMPORTANT**: Ensure the Mermaid syntax is valid on GitHub. Do NOT use Mermaid activation controls (no \
+`activate\
+`, \
+`deactivate\
+`, and no \
+`+\
+` or \
+`-\
+` on arrows like \
+`->>+\
+` or \
+`-->>-\
+`). Also avoid special characters (quotes, braces, parentheses) inside Note text or labels as it can break rendering. Keep the diagram simple.
+        3. **${headers.summary}**: Brief overview.
+        4. **${headers.strengths}**: What's done well.
+        5. **${headers.issues}**: Bugs, security concerns, code smells.
+        6. **${headers.suggestions}**: Specific code improvements.
+        7. **${headers.poem}**: A short, creative poem summarizing the changes at the very end.
 
         Format your response in markdown.`;
 
@@ -412,13 +452,13 @@ export const generateReview = inngest.createFunction(
         prompt,
       });
 
-      return text;
+      return sanitizeMermaidSequenceDiagrams(text);
     });
 
     // ... post-comment, save-review steps
   }
 );
-```
+````
 
 ---
 
@@ -472,7 +512,8 @@ export const generateReview = inngest.createFunction(
 │  ┌───────────────────────────────────────────────────────────┐  │
 │  │  generateReview()                                          │  │
 │  │  - Extract preferredLanguage from event.data               │  │
-│  │  - Build prompt with language instruction                  │  │
+│  │  - Get localized headers from SECTION_HEADERS              │  │
+│  │  - Build prompt with language instruction & constraints    │  │
 │  │  - Call Gemini 2.5 Flash                                   │  │
 │  └───────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
@@ -481,7 +522,7 @@ export const generateReview = inngest.createFunction(
 ┌─────────────────────────────────────────────────────────────────┐
 │                       AI Response                                │
 │  "## 코드 리뷰                                                  │
-│   ### 변경 사항 요약                                            │
+│   ### 변경 사항 상세                                            │
 │   이 PR은 사용자 인증 로직을 개선합니다...                       │
 │   ### 강점                                                      │
 │   - 코드 가독성이 좋습니다                                       │
@@ -497,26 +538,29 @@ export const generateReview = inngest.createFunction(
 ## 7. 파일 변경 요약
 
 ### 새로 생성할 파일
-| 파일 경로 | 설명 |
-|----------|------|
-| `module/settings/constants/index.ts` | 언어 상수 정의 |
-| `components/ui/select.tsx` | Radix UI Select 컴포넌트 |
-| `module/settings/ui/parts/language-selector.tsx` | 언어 선택 컴포넌트 |
+
+| 파일 경로                                        | 설명                     |
+| ------------------------------------------------ | ------------------------ |
+| `module/settings/constants/index.ts`             | 언어 및 헤더 상수 정의   |
+| `components/ui/select.tsx`                       | Radix UI Select 컴포넌트 |
+| `module/settings/ui/parts/language-selector.tsx` | 언어 선택 컴포넌트       |
 
 ### 수정할 파일
-| 파일 경로 | 변경 내용 |
-|----------|----------|
-| `prisma/schema.prisma` | User 모델에 `preferredLanguage` 필드 추가 |
-| `module/settings/actions/index.ts` | `getUserProfile`, `updateUserProfile` 수정, `getUserLanguageByUserId` 추가 |
-| `module/settings/ui/profile-form.tsx` | 언어 선택 UI 추가 |
-| `module/ai/actions/index.ts` | Inngest 이벤트에 `preferredLanguage` 전달 |
-| `inngest/functions/review.ts` | AI 프롬프트에 언어 지시 추가 |
+
+| 파일 경로                             | 변경 내용                                                                         |
+| ------------------------------------- | --------------------------------------------------------------------------------- |
+| `prisma/schema.prisma`                | User 모델에 `preferredLanguage` 필드 추가                                         |
+| `module/settings/actions/index.ts`    | `getUserProfile`, `updateUserProfile` (검증 포함), `getUserLanguageByUserId` 추가 |
+| `module/settings/ui/profile-form.tsx` | 언어 선택 UI 추가                                                                 |
+| `module/ai/actions/index.ts`          | Inngest 이벤트에 `preferredLanguage` 전달                                         |
+| `inngest/functions/review.ts`         | 동적 섹션 헤더 및 프롬프트 개선                                                   |
 
 ---
 
 ## 8. 의존성
 
 ### 패키지 설치 필요
+
 ```bash
 npm install @radix-ui/react-select
 ```
@@ -526,17 +570,22 @@ npm install @radix-ui/react-select
 ## 9. 테스트 시나리오
 
 1. **설정 페이지 접근**
+
    - Settings 페이지에서 Review Language 드롭다운이 표시되는지 확인
    - 기본값이 English로 선택되어 있는지 확인
 
 2. **언어 변경**
+
    - 한국어를 선택하고 저장
    - 새로고침 후 한국어가 유지되는지 확인
+   - 유효하지 않은 언어 코드 입력 시도 시 에러 처리 확인
 
 3. **PR 리뷰 생성**
+
    - 한국어로 설정된 사용자의 Repository에 PR 생성
-   - 생성된 리뷰가 한국어로 작성되었는지 확인
-   - 섹션 헤더도 한국어로 표시되는지 확인
+   - **섹션 헤더가 정의된 한국어 상수대로 출력되는지 확인** (예: "Walkthrough"가 아닌 "변경 사항 상세")
+   - Mermaid 다이어그램이 깨지지 않고 렌더링되는지 확인
+   - 기술 용어(예: React, API 등)가 불필요하게 번역되지 않았는지 확인
 
 4. **기본값 동작**
    - 새 사용자는 영어로 리뷰가 생성되는지 확인

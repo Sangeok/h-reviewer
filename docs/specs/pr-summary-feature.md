@@ -1,4 +1,4 @@
-# PR Summary Feature Implementation Guide
+# PR Summary Feature Implementation Guide(완료)
 
 ## Overview
 
@@ -259,6 +259,7 @@ export interface SearchOptions {
 **설명:**
 
 - `SearchResult`: Pinecone 검색 결과의 타입 정의
+
   - `metadata.file`: 파일 경로
   - `metadata.code`: 코드 스니펫
   - `metadata.path`: 파일 경로 (file과 동일)
@@ -284,10 +285,7 @@ import type { SearchResult, SearchOptions } from "@/module/ai/types";
 **함수 추가 (retrieveContext 함수 다음, 파일 끝에):**
 
 ```typescript
-export async function searchSimilarCode(
-  query: string,
-  options: SearchOptions
-): Promise<SearchResult[]> {
+export async function searchSimilarCode(query: string, options: SearchOptions): Promise<SearchResult[]> {
   const { topK = 5, namespace } = options;
 
   // Generate embedding for query
@@ -316,6 +314,7 @@ export async function searchSimilarCode(
 **함수 설명:**
 
 - **Parameters:**
+
   - `query`: 검색할 텍스트 (PR diff)
   - `options.topK`: 반환할 최대 결과 수 (기본값: 5)
   - `options.namespace`: Pinecone namespace (형식: `owner/repo`)

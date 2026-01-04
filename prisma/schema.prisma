@@ -27,6 +27,7 @@ model User {
   usage UserUsage?
   subscriptionTier String @default("FREE")
   subscriptionStatus String? // ACTIVE, CANCELLED, EXPIRED
+  preferredLanguage String @default("en")
 
   @@unique([email])
   @@map("user")

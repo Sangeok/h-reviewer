@@ -6,12 +6,13 @@ import type { SearchResult } from "@/module/ai/types";
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
 import { stripFencedCodeBlocks } from "@/module/ai/utils/text-sanitizer";
+import { getLanguageName, isValidLanguageCode, type LanguageCode } from "@/module/settings/constants";
 
 export const generateSummary = inngest.createFunction(
   { id: "generate-summary" },
   { event: "pr.summary.requested" },
   async ({ event, step }) => {
-    const { owner, repo, prNumber, userId } = event.data;
+    const { owner, repo, prNumber, userId, preferredLanguage = "en" } = event.data;
 
     // Fetch PR data
     const { diff, title, description, token } = await step.run("fetch-pr-data", async () => {
@@ -49,38 +50,47 @@ export const generateSummary = inngest.createFunction(
           ? `Related codebase signals (for reasoning only; do not quote):\n- ${relatedFiles.join("\n- ")}`
           : "Related codebase signals: none found in the indexed codebase.";
 
-      const prompt = `You are an expert code reviewer. Produce a concise PR summary for a GitHub comment.
+      // Validate language code and generate language instruction
+      const langCode = isValidLanguageCode(preferredLanguage) ? preferredLanguage : "en";
+      const languageInstruction =
+        langCode !== "en"
+          ? `\n\nIMPORTANT: Write the entire summary in ${getLanguageName(
+              langCode
+            )}. Keep section headers in English, but write all content in ${getLanguageName(langCode)}.`
+          : "";
 
-Rules:
-- Use ONLY information present in the PR title, description, and diff. Do NOT guess.
-- Do NOT include any fenced code blocks (no triple backticks) in your response.
-- Do NOT quote code from the diff or codebase context. Mention file paths only when helpful.
-- If something is unclear, write "Needs verification" rather than speculating.
-- Keep it short and useful for reviewers. Maximum 300 words.
+      const prompt = `You are an expert code reviewer. Produce a concise PR summary for a GitHub comment.${languageInstruction}
 
-Output format (Markdown, EXACT sections, no extra preamble or closing text):
-1. Overview
-<2-3 sentences>
+        Rules:
+        - Use ONLY information present in the PR title, description, and diff. Do NOT guess.
+        - Do NOT include any fenced code blocks (no triple backticks) in your response.
+        - Do NOT quote code from the diff or codebase context. Mention file paths only when helpful.
+        - If something is unclear, write "Needs verification" rather than speculating.
+        - Keep it short and useful for reviewers. Maximum 300 words.
 
-2. Key Changes
-- <file path>: <one short sentence>
-(3-5 bullets max)
+        Output format (Markdown, EXACT sections, no extra preamble or closing text):
+        1. Overview
+        <2-3 sentences>
 
-3. Impact
-<1-3 sentences or bullets describing affected modules/user flows. If negligible, say so explicitly.>
+        2. Key Changes
+        - <file path>: <one short sentence>
+        (3-5 bullets max)
 
-4. Risk Level
-<LOW|MEDIUM|HIGH> - <one sentence justification>
+        3. Impact
+        <1-3 sentences or bullets describing affected modules/user flows. If negligible, say so explicitly.>
 
-PR Title: ${title}
-PR Description: ${description || "No description provided"}
+        4. Risk Level
+        <LOW|MEDIUM|HIGH> - <one sentence justification>
 
-Code Changes (diff):
-\`\`\`diff
-${diff}
-\`\`\`
+        PR Title: ${title}
+        PR Description: ${description || "No description provided"}
 
-${contextSection}`;
+        Code Changes (diff):
+        \`\`\`diff
+        ${diff}
+        \`\`\`
+
+        ${contextSection}`;
 
       const { text } = await generateText({
         model: google("gemini-2.5-flash"),

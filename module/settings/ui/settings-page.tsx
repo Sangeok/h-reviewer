@@ -1,7 +1,7 @@
 "use client";
 
-import ProfileForm from "./profile-form";
-import RepositoryList from "./repository-list";
+import ProfileForm from "./parts/profile-form";
+import RepositoryList from "./parts/repository-list";
 
 export default function SettingsPage() {
   return (

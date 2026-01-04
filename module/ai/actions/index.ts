@@ -1,6 +1,7 @@
 import { inngest } from "@/inngest/client";
 import prisma from "@/lib/db";
 import { getPullRequestDiff } from "@/module/github";
+import { getUserLanguageByUserId } from "@/module/settings";
 
 export async function reviewPullRequest(owner: string, repo: string, prNumber: number) {
   try {
@@ -36,6 +37,8 @@ export async function reviewPullRequest(owner: string, repo: string, prNumber: n
 
     const { title } = await getPullRequestDiff(accessToken, owner, repo, prNumber);
 
+    const preferredLanguage = await getUserLanguageByUserId(repository.user.id);
+
     await inngest.send({
       name: "pr.review.requested",
       data: {
@@ -43,6 +46,7 @@ export async function reviewPullRequest(owner: string, repo: string, prNumber: n
         repo,
         prNumber,
         userId: repository.user.id,
+        preferredLanguage,
       },
     });
 
@@ -115,6 +119,8 @@ export async function generatePRSummary(owner: string, repo: string, prNumber: n
       throw new Error("Github access token not found");
     }
 
+    const preferredLanguage = await getUserLanguageByUserId(repository.user.id);
+
     await inngest.send({
       name: "pr.summary.requested",
       data: {
@@ -122,6 +128,7 @@ export async function generatePRSummary(owner: string, repo: string, prNumber: n
         repo,
         prNumber,
         userId: repository.user.id,
+        preferredLanguage,
       },
     });
 
