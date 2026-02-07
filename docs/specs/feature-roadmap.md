@@ -1,18 +1,128 @@
 # hreviewer 기능 로드맵
 
-> CodeRabbit, Gemini Code Assist 등 주요 AI 코드 리뷰 도구 분석을 기반으로 한 기능 제안
+> CodeRabbit, Gemini Code Assist 등 주요 AI 코드 리뷰 도구 분석을 기반으로 한 기능 로드맵
+>
+> **마지막 업데이트**: 2026-01-08
+
+---
 
 ## 현재 구현된 기능
 
 | 기능 | 상태 | 설명 |
 |------|------|------|
-| GitHub OAuth | ✅ | Better-Auth 기반 인증 |
-| PR 자동 리뷰 | ✅ | PR 열림/동기화 시 AI 리뷰 생성 |
-| RAG 코드 분석 | ✅ | Pinecone + Gemini 기반 |
-| 리뷰 히스토리 | ✅ | 과거 리뷰 목록 조회 |
-| 대시보드 | ✅ | 통계, 기여 그래프 |
-| Repository 연결 | ✅ | GitHub 저장소 연동 |
-| PR 요약 | 🚧 | `/hreviewer summary` 명령어 (설계 완료) |
+| GitHub OAuth | ✅ | Better-Auth 기반 인증 (`repo` scope) |
+| PR 자동 리뷰 | ✅ | PR 열림/동기화 시 AI 리뷰 자동 생성 |
+| RAG 코드 분석 | ✅ | Pinecone + Gemini 2.5 Flash 기반 컨텍스트 검색 |
+| 리뷰 히스토리 | ✅ | 과거 리뷰 목록 조회 (최근 50개) |
+| 대시보드 | ✅ | 통계 카드, GitHub 기여 그래프 |
+| Repository 연결 | ✅ | GitHub 저장소 연동 + 자동 웹훅 생성 |
+| PR 요약 | ✅ | `@hreviewer summary` 명령어로 요약 생성 |
+| 리뷰 언어 설정 | ✅ | 한국어/영어 선택 가능 (설정에서 변경) |
+| 사용자 설정 | ✅ | 프로필, 언어, 연결된 저장소 관리 |
+| 테마 토글 | ✅ | 다크/라이트 모드 지원 |
+| 코드베이스 인덱싱 | ✅ | 저장소 연결 시 자동 벡터 DB 저장 (Inngest) |
+
+---
+
+## Phase 0: 기술 부채 해결
+
+**우선순위**: 🔴 최우선 (다른 기능 개발 전 해결 필요)
+
+### 0.1 대시보드 통계 수정
+
+**문제**: `totalRepos`와 `totalReviews`가 하드코딩됨
+
+**현재 코드** (`module/dashboard/actions/get-dashboard-stats.ts:23-37`):
+```typescript
+// TODO: FETCH TOTAL CONNECTED REPO FROM DB
+const totalRepos = 30; // 하드코딩!
+
+// TODO: COUNT AI REVIEWS FROM DB
+const totalReviews = 44; // 하드코딩!
+```
+
+**해결 방안**:
+- `prisma.repository.count({ where: { userId } })`로 실제 저장소 수 조회
+- `prisma.review.count({ where: { repository: { userId } } })`로 실제 리뷰 수 조회
+
+---
+
+### 0.2 `@hreviewer review` 명령어 핸들러
+
+**문제**: 명령어 파싱은 되지만 실제 처리 로직 없음
+
+**현재 상태**:
+- `command-parser.ts`: `review` 타입 파싱 지원
+- `webhooks/github/route.ts`: `summary`만 처리, `review`는 무시됨
+
+**해결 방안**:
+- 웹훅 핸들러에 `review` 명령어 케이스 추가
+- 기존 `reviewPullRequest()` 액션 재사용
+
+---
+
+### 0.3 웹훅 HMAC 서명 검증
+
+**우선순위**: 🚨 **보안 필수**
+
+**문제**: GitHub 웹훅 서명 검증 없음 - 누구나 가짜 요청 가능
+
+**구현 범위**:
+```typescript
+import crypto from 'crypto';
+
+function verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
+  const hmac = crypto.createHmac('sha256', secret);
+  const digest = 'sha256=' + hmac.update(payload).digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signature));
+}
+
+// 웹훅 핸들러에서
+const signature = headers.get('x-hub-signature-256');
+if (!verifyWebhookSignature(body, signature, process.env.GITHUB_WEBHOOK_SECRET)) {
+  return new Response('Invalid signature', { status: 401 });
+}
+```
+
+**환경 변수 추가**: `GITHUB_WEBHOOK_SECRET`
+
+---
+
+### 0.4 월간 활동 데이터 실제화
+
+**문제**: `get-monthly-activity.ts`에서 리뷰 데이터가 Mock 데이터
+
+**현재 코드**:
+```typescript
+// 샘플 리뷰 데이터 생성 (TODO: 실제 DB 데이터 사용)
+const reviews = months.map((_, i) => ({
+  count: Math.floor(Math.random() * 20) + 5,
+}));
+```
+
+**해결 방안**:
+- Prisma로 월별 리뷰 수 집계 쿼리 작성
+- `groupBy` 또는 raw SQL 사용
+
+---
+
+### 0.5 Rate Limiting
+
+**문제**: 웹훅 엔드포인트에 요청 제한 없음 - DoS 공격에 취약
+
+**구현 방안**:
+- Upstash Redis + `@upstash/ratelimit` 사용
+- 또는 Vercel Edge Config 기반 rate limiting
+
+```typescript
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
+
+const ratelimit = new Ratelimit({
+  redis: Redis.fromEnv(),
+  limiter: Ratelimit.slidingWindow(10, '10 s'), // 10초에 10개 요청
+});
+```
 
 ---
 
@@ -26,12 +136,12 @@
 PR 코멘트에서 다양한 명령어로 AI와 상호작용:
 
 ```
-/hreviewer summary      # PR 요약 생성 (이미 설계됨)
-/hreviewer review       # 전체 리뷰 재생성
-/hreviewer explain      # 특정 코드 설명 요청
-/hreviewer suggest      # 개선 제안 요청
-/hreviewer security     # 보안 취약점 집중 분석
-/hreviewer performance  # 성능 이슈 분석
+@hreviewer summary      # PR 요약 생성 ✅ 구현됨
+@hreviewer review       # 전체 리뷰 재생성 (Phase 0에서 구현)
+@hreviewer explain      # 특정 코드 설명 요청 🆕
+@hreviewer suggest      # 개선 제안 요청
+@hreviewer security     # 보안 취약점 집중 분석
+@hreviewer performance  # 성능 이슈 분석
 ```
 
 **구현 범위**:
@@ -41,7 +151,7 @@ PR 코멘트에서 다양한 명령어로 AI와 상호작용:
 
 ---
 
-### 1.2 원클릭 코드 수정 제안
+### 1.2 원클릭 코드 수정 제안 🆕
 
 **우선순위**: 🔴 높음
 **참고**: CodeRabbit의 "committable fixes"
@@ -49,7 +159,7 @@ PR 코멘트에서 다양한 명령어로 AI와 상호작용:
 AI가 제안한 수정사항을 GitHub에서 바로 커밋할 수 있는 형태로 제공:
 
 ```markdown
-## 🔧 수정 제안
+## 수정 제안
 
 \`\`\`suggestion
 - const data = await fetch(url)
@@ -59,12 +169,32 @@ AI가 제안한 수정사항을 GitHub에서 바로 커밋할 수 있는 형태�
 
 **구현 범위**:
 - GitHub suggestion 형식으로 코멘트 포맷팅
-- 파일별 라인 번호 매핑
+- 파일별 라인 번호 매핑 (diff 파싱 필요)
+- PR Review Comments API 사용 (issue comment 대신)
 - 다중 파일 수정 제안 지원
 
 ---
 
-### 1.3 커스텀 리뷰 스타일 가이드
+### 1.3 리뷰 스타일 프리셋 🆕
+
+**우선순위**: 🟡 중간
+
+사용자가 리뷰 스타일을 선택할 수 있는 기능:
+
+| 프리셋 | 설명 | 용도 |
+|--------|------|------|
+| **Strict** | 상세하고 엄격한 리뷰, 보안 중점 | 프로덕션 코드, 시니어 개발자 |
+| **Mentor** | 교육적, 친절한 설명 포함 | 주니어 개발자, 학습 목적 |
+| **Quick** | 간결, 주요 이슈만 | 빠른 피드백 필요 시 |
+
+**구현 범위**:
+- Repository 모델에 `reviewStyle` 필드 추가
+- 프리셋별 프롬프트 템플릿
+- 설정 UI에서 선택 가능
+
+---
+
+### 1.4 커스텀 리뷰 스타일 가이드
 
 **우선순위**: 🟡 중간
 **참고**: Gemini Code Assist의 `.gemini/styleguide.md`
@@ -82,6 +212,7 @@ AI가 제안한 수정사항을 GitHub에서 바로 커밋할 수 있는 형태�
 ```yaml
 review:
   language: ko          # 리뷰 언어
+  style: strict         # 리뷰 스타일 프리셋
   focus:
     - security
     - performance
@@ -89,6 +220,8 @@ review:
   ignore:
     - "*.test.ts"
     - "*.spec.ts"
+    - "dist/**"
+    - "*.lock"
   severity:
     security: critical
     style: info
@@ -101,7 +234,7 @@ review:
 
 ---
 
-### 1.4 리뷰 심각도 분류
+### 1.5 리뷰 심각도 분류
 
 **우선순위**: 🟡 중간
 
@@ -116,14 +249,60 @@ review:
 
 **구현 범위**:
 - AI 프롬프트에 심각도 분류 지침 추가
-- 리뷰 결과 파싱 및 구조화
+- 리뷰 결과 파싱 및 구조화 (JSON 출력)
 - UI에서 심각도별 필터링
+
+---
+
+### 1.6 PR 파일 필터 (무시 패턴) 🆕
+
+**우선순위**: 🟡 중간
+
+특정 파일 패턴을 리뷰에서 제외:
+
+**기본 제외 패턴**:
+```
+*.lock
+*.min.js
+*.min.css
+dist/**
+build/**
+node_modules/**
+*.generated.*
+```
+
+**구현 범위**:
+- Repository 모델에 `ignorePatterns` 필드 추가 (JSON Array)
+- 리뷰 생성 시 diff에서 매칭 파일 제외
+- 설정 UI에서 패턴 편집 가능
 
 ---
 
 ## Phase 2: 정적 분석 도구 통합
 
-### 2.1 린터/포맷터 통합
+### 2.1 보안 취약점 스캐닝
+
+**우선순위**: 🔴 높음
+
+의존성 및 코드 보안 분석:
+
+```
+스캔 영역:
+├── 의존성 취약점 (npm audit, Snyk)
+├── 하드코딩된 시크릿 (API 키, 비밀번호)
+├── SQL 인젝션 패턴
+├── XSS 취약점
+└── OWASP Top 10
+```
+
+**구현 범위**:
+- 보안 전용 AI 프롬프트
+- `npm audit` 결과 통합
+- 시크릿 탐지 정규식
+
+---
+
+### 2.2 린터/포맷터 통합
 
 **우선순위**: 🟡 중간
 **참고**: CodeRabbit의 40+ 산업 표준 도구 통합
@@ -143,28 +322,6 @@ AI 리뷰와 함께 정적 분석 결과 제공:
 - Inngest 함수에서 린터 실행
 - 결과를 AI 리뷰와 병합
 - 도구별 설정 지원
-
----
-
-### 2.2 보안 취약점 스캐닝
-
-**우선순위**: 🔴 높음
-
-의존성 및 코드 보안 분석:
-
-```
-스캔 영역:
-├── 의존성 취약점 (npm audit, Snyk)
-├── 하드코딩된 시크릿 (API 키, 비밀번호)
-├── SQL 인젝션 패턴
-├── XSS 취약점
-└── OWASP Top 10
-```
-
-**구현 범위**:
-- 보안 전용 AI 프롬프트
-- `npm audit` 결과 통합
-- 시크릿 탐지 정규식
 
 ---
 
@@ -202,7 +359,7 @@ AI 리뷰와 함께 정적 분석 결과 제공:
 PR 코멘트로 테스트 자동 생성 요청:
 
 ```
-/hreviewer generate-tests src/utils/auth.ts
+@hreviewer generate-tests src/utils/auth.ts
 ```
 
 **출력 예시**:
@@ -233,9 +390,9 @@ describe('validateToken', () => {
 코드 변경에 따른 문서 자동 업데이트:
 
 ```
-/hreviewer docs          # 전체 문서 생성
-/hreviewer docs api      # API 문서만 생성
-/hreviewer docs readme   # README 업데이트
+@hreviewer docs          # 전체 문서 생성
+@hreviewer docs api      # API 문서만 생성
+@hreviewer docs readme   # README 업데이트
 ```
 
 **구현 범위**:
@@ -253,7 +410,7 @@ describe('validateToken', () => {
 리뷰에서 발견된 문제를 이슈로 자동 생성:
 
 ```
-/hreviewer create-issue "성능 최적화 필요"
+@hreviewer create-issue "성능 최적화 필요"
 ```
 
 **구현 범위**:
@@ -265,7 +422,50 @@ describe('validateToken', () => {
 
 ## Phase 4: 사용자 경험 개선
 
-### 4.1 리뷰 히스토리 검색 및 필터링
+### 4.1 리뷰 대기열 대시보드 🆕
+
+**우선순위**: 🔴 높음
+
+리뷰 처리 상태를 실시간으로 확인:
+
+```
+📋 리뷰 대기열
+
+| PR | 상태 | 시작 시간 | 소요 시간 |
+|----|------|----------|----------|
+| #123 | 🔄 처리 중 | 2분 전 | - |
+| #122 | ✅ 완료 | 10분 전 | 45초 |
+| #121 | ❌ 실패 | 15분 전 | - | [재시도]
+```
+
+**구현 범위**:
+- Review 모델에 `startedAt`, `completedAt` 필드 추가
+- 대시보드에 실시간 상태 표시 (polling 또는 SSE)
+- 실패한 리뷰 재시도 기능
+
+---
+
+### 4.2 에러 알림 시스템 🆕
+
+**우선순위**: 🟡 중간
+
+리뷰 실패 시 사용자에게 알림:
+
+```
+알림 채널:
+├── 인앱 알림 (대시보드)
+├── 이메일 (SendGrid/Resend)
+└── GitHub PR 코멘트
+```
+
+**구현 범위**:
+- Notification 모델 추가
+- 인앱 알림 UI (헤더에 벨 아이콘)
+- 이메일 발송 (선택적)
+
+---
+
+### 4.3 리뷰 히스토리 검색 및 필터링
 
 **우선순위**: 🟡 중간
 
@@ -277,6 +477,7 @@ describe('validateToken', () => {
 ├── 저장소
 ├── 날짜 범위
 ├── 심각도 (Critical, Warning, Info)
+├── 리뷰 타입 (Full Review, Summary)
 └── 키워드 검색
 ```
 
@@ -287,9 +488,23 @@ describe('validateToken', () => {
 
 ---
 
-### 4.2 실시간 알림
+### 4.4 리뷰 피드백 (👍/👎) 🆕
 
 **우선순위**: 🟡 중간
+
+리뷰 품질 피드백 수집:
+
+**구현 범위**:
+- Review 모델에 `feedback` 필드 추가 (POSITIVE, NEGATIVE, null)
+- GitHub PR 코멘트에 피드백 버튼 추가 (reaction 기반)
+- 대시보드에서 피드백 통계 표시
+- 향후 모델 개선에 활용
+
+---
+
+### 4.5 실시간 알림
+
+**우선순위**: 🟢 낮음
 
 리뷰 완료 시 알림 발송:
 
@@ -308,7 +523,30 @@ describe('validateToken', () => {
 
 ---
 
-### 4.3 팀 대시보드
+### 4.6 히스토리컬 컨텍스트 🆕
+
+**우선순위**: 🟢 낮음
+
+이전 리뷰를 참조하여 연속성 있는 피드백 제공:
+
+```markdown
+## 이전 리뷰 참고
+
+이 파일은 3일 전 리뷰에서 다음 이슈가 발견되었습니다:
+- 🔴 SQL 인젝션 취약점 (수정됨 ✅)
+- ⚠️ 불필요한 의존성 (미해결)
+
+[이전 리뷰 보기](#)
+```
+
+**구현 범위**:
+- 동일 파일의 이전 리뷰 조회
+- AI 프롬프트에 이전 이슈 컨텍스트 추가
+- 이슈 해결 여부 추적
+
+---
+
+### 4.7 팀 대시보드
 
 **우선순위**: 🟢 낮음
 
@@ -326,22 +564,6 @@ describe('validateToken', () => {
 - 팀/조직 모델 추가
 - 팀 초대 시스템
 - 집계 대시보드
-
----
-
-### 4.4 다크 모드 테마 개선
-
-**우선순위**: 🟢 낮음
-
-현재 터미널 스타일 테마 외 추가 테마:
-
-```
-테마 옵션:
-├── Terminal (현재)
-├── GitHub Dark
-├── GitHub Light
-└── Custom (사용자 정의)
-```
 
 ---
 
@@ -368,7 +590,7 @@ describe('validateToken', () => {
 
 ### 5.2 SSO 인증
 
-**우선순위**: 🟢 낮음
+**우선순위**: ⏸️ 보류 (Enterprise 고객 확보 후)
 
 기업 고객을 위한 SSO 지원:
 
@@ -383,7 +605,7 @@ describe('validateToken', () => {
 
 ### 5.3 감사 로그
 
-**우선순위**: 🟢 낮음
+**우선순위**: ⏸️ 보류 (Enterprise 고객 확보 후)
 
 모든 활동에 대한 감사 추적:
 
@@ -400,22 +622,9 @@ describe('validateToken', () => {
 
 ### 5.4 웹훅 보안 강화
 
-**우선순위**: 🔴 높음
+**우선순위**: 🚨 **CRITICAL** (Phase 0으로 이동)
 
-GitHub 웹훅 서명 검증:
-
-```typescript
-// 현재: 서명 검증 없음
-// 개선: HMAC-SHA256 검증 추가
-
-const signature = headers['x-hub-signature-256'];
-const isValid = verifyWebhookSignature(payload, signature, secret);
-```
-
-**구현 범위**:
-- `crypto` 모듈로 서명 검증
-- 환경 변수에 웹훅 시크릿 추가
-- 실패 시 요청 거부
+→ Phase 0.3 참조
 
 ---
 
@@ -423,7 +632,7 @@ const isValid = verifyWebhookSignature(payload, signature, secret);
 
 ### 6.1 CLI 도구
 
-**우선순위**: 🟡 중간
+**우선순위**: 🟢 낮음 (웹 경험 우선)
 **참고**: CodeRabbit CLI, Gemini CLI Extension
 
 로컬에서 코드 리뷰 실행:
@@ -447,7 +656,7 @@ hreviewer review --diff HEAD~1  # 최근 커밋 리뷰
 
 ### 6.2 VS Code 확장
 
-**우선순위**: 🟢 낮음
+**우선순위**: ⏸️ 보류 (사용자 기반 확보 후)
 **참고**: CodeRabbit VS Code Extension
 
 에디터에서 실시간 코드 리뷰:
@@ -495,7 +704,7 @@ hreviewer review --diff HEAD~1  # 최근 커밋 리뷰
 ```
 지원 모델:
 ├── Google Gemini (현재)
-├── OpenAI GPT-4
+├── OpenAI GPT-4o
 ├── Anthropic Claude
 ├── DeepSeek
 └── 로컬 모델 (Ollama)
@@ -536,32 +745,44 @@ hreviewer review --diff HEAD~1  # 최근 커밋 리뷰
 
 ## 구현 우선순위 요약
 
-### 🔴 즉시 구현 (Phase 1-2 핵심)
+### 🚨 Phase 0: 기술 부채 (즉시)
 
-1. **인터랙티브 명령어 시스템** - 사용자 상호작용의 핵심
-2. **원클릭 코드 수정** - 가치 제공의 핵심
-3. **보안 취약점 스캐닝** - 경쟁력 확보
-4. **웹훅 보안 강화** - 보안 필수 사항
-5. **구독 티어 적용** - 수익화
+1. **웹훅 HMAC 서명 검증** - 보안 필수
+2. **대시보드 통계 수정** - 하드코딩 제거
+3. **`@hreviewer review` 핸들러** - 기능 완성
+4. **Rate Limiting** - DoS 방지
+5. **월간 활동 실제 데이터** - Mock 제거
 
-### 🟡 단기 구현 (1-3개월)
+### 🔴 Phase 1: 핵심 기능 (1-2개월)
 
-6. 커스텀 리뷰 스타일 가이드
-7. 리뷰 심각도 분류
-8. 린터/포맷터 통합
-9. 리뷰 히스토리 검색
-10. 실시간 알림
-11. CLI 도구
+6. **원클릭 코드 수정 제안** - 경쟁 핵심
+7. **리뷰 대기열 대시보드** - 사용자 경험
+8. **보안 취약점 스캐닝** - 가치 제공
+9. **구독 티어 적용** - 수익화
 
-### 🟢 중장기 구현 (3-6개월)
+### 🟡 Phase 2: 기능 확장 (2-3개월)
 
-12. 자동 테스트 생성
-13. 자동 문서 생성
-14. 팀 대시보드
-15. 컨텍스트 메모리
-16. 멀티 모델 지원
-17. VS Code 확장
-18. 코드베이스 건강 리포트
+10. 커스텀 리뷰 스타일 가이드
+11. 리뷰 심각도 분류
+12. PR 파일 필터 (무시 패턴)
+13. 리뷰 피드백 (👍/👎)
+14. 에러 알림 시스템
+15. 리뷰 히스토리 검색
+
+### 🟢 Phase 3: 고급 기능 (3-6개월)
+
+16. 자동 테스트 생성
+17. 자동 문서 생성
+18. 컨텍스트 메모리
+19. 멀티 모델 지원
+20. 팀 대시보드
+
+### ⏸️ 보류 (조건 충족 후)
+
+- VS Code 확장 - 사용자 기반 확보 후
+- SSO - Enterprise 고객 확보 후
+- 감사 로그 - Enterprise 고객 확보 후
+- CLI 도구 - 웹 경험 완성 후
 
 ---
 

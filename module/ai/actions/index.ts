@@ -2,6 +2,7 @@ import { inngest } from "@/inngest/client";
 import prisma from "@/lib/db";
 import { getPullRequestDiff } from "@/module/github";
 import { getUserLanguageByUserId } from "@/module/settings";
+import { canCreateReview, incrementReviewCount } from "@/module/payment/lib/subscription";
 
 export async function reviewPullRequest(owner: string, repo: string, prNumber: number) {
   try {
@@ -27,6 +28,12 @@ export async function reviewPullRequest(owner: string, repo: string, prNumber: n
       throw new Error(`Repository ${owner}/${repo} not found`);
     }
 
+    const canReview = await canCreateReview(repository.user.id, repository.id);
+
+    if (!canReview) {
+      throw new Error("You have reached the maximum number of reviews for this repository");
+    }
+
     const githubAccount = repository.user.accounts[0];
 
     if (!githubAccount?.accessToken) {
@@ -49,6 +56,8 @@ export async function reviewPullRequest(owner: string, repo: string, prNumber: n
         preferredLanguage,
       },
     });
+
+    await incrementReviewCount(repository.user.id, repository.id);
 
     return {
       success: true,

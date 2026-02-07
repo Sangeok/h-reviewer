@@ -8,7 +8,10 @@
       "Bash(tree:*)",
       "Bash(npx tsc:*)",
       "Bash(wc:*)",
-      "Bash(npm run lint:*)"
+      "Bash(npm run lint:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.github.com)",
+      "WebSearch"
     ]
   }
 }

@@ -1,9 +1,4 @@
-import {
-  LayoutDashboard,
-  FolderGit2,
-  FileCheck,
-  Settings
-} from "lucide-react";
+import { LayoutDashboard, FolderGit2, FileCheck, Settings, CreditCard } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export interface NavItem {
@@ -29,8 +24,13 @@ export const NAV_ITEMS: NavItem[] = [
     icon: FileCheck,
   },
   {
+    title: "Subscription",
+    url: "/dashboard/subscription",
+    icon: CreditCard,
+  },
+  {
     title: "Settings",
     url: "/dashboard/settings",
     icon: Settings,
-  }
+  },
 ];

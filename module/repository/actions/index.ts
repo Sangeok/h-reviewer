@@ -4,6 +4,11 @@ import prisma from "@/lib/db";
 import { requireAuthSession } from "@/lib/server-utils";
 import { createWebhook, getRepositories } from "@/module/github";
 import { inngest } from "@/inngest/client";
+import {
+  canConnectRepository,
+  decrementRepositoryCount,
+  incrementRepositoryCount,
+} from "@/module/payment/lib/subscription";
 
 export const getUserRepositories = async (page: number = 1, perPage: number = 10) => {
   const session = await requireAuthSession();
@@ -27,6 +32,12 @@ export const getUserRepositories = async (page: number = 1, perPage: number = 10
 export const connectRepository = async (owner: string, repo: string, githubId: number) => {
   const session = await requireAuthSession();
 
+  const canConnect = await canConnectRepository(session.user.id);
+
+  if (!canConnect) {
+    throw new Error("You have reached the maximum number of repositories");
+  }
+
   const webhook = await createWebhook(owner, repo);
 
   if (webhook) {
@@ -40,19 +51,21 @@ export const connectRepository = async (owner: string, repo: string, githubId: n
         userId: session.user.id,
       },
     });
-  }
 
-  try {
-    await inngest.send({
-      name: "repository.connected",
-      data: {
-        owner,
-        repo,
-        userId: session.user.id,
-      },
-    });
-  } catch (error) {
-    console.error("Failed to trigger repository indexing", error);
+    await incrementRepositoryCount(session.user.id);
+
+    try {
+      await inngest.send({
+        name: "repository.connected",
+        data: {
+          owner,
+          repo,
+          userId: session.user.id,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to trigger repository indexing", error);
+    }
   }
 
   return webhook;

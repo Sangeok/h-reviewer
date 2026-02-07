@@ -24,6 +24,7 @@
 |------|------|------|
 | `specs/pr-summary-feature.md` | `IN_PROGRESS` | PR 요약 기능 |
 | `specs/review-language-feature.md` | `TODO` | 언어 설정 기능 명세 |
+| `specs/one-click-fix-feature.md` | `TODO` | 원클릭 코드 수정 제안 |
 
 ---
 
