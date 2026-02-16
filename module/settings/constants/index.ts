@@ -42,6 +42,18 @@ export function isValidLanguageCode(code: string): code is LanguageCode {
 }
 
 /**
+ * Normalize arbitrary language input to a supported language code.
+ */
+export function normalizeLanguageCode(code: string | null | undefined): LanguageCode | null {
+  if (typeof code !== "string") {
+    return null;
+  }
+
+  const normalized = code.trim().toLowerCase();
+  return isValidLanguageCode(normalized) ? normalized : null;
+}
+
+/**
  * Get the language name from a language code
  * @param code - Language code (e.g., "en", "ko")
  * @returns Language name in English (e.g., "English", "Korean")

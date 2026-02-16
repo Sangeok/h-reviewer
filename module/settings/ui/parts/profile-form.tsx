@@ -1,23 +1,25 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { getUserProfile, updateUserProfile } from "@/module/settings";
+import { useState } from "react";
+import { getUserProfile, updateUserProfile } from "@/module/settings/actions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/lib/auth-client";
 import { Loader2 } from "lucide-react";
-import { DEFAULT_LANGUAGE, LanguageCode } from "../../constants";
+import { DEFAULT_LANGUAGE, normalizeLanguageCode, LanguageCode } from "../../constants";
 import LanguageSelector from "./language-selector";
 
 export default function ProfileForm() {
   const queryClient = useQueryClient();
-  const [name, setName] = useState<string>("");
-  const [email, setEmail] = useState<string>("");
   const { refetch: refetchSession } = useSession();
 
-  const [preferredLanguage, setPreferredLanguage] = useState<LanguageCode>(DEFAULT_LANGUAGE);
+  const [formState, setFormState] = useState<{
+    name: string;
+    email: string;
+    preferredLanguage: LanguageCode;
+  } | null>(null);
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ["user-profile"],
@@ -26,22 +28,25 @@ export default function ProfileForm() {
     refetchOnWindowFocus: false,
   });
 
-  useEffect(() => {
-    if (profile) {
-      setName(profile.name || "");
-      setEmail(profile.email || "");
-      setPreferredLanguage((profile.preferredLanguage as LanguageCode) || DEFAULT_LANGUAGE);
-    }
-  }, [profile]);
+  const getInitialFormState = () => ({
+    name: profile?.name || "",
+    email: profile?.email || "",
+    preferredLanguage: normalizeLanguageCode(profile?.preferredLanguage) ?? DEFAULT_LANGUAGE,
+  });
+
+  const currentFormState = formState ?? getInitialFormState();
 
   const updateMutation = useMutation({
-    mutationFn: async (data: { name?: string; email?: string; preferredLanguage?: string }) =>
+    mutationFn: async (data: { name?: string; email?: string; preferredLanguage?: LanguageCode }) =>
       await updateUserProfile(data),
     onSuccess: async (result) => {
       if (result?.success) {
+        setFormState(null);
         queryClient.invalidateQueries({ queryKey: ["user-profile"] });
         await refetchSession();
         alert("Profile updated successfully");
+      } else {
+        alert(result?.message || "Failed to update profile");
       }
     },
     onError: (error) => {
@@ -52,7 +57,11 @@ export default function ProfileForm() {
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    updateMutation.mutate({ name, email, preferredLanguage });
+    updateMutation.mutate({
+      name: currentFormState.name,
+      email: currentFormState.email,
+      preferredLanguage: normalizeLanguageCode(currentFormState.preferredLanguage) ?? DEFAULT_LANGUAGE,
+    });
   };
 
   if (isLoading) {
@@ -93,8 +102,13 @@ export default function ProfileForm() {
               id="name"
               type="text"
               placeholder="Enter your full name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={currentFormState.name}
+              onChange={(e) =>
+                setFormState((prev) => ({
+                  ...(prev ?? getInitialFormState()),
+                  name: e.target.value,
+                }))
+              }
               disabled={updateMutation.isPending}
               className="bg-[#0a0a0a] border-[#1a1a1a] text-[#e0e0e0] placeholder:text-[#606060] hover:border-[#2d3e2d]/50 focus:border-[#2d3e2d] focus:ring-[#2d3e2d]/20 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
             />
@@ -109,8 +123,13 @@ export default function ProfileForm() {
               id="email"
               type="email"
               placeholder="Enter your email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={currentFormState.email}
+              onChange={(e) =>
+                setFormState((prev) => ({
+                  ...(prev ?? getInitialFormState()),
+                  email: e.target.value,
+                }))
+              }
               disabled={updateMutation.isPending}
               className="bg-[#0a0a0a] border-[#1a1a1a] text-[#e0e0e0] placeholder:text-[#606060] hover:border-[#2d3e2d]/50 focus:border-[#2d3e2d] focus:ring-[#2d3e2d]/20 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
             />
@@ -121,8 +140,13 @@ export default function ProfileForm() {
               Review Language
             </label>
             <LanguageSelector
-              value={preferredLanguage}
-              onChange={(value) => setPreferredLanguage(value)}
+              value={currentFormState.preferredLanguage}
+              onChange={(value) =>
+                setFormState((prev) => ({
+                  ...(prev ?? getInitialFormState()),
+                  preferredLanguage: value,
+                }))
+              }
               disabled={updateMutation.isPending}
             />
           </div>
