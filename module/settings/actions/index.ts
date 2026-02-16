@@ -2,8 +2,8 @@
 
 import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
-import { revalidatePath } from "next/cache";
 import { deleteWebhook } from "@/module/github";
+import { DEFAULT_LANGUAGE, normalizeLanguageCode, type LanguageCode } from "../constants";
 
 export async function getUserProfile() {
   try {
@@ -23,7 +23,14 @@ export async function getUserProfile() {
       },
     });
 
-    return user;
+    if (!user) {
+      return null;
+    }
+
+    return {
+      ...user,
+      preferredLanguage: normalizeLanguageCode(user.preferredLanguage) ?? DEFAULT_LANGUAGE,
+    };
   } catch (error) {
     console.error("Error fetching user profile:", error);
     return null;
@@ -33,16 +40,41 @@ export async function getUserProfile() {
 export async function updateUserProfile(data: { name?: string; email?: string; preferredLanguage?: string }) {
   try {
     const session = await requireAuthSession();
+    const updateData: { name?: string; email?: string; preferredLanguage?: LanguageCode } = {};
+
+    if (typeof data.name === "string") {
+      updateData.name = data.name.trim();
+    }
+
+    if (typeof data.email === "string") {
+      updateData.email = data.email.trim();
+    }
+
+    if (typeof data.preferredLanguage === "string") {
+      const normalizedLanguage = normalizeLanguageCode(data.preferredLanguage);
+
+      if (!normalizedLanguage) {
+        return {
+          success: false,
+          message: "Invalid language code",
+        };
+      }
+
+      updateData.preferredLanguage = normalizedLanguage;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return {
+        success: false,
+        message: "No profile fields were provided",
+      };
+    }
 
     const updatedUser = await prisma.user.update({
       where: {
         id: session.user.id,
       },
-      data: {
-        name: data.name,
-        email: data.email,
-        preferredLanguage: data.preferredLanguage,
-      },
+      data: updateData,
       select: {
         id: true,
         name: true,
@@ -57,7 +89,10 @@ export async function updateUserProfile(data: { name?: string; email?: string; p
     };
   } catch (error) {
     console.error("Error updating user profile:", error);
-    return null;
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "Failed to update profile",
+    };
   }
 }
 
@@ -171,9 +206,14 @@ export async function getUserLanguageByUserId(userId: string): Promise<string> {
       },
     });
 
-    return user?.preferredLanguage ?? "en";
+    const normalizedLanguage = normalizeLanguageCode(user?.preferredLanguage);
+    if (normalizedLanguage) {
+      return normalizedLanguage;
+    }
+
+    return DEFAULT_LANGUAGE;
   } catch (error) {
     console.error("Error fetching user language by user id:", error);
-    return "en";
+    return DEFAULT_LANGUAGE;
   }
 }
