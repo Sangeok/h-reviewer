@@ -6,5 +6,3 @@ export * from "./actions";
 
 // ===== UI Components =====
 export { default as SettingsPage } from "./ui/settings-page";
-export { default as ProfileForm } from "./ui/parts/profile-form";
-export { default as SettingsRepositoryList } from "./ui/parts/repository-list";

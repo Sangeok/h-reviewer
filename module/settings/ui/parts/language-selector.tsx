@@ -1,7 +1,7 @@
 "use client";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, type LanguageCode } from "../../constants";
+import { DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, isValidLanguageCode, type LanguageCode } from "../../constants";
 
 interface LanguageSelectorProps {
   value: LanguageCode;
@@ -14,7 +14,15 @@ export default function LanguageSelector({ value, onChange, disabled }: Language
   const selectedLanguage = SUPPORTED_LANGUAGES.find((lang) => lang.code === value) ?? fallbackLanguage;
 
   return (
-    <Select value={selectedLanguage.code} onValueChange={(val) => onChange(val as LanguageCode)} disabled={disabled}>
+    <Select
+      value={selectedLanguage.code}
+      onValueChange={(val) => {
+        if (isValidLanguageCode(val)) {
+          onChange(val);
+        }
+      }}
+      disabled={disabled}
+    >
       <SelectTrigger>
         <SelectValue placeholder="Select language">
           {selectedLanguage ? `${selectedLanguage.nativeName} (${selectedLanguage.name})` : undefined}

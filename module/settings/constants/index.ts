@@ -1,5 +1,7 @@
+export type LanguageCode = "en" | "ko";
+
 export interface SupportedLanguage {
-  code: string;
+  code: LanguageCode;
   name: string;
   nativeName: string;
 }
@@ -9,9 +11,7 @@ export const SUPPORTED_LANGUAGES: SupportedLanguage[] = [
   { code: "ko", name: "Korean", nativeName: "한국어" },
 ];
 
-export const DEFAULT_LANGUAGE = "en";
-
-export type LanguageCode = "en" | "ko";
+export const DEFAULT_LANGUAGE: LanguageCode = "en";
 
 export const SECTION_HEADERS = {
   en: {
