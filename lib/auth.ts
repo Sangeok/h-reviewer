@@ -6,6 +6,12 @@ import { polar, checkout, portal, usage, webhooks } from "@polar-sh/better-auth"
 import { polarClient } from "@/module/payment/config/polar";
 import { SubscriptionTier, updatePolarCustomerId, updateUserTier } from "@/module/payment/lib/subscription";
 
+const trustedOrigins = [
+  process.env.BETTER_AUTH_URL,
+  process.env.NEXT_PUBLIC_APP_BASE_URL,
+  "http://localhost:3000",
+].filter((value): value is string => Boolean(value));
+
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
     provider: "postgresql", // or "mysql", "postgresql", ...etc
@@ -17,7 +23,7 @@ export const auth = betterAuth({
       scope: ["repo"],
     },
   },
-  trustedOrigins: ["http://localhost:3000", "https://catalytical-nonintelligently-aline.ngrok-free.dev"],
+  trustedOrigins,
   plugins: [
     polar({
       client: polarClient,

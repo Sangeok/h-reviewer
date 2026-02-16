@@ -1,4 +1,5 @@
 import { generatePRSummary, parseCommand, reviewPullRequest } from "@/module/ai";
+import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 type RepoFullNameParts = {
@@ -36,6 +37,17 @@ function parsePrNumber(value: unknown): number | null {
   return null;
 }
 
+function verifyGithubSignature(rawBody: string, signature: string | null, secret: string): boolean {
+  if (!signature || !signature.startsWith("sha256=")) return false;
+
+  const expected = `sha256=${crypto.createHmac("sha256", secret).update(rawBody).digest("hex")}`;
+  const received = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+
+  if (received.length !== expectedBuffer.length) return false;
+  return crypto.timingSafeEqual(received, expectedBuffer);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const event = request.headers.get("x-github-event");
@@ -44,7 +56,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing x-github-event header" }, { status: 400 });
     }
 
-    const body: unknown = await request.json();
+    const rawBody = await request.text();
+    const signature = request.headers.get("x-hub-signature-256");
+    const secret = process.env.GITHUB_WEBHOOK_SECRET;
+
+    if (!secret || !verifyGithubSignature(rawBody, signature, secret)) {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    }
+
+    const body: unknown = JSON.parse(rawBody);
 
     if (event === "ping") {
       return NextResponse.json({ message: "Pong" }, { status: 200 });
@@ -65,9 +85,14 @@ export async function POST(request: NextRequest) {
       }
 
       if (action === "opened" || action === "synchronize") {
-        reviewPullRequest(repoInfo.owner, repoInfo.repoName, prNumber)
-          .then(() => console.log(`Review completed for ${repoInfo.fullName} #${prNumber}`))
-          .catch((error) => console.error(`Review failed for ${repoInfo.fullName} #${prNumber}:`, error));
+        const reviewResult = await reviewPullRequest(repoInfo.owner, repoInfo.repoName, prNumber);
+
+        if (!reviewResult.success) {
+          console.error(`Review queueing failed for ${repoInfo.fullName} #${prNumber}: ${reviewResult.message}`);
+          return NextResponse.json({ error: reviewResult.message }, { status: 500 });
+        }
+
+        console.log(`Review queued for ${repoInfo.fullName} #${prNumber}`);
       }
 
       return NextResponse.json({ message: "Event Processed" }, { status: 200 });
@@ -102,9 +127,14 @@ export async function POST(request: NextRequest) {
       const command = parseCommand(commentBody);
 
       if (command?.type === "summary") {
-        generatePRSummary(repoInfo.owner, repoInfo.repoName, prNumber)
-          .then(() => console.log(`Summary generated for ${repoInfo.fullName} #${prNumber}`))
-          .catch((error) => console.error(`Summary failed for ${repoInfo.fullName} #${prNumber}:`, error));
+        const summaryResult = await generatePRSummary(repoInfo.owner, repoInfo.repoName, prNumber);
+
+        if (!summaryResult.success) {
+          console.error(`Summary queueing failed for ${repoInfo.fullName} #${prNumber}: ${summaryResult.message}`);
+          return NextResponse.json({ error: summaryResult.message }, { status: 500 });
+        }
+
+        console.log(`Summary queued for ${repoInfo.fullName} #${prNumber}`);
       }
 
       return NextResponse.json({ message: "Event Processed" }, { status: 200 });
