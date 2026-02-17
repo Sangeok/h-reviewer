@@ -1,6 +1,6 @@
 # Documentation Index
 
-프로젝트 문서 인덱스. Claude Code는 작업 전 관련 문서를 확인할 것.
+프로젝트 문서 인덱스. Claude Code, Codex는 작업 전 관련 문서를 확인할 것.
 
 ---
 
@@ -14,6 +14,7 @@
 | `conventions/file-naming.md` | 파일 네이밍 규칙 |
 | `conventions/folder-structure.md` | 컴포넌트 폴더 구조 |
 | `conventions/writing-docs.md` | 문서 작성 가이드 |
+| `conventions/type-guard-over-assertion.md` | 타입 가드 사용 규칙 |
 ---
 
 ## 📝 Specs (to implement)

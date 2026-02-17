@@ -3,6 +3,7 @@
 import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
 import { deleteWebhook } from "@/module/github";
+import { decrementRepositoryCount } from "@/module/payment/lib/subscription";
 import { DEFAULT_LANGUAGE, normalizeLanguageCode, type LanguageCode } from "../constants";
 
 export async function getUserProfile() {
@@ -119,7 +120,7 @@ export async function getConnectedRepositories() {
     return repositories;
   } catch (error) {
     console.error("Error fetching connected repositories:", error);
-    return [];
+    throw error instanceof Error ? error : new Error("Failed to fetch connected repositories");
   }
 }
 
@@ -147,16 +148,18 @@ export async function deleteRepository(repositoryId: string) {
       },
     });
 
+    await decrementRepositoryCount(session.user.id);
+
     return {
       success: true,
       message: "Repository deleted successfully",
     };
   } catch (error) {
     console.error("Error deleting repository:", error);
-    return {
-      success: false,
-      message: "Failed to delete repository",
-    };
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Failed to delete repository");
   }
 }
 
@@ -182,16 +185,30 @@ export async function disconnectAllRepositories() {
       },
     });
 
+    await prisma.userUsage.upsert({
+      where: {
+        userId: session.user.id,
+      },
+      create: {
+        userId: session.user.id,
+        repositoryCount: 0,
+        reviewCounts: {},
+      },
+      update: {
+        repositoryCount: 0,
+      },
+    });
+
     return {
       success: true,
       message: "All repositories disconnected successfully",
     };
   } catch (error) {
     console.error("Error disconnecting all repositories:", error);
-    return {
-      success: false,
-      message: "Failed to disconnect all repositories",
-    };
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Failed to disconnect all repositories");
   }
 }
 

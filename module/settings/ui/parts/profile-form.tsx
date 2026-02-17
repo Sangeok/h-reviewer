@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/lib/auth-client";
 import { Loader2 } from "lucide-react";
-import { DEFAULT_LANGUAGE, normalizeLanguageCode, LanguageCode } from "../../constants";
+import { toast } from "sonner";
+import { DEFAULT_LANGUAGE, LanguageCode } from "../../constants";
 import LanguageSelector from "./language-selector";
 
 export default function ProfileForm() {
@@ -23,7 +24,7 @@ export default function ProfileForm() {
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ["user-profile"],
-    queryFn: async () => await getUserProfile(),
+    queryFn: getUserProfile,
     staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: false,
   });
@@ -31,26 +32,25 @@ export default function ProfileForm() {
   const getInitialFormState = () => ({
     name: profile?.name || "",
     email: profile?.email || "",
-    preferredLanguage: normalizeLanguageCode(profile?.preferredLanguage) ?? DEFAULT_LANGUAGE,
+    preferredLanguage: profile?.preferredLanguage ?? DEFAULT_LANGUAGE,
   });
 
   const currentFormState = formState ?? getInitialFormState();
 
   const updateMutation = useMutation({
-    mutationFn: async (data: { name?: string; email?: string; preferredLanguage?: LanguageCode }) =>
-      await updateUserProfile(data),
+    mutationFn: updateUserProfile,
     onSuccess: async (result) => {
       if (result?.success) {
         setFormState(null);
         queryClient.invalidateQueries({ queryKey: ["user-profile"] });
         await refetchSession();
-        alert("Profile updated successfully");
+        toast.success("Profile updated successfully");
       } else {
-        alert(result?.message || "Failed to update profile");
+        toast.error(result?.message || "Failed to update profile");
       }
     },
     onError: (error) => {
-      alert("Failed to update profile");
+      toast.error("Failed to update profile");
       console.error(error);
     },
   });
@@ -60,21 +60,21 @@ export default function ProfileForm() {
     updateMutation.mutate({
       name: currentFormState.name,
       email: currentFormState.email,
-      preferredLanguage: normalizeLanguageCode(currentFormState.preferredLanguage) ?? DEFAULT_LANGUAGE,
+      preferredLanguage: currentFormState.preferredLanguage,
     });
   };
 
   if (isLoading) {
     return (
-      <Card className="relative overflow-hidden bg-gradient-to-b from-[#0a0a0a] to-black border-[#1a1a1a]">
+      <Card className="relative overflow-hidden border-border bg-gradient-to-b from-card to-background">
         <CardHeader className="relative z-10">
-          <CardTitle className="text-lg font-medium text-[#e0e0e0]">Profile Settings</CardTitle>
-          <CardDescription className="text-[#707070] font-light">Update your profile information</CardDescription>
+          <CardTitle className="text-lg font-medium text-foreground">Profile Settings</CardTitle>
+          <CardDescription className="font-light text-muted-foreground">Update your profile information</CardDescription>
         </CardHeader>
         <CardContent className="relative z-10">
           <div className="space-y-4">
-            <div className="h-10 bg-[#1a1a1a] rounded-lg animate-pulse" />
-            <div className="h-10 bg-[#1a1a1a] rounded-lg animate-pulse" />
+            <div className="h-10 animate-pulse rounded-lg bg-secondary" />
+            <div className="h-10 animate-pulse rounded-lg bg-secondary" />
           </div>
         </CardContent>
       </Card>
@@ -82,20 +82,20 @@ export default function ProfileForm() {
   }
 
   return (
-    <Card className="relative overflow-hidden bg-gradient-to-b from-[#0a0a0a] to-black border-[#1a1a1a]">
+    <Card className="relative overflow-hidden border-border bg-gradient-to-b from-card to-background">
       {/* Subtle background gradient */}
-      <div className="absolute inset-0 bg-gradient-to-br from-[#2d3e2d]/3 to-transparent pointer-events-none" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-ring/3 to-transparent" />
 
       <CardHeader className="relative z-10">
-        <CardTitle className="text-lg font-medium text-[#e0e0e0]">Profile Settings</CardTitle>
-        <CardDescription className="text-[#707070] font-light">Update your profile information</CardDescription>
+        <CardTitle className="text-lg font-medium text-foreground">Profile Settings</CardTitle>
+        <CardDescription className="font-light text-muted-foreground">Update your profile information</CardDescription>
       </CardHeader>
 
       <CardContent className="relative z-10">
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
           {/* Full Name Field */}
           <div className="flex flex-col gap-2">
-            <label htmlFor="name" className="text-sm font-medium text-[#d0d0d0]">
+            <label htmlFor="name" className="text-sm font-medium text-secondary-foreground">
               Full Name
             </label>
             <Input
@@ -110,13 +110,13 @@ export default function ProfileForm() {
                 }))
               }
               disabled={updateMutation.isPending}
-              className="bg-[#0a0a0a] border-[#1a1a1a] text-[#e0e0e0] placeholder:text-[#606060] hover:border-[#2d3e2d]/50 focus:border-[#2d3e2d] focus:ring-[#2d3e2d]/20 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="border-border bg-card text-foreground placeholder:text-chart-4 transition-all duration-300 hover:border-ring/50 focus:border-ring focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
 
           {/* Email Field */}
           <div className="flex flex-col gap-2">
-            <label htmlFor="email" className="text-sm font-medium text-[#d0d0d0]">
+            <label htmlFor="email" className="text-sm font-medium text-secondary-foreground">
               Email
             </label>
             <Input
@@ -131,12 +131,12 @@ export default function ProfileForm() {
                 }))
               }
               disabled={updateMutation.isPending}
-              className="bg-[#0a0a0a] border-[#1a1a1a] text-[#e0e0e0] placeholder:text-[#606060] hover:border-[#2d3e2d]/50 focus:border-[#2d3e2d] focus:ring-[#2d3e2d]/20 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="border-border bg-card text-foreground placeholder:text-chart-4 transition-all duration-300 hover:border-ring/50 focus:border-ring focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
 
           <div className="flex flex-col gap-2">
-            <label htmlFor="language" className="text-sm font-medium text-[#d0d0d0]">
+            <label htmlFor="language" className="text-sm font-medium text-secondary-foreground">
               Review Language
             </label>
             <LanguageSelector
@@ -155,7 +155,7 @@ export default function ProfileForm() {
           <Button
             type="submit"
             disabled={updateMutation.isPending}
-            className="bg-gradient-to-r from-[#4a6a4a] to-[#3d523d] hover:from-[#5a7a5a] hover:to-[#4d624d] text-black font-medium shadow-lg shadow-[#2d3e2d]/10 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-gradient-to-r from-primary to-chart-2 font-medium text-primary-foreground shadow-lg shadow-ring/10 transition-all duration-300 hover:from-primary-hover hover:to-primary/80 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {updateMutation.isPending ? (
               <>
