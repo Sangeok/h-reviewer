@@ -3,6 +3,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "./db";
 
 import { polar, checkout, portal, usage, webhooks } from "@polar-sh/better-auth";
+import { PRO_UPGRADE_ENABLED } from "@/module/payment/config/flags";
 import { polarClient } from "@/module/payment/config/polar";
 import { SubscriptionTier, updatePolarCustomerId, updateUserTier } from "@/module/payment/lib/subscription";
 
@@ -11,6 +12,10 @@ const trustedOrigins = [
   process.env.NEXT_PUBLIC_APP_BASE_URL,
   "http://localhost:3000",
 ].filter((value): value is string => Boolean(value));
+
+function toSubscriptionTier(value: string | null | undefined): SubscriptionTier {
+  return value === "PRO" ? "PRO" : "FREE";
+}
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -29,19 +34,23 @@ export const auth = betterAuth({
       client: polarClient,
       createCustomerOnSignUp: true,
       use: [
-        checkout({
-          products: [
-            {
-              productId: "26c98044-07ef-43bc-97a6-6485e7794b3f",
-              slug: "pro", // Custom slug for easy reference in Checkout URL, e.g. /checkout/hreviewer-new-dev
-            },
-          ],
-          successUrl: process.env.POLAR_SUCCESS_URL || "dashboard/subscription?success=true",
-          authenticatedUsersOnly: true,
-        }),
         portal({
           returnUrl: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000/dashboard",
         }),
+        ...(PRO_UPGRADE_ENABLED
+          ? [
+              checkout({
+                products: [
+                  {
+                    productId: "26c98044-07ef-43bc-97a6-6485e7794b3f",
+                    slug: "pro", // Custom slug for easy reference in Checkout URL, e.g. /checkout/hreviewer-new-dev
+                  },
+                ],
+                successUrl: process.env.POLAR_SUCCESS_URL || "dashboard/subscription?success=true",
+                authenticatedUsersOnly: true,
+              }),
+            ]
+          : []),
         usage(),
         webhooks({
           secret: process.env.POLAR_WEBHOOK_SECRET!,
@@ -68,7 +77,7 @@ export const auth = betterAuth({
             });
 
             if (user) {
-              await updateUserTier(user.id, user.subscriptionTier as any, "CANCELLED");
+              await updateUserTier(user.id, toSubscriptionTier(user.subscriptionTier), "CANCELLED");
             }
           },
           onSubscriptionRevoked: async (payload) => {

@@ -88,6 +88,11 @@ export async function POST(request: NextRequest) {
         const reviewResult = await reviewPullRequest(repoInfo.owner, repoInfo.repoName, prNumber);
 
         if (!reviewResult.success) {
+          if (reviewResult.reason === "plan_restricted") {
+            console.info(`Review skipped for ${repoInfo.fullName} #${prNumber}: ${reviewResult.message}`);
+            return NextResponse.json({ message: reviewResult.message }, { status: 200 });
+          }
+
           console.error(`Review queueing failed for ${repoInfo.fullName} #${prNumber}: ${reviewResult.message}`);
           return NextResponse.json({ error: reviewResult.message }, { status: 500 });
         }

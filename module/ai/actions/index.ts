@@ -4,7 +4,22 @@ import { getPullRequestDiff } from "@/module/github";
 import { getUserLanguageByUserId } from "@/module/settings";
 import { canCreateReview, incrementReviewCount } from "@/module/payment/lib/subscription";
 
-export async function reviewPullRequest(owner: string, repo: string, prNumber: number) {
+type ReviewPullRequestResult =
+  | {
+      success: true;
+      message: "Review Queued";
+    }
+  | {
+      success: false;
+      message: string;
+      reason: "plan_restricted" | "internal_error";
+    };
+
+export async function reviewPullRequest(
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<ReviewPullRequestResult> {
   try {
     const repository = await prisma.repository.findFirst({
       where: {
@@ -31,7 +46,11 @@ export async function reviewPullRequest(owner: string, repo: string, prNumber: n
     const canReview = await canCreateReview(repository.user.id, repository.id);
 
     if (!canReview) {
-      throw new Error("You have reached the maximum number of reviews for this repository");
+      return {
+        success: false,
+        message: "Review creation is available on the Pro plan only",
+        reason: "plan_restricted",
+      };
     }
 
     const githubAccount = repository.user.accounts[0];
@@ -42,7 +61,7 @@ export async function reviewPullRequest(owner: string, repo: string, prNumber: n
 
     const accessToken = githubAccount.accessToken;
 
-    const { title } = await getPullRequestDiff(accessToken, owner, repo, prNumber);
+    await getPullRequestDiff(accessToken, owner, repo, prNumber);
 
     const preferredLanguage = await getUserLanguageByUserId(repository.user.id);
 
@@ -84,17 +103,15 @@ export async function reviewPullRequest(owner: string, repo: string, prNumber: n
           },
         });
       }
-      return {
-        success: false,
-        message: "Error Reviewing Pull Request",
-      };
-    } catch (error) {
-      console.error("Error reviewing pull request:", error);
-      return {
-        success: false,
-        message: "Error Reviewing Pull Request",
-      };
+    } catch (loggingError) {
+      console.error("Error writing failed review record:", loggingError);
     }
+
+    return {
+      success: false,
+      message: "Error Reviewing Pull Request",
+      reason: "internal_error",
+    };
   }
 }
 
