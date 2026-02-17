@@ -19,11 +19,25 @@ import {
 import { AlertTriangle, ExternalLink, FolderOpen, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+function getErrorMessage(error: unknown, fallbackMessage: string) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallbackMessage;
+}
+
 export default function RepositoryList() {
   const queryClient = useQueryClient();
   const [disconnectAllOpen, setDisconnectAllOpen] = useState(false);
 
-  const { data: repositories, isLoading } = useQuery({
+  const {
+    data: repositories = [],
+    isPending,
+    isFetching,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ["connected-repositories"],
     queryFn: getConnectedRepositories,
     staleTime: 1000 * 60 * 2,
@@ -32,41 +46,37 @@ export default function RepositoryList() {
 
   const disconnectMutation = useMutation({
     mutationFn: deleteRepository,
-    onSuccess: async (result) => {
-      if (result?.success) {
-        await queryClient.invalidateQueries({ queryKey: ["connected-repositories"] });
-        await queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
-        setDisconnectAllOpen(false);
-        toast.success("Repository disconnected successfully");
-      } else {
-        toast.error(result?.message || "Failed to disconnect repository");
-      }
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["connected-repositories"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] }),
+      ]);
+      setDisconnectAllOpen(false);
+      toast.success("Repository disconnected successfully");
     },
     onError: (error) => {
       console.error(error);
-      toast.error("Failed to disconnect repository");
+      toast.error(getErrorMessage(error, "Failed to disconnect repository"));
     },
   });
 
   const disconnectAllMutation = useMutation({
     mutationFn: disconnectAllRepositories,
-    onSuccess: async (result) => {
-      if (result?.success) {
-        await queryClient.invalidateQueries({ queryKey: ["connected-repositories"] });
-        await queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
-        setDisconnectAllOpen(false);
-        toast.success("All repositories disconnected successfully");
-      } else {
-        toast.error(result?.message || "Failed to disconnect all repositories");
-      }
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["connected-repositories"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] }),
+      ]);
+      setDisconnectAllOpen(false);
+      toast.success("All repositories disconnected successfully");
     },
     onError: (error) => {
       console.error(error);
-      toast.error("Failed to disconnect all repositories");
+      toast.error(getErrorMessage(error, "Failed to disconnect all repositories"));
     },
   });
 
-  if (isLoading) {
+  if (isPending) {
     return (
       <Card className="relative overflow-hidden border-border bg-gradient-to-b from-card to-background">
         <CardHeader className="relative z-10">
@@ -85,6 +95,31 @@ export default function RepositoryList() {
     );
   }
 
+  if (isError) {
+    return (
+      <Card className="relative overflow-hidden border-border bg-gradient-to-b from-card to-background">
+        <CardHeader className="relative z-10">
+          <CardTitle className="text-lg font-medium text-foreground">Connected Repository</CardTitle>
+          <CardDescription className="font-light text-muted-foreground">
+            Failed to load connected GitHub repositories
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="relative z-10 space-y-3">
+          <p className="text-sm font-light text-muted-foreground">
+            {getErrorMessage(error, "Failed to load connected repositories")}
+          </p>
+          <Button
+            variant="outline"
+            className="border-ring/30 bg-secondary text-secondary-foreground transition-all duration-300 hover:bg-accent hover:text-foreground"
+            onClick={() => refetch()}
+          >
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="relative overflow-hidden border-border bg-gradient-to-b from-card to-background">
       {/* Subtle background gradient */}
@@ -98,49 +133,57 @@ export default function RepositoryList() {
               Manage your connected GitHub repositories
             </CardDescription>
           </div>
-          {repositories && repositories.length > 0 && (
-            <AlertDialog open={disconnectAllOpen} onOpenChange={setDisconnectAllOpen}>
-              <AlertDialogTrigger asChild>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="border border-destructive-bg/50 bg-gradient-to-r from-destructive-bg to-destructive-bg/80 text-destructive shadow-lg shadow-destructive/10 transition-all duration-300 hover:from-destructive-bg hover:to-destructive-bg/70"
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Disconnect All
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent className="border-border bg-gradient-to-b from-card to-background">
-                <AlertDialogHeader>
-                  <AlertDialogTitle className="flex items-center gap-2 text-foreground">
-                    <AlertTriangle className="h-5 w-5 text-destructive" />
-                    <span>Disconnect All Repositories?</span>
-                  </AlertDialogTitle>
-                  <AlertDialogDescription className="font-light text-muted-foreground">
-                    This action will disconnect all {repositories?.length} connected repositories and delete all
-                    associated AI reviews. This action cannot be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel className="border-ring/30 bg-secondary text-secondary-foreground transition-all duration-300 hover:bg-accent hover:text-foreground">
-                    Cancel
-                  </AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => disconnectAllMutation.mutate()}
-                    className="border border-destructive-bg/50 bg-gradient-to-r from-destructive-bg to-destructive-bg/80 text-destructive hover:from-destructive-bg hover:to-destructive-bg/70"
-                    disabled={disconnectAllMutation.isPending}
+          <div className="flex items-center gap-3">
+            {isFetching && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>Updating...</span>
+              </div>
+            )}
+            {repositories.length > 0 && (
+              <AlertDialog open={disconnectAllOpen} onOpenChange={setDisconnectAllOpen}>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="border border-destructive-bg/50 bg-gradient-to-r from-destructive-bg to-destructive-bg/80 text-destructive shadow-lg shadow-destructive/10 transition-all duration-300 hover:from-destructive-bg hover:to-destructive-bg/70"
                   >
-                    {disconnectAllMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Disconnect"}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Disconnect All
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="border-border bg-gradient-to-b from-card to-background">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="flex items-center gap-2 text-foreground">
+                      <AlertTriangle className="h-5 w-5 text-destructive" />
+                      <span>Disconnect All Repositories?</span>
+                    </AlertDialogTitle>
+                    <AlertDialogDescription className="font-light text-muted-foreground">
+                      This action will disconnect all {repositories.length} connected repositories and delete all
+                      associated AI reviews. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="border-ring/30 bg-secondary text-secondary-foreground transition-all duration-300 hover:bg-accent hover:text-foreground">
+                      Cancel
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => disconnectAllMutation.mutate()}
+                      className="border border-destructive-bg/50 bg-gradient-to-r from-destructive-bg to-destructive-bg/80 text-destructive hover:from-destructive-bg hover:to-destructive-bg/70"
+                      disabled={disconnectAllMutation.isPending}
+                    >
+                      {disconnectAllMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Disconnect"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </div>
         </div>
       </CardHeader>
 
       <CardContent className="relative z-10">
-        {!repositories || repositories.length === 0 ? (
+        {repositories.length === 0 ? (
           <div className="py-12 text-center">
             <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-lg border border-ring/30 bg-secondary">
               <FolderOpen className="h-8 w-8 text-primary" />

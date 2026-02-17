@@ -7,6 +7,14 @@
 - `lib/`: cross-cutting utilities (auth/session helpers, DB client, shared helpers).
 - `prisma/`: schema and migrations. `inngest/`: background jobs. `public/`: static assets. `docs/`: specs and conventions.
 
+## Agent Mandatory Reference Rules
+- Before starting any implementation, refactor, or review task, always check `docs/conventions/` first.
+- Treat every document in `docs/conventions/` as required coding policy, not optional guidance.
+- Apply convention updates immediately when new files are added under `docs/conventions/`.
+- If a task conflicts with a convention, call out the conflict explicitly and ask for direction before proceeding.
+- When a spec under `docs/specs/` reaches `Implemented` status, move it to `docs/archive/` in the same task.
+- Use `npm run docs:archive-implemented-specs` to archive implemented specs automatically.
+
 ## Build, Test, and Development Commands
 - `npm run dev`: start the Next.js dev server.
 - `npm run inngest-dev`: run the Inngest local worker/UI.

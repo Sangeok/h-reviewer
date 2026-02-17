@@ -5,12 +5,8 @@ import { retrieveContext } from "@/module/ai/lib/rag";
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
 import { sanitizeMermaidSequenceDiagrams } from "@/module/github/lib/github-markdown";
-import {
-  SECTION_HEADERS,
-  type LanguageCode,
-  getLanguageName,
-  isValidLanguageCode,
-} from "@/module/settings/constants";
+import { type LanguageCode, getLanguageName, isValidLanguageCode } from "@/module/settings/constants";
+import { SECTION_HEADERS } from "@/shared/constants";
 
 export const generateReview = inngest.createFunction(
   { id: "generate-review" },
@@ -50,7 +46,7 @@ export const generateReview = inngest.createFunction(
       const languageInstruction =
         langCode !== "en"
           ? `\n\nIMPORTANT: Write the entire review in ${getLanguageName(
-              langCode
+              langCode,
             )}. All section headers must be exactly as specified below. However, keep technical terms (e.g., library names, standard coding terms like "Pull Request", "Commit") in English where appropriate for clarity.`
           : "";
 
@@ -115,5 +111,5 @@ export const generateReview = inngest.createFunction(
     });
 
     return { success: true };
-  }
+  },
 );

@@ -120,7 +120,7 @@ export async function getConnectedRepositories() {
     return repositories;
   } catch (error) {
     console.error("Error fetching connected repositories:", error);
-    return [];
+    throw error instanceof Error ? error : new Error("Failed to fetch connected repositories");
   }
 }
 
@@ -156,10 +156,10 @@ export async function deleteRepository(repositoryId: string) {
     };
   } catch (error) {
     console.error("Error deleting repository:", error);
-    return {
-      success: false,
-      message: "Failed to delete repository",
-    };
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Failed to delete repository");
   }
 }
 
@@ -205,10 +205,10 @@ export async function disconnectAllRepositories() {
     };
   } catch (error) {
     console.error("Error disconnecting all repositories:", error);
-    return {
-      success: false,
-      message: "Failed to disconnect all repositories",
-    };
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Failed to disconnect all repositories");
   }
 }
 
