@@ -2,10 +2,21 @@ import { pineconeIndex } from "@/lib/pinecone";
 import { embed } from "ai";
 import { google } from "@ai-sdk/google";
 
-export async function generateEmbedding(text: string) {
+const EMBEDDING_MODEL_ID = "gemini-embedding-001";
+const EMBEDDING_OUTPUT_DIMENSION = 768;
+
+type EmbeddingTaskType = "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY";
+
+export async function generateEmbedding(text: string, taskType: EmbeddingTaskType) {
   const { embedding } = await embed({
-    model: google.textEmbeddingModel("text-embedding-004"),
+    model: google.textEmbeddingModel(EMBEDDING_MODEL_ID),
     value: text,
+    providerOptions: {
+      google: {
+        taskType,
+        outputDimensionality: EMBEDDING_OUTPUT_DIMENSION,
+      },
+    },
   });
 
   return embedding;
@@ -25,7 +36,7 @@ export async function indexCodebase(repoId: string, files: { path: string; conte
     const truncatedContent = content.substring(0, 8000);
 
     try {
-      const embedding = await generateEmbedding(truncatedContent);
+      const embedding = await generateEmbedding(truncatedContent, "RETRIEVAL_DOCUMENT");
       vectors.push({
         id: `${repoId}-${file.path.replace(/\//g, "_")}`,
         values: embedding,
@@ -53,7 +64,7 @@ export async function indexCodebase(repoId: string, files: { path: string; conte
 }
 
 export async function retrieveContext(query: string, repoId: string, topK: number = 5) {
-  const embedding = await generateEmbedding(query);
+  const embedding = await generateEmbedding(query, "RETRIEVAL_QUERY");
 
   const results = await pineconeIndex.query({
     vector: embedding,
