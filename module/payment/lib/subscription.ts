@@ -24,7 +24,7 @@ export interface UserLimits {
 const TIER_LIMITS = {
   FREE: {
     repositories: 5,
-    reviewsPerRepo: 5,
+    reviewsPerRepo: 0,
   },
   PRO: {
     repositories: null, // unlimited

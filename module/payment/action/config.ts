@@ -3,10 +3,12 @@
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
 import { headers } from "next/headers";
+import { PRO_UPGRADE_ENABLED } from "../config/flags";
 import { getRemainingLimits, updateUserTier } from "../lib/subscription";
 import { polarClient } from "../config/polar";
 
 export interface SubscriptionData {
+  proUpgradeEnabled: boolean;
   user: {
     id: string;
     name: string;
@@ -33,13 +35,29 @@ export interface SubscriptionData {
   } | null;
 }
 
+interface PolarSubscriptionLike {
+  id: string;
+  status: string;
+}
+
+function isPolarSubscriptionLike(value: unknown): value is PolarSubscriptionLike {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const id = Reflect.get(value, "id");
+  const status = Reflect.get(value, "status");
+
+  return typeof id === "string" && typeof status === "string";
+}
+
 export async function getSubscriptionData(): Promise<SubscriptionData> {
   const session = await auth.api.getSession({
     headers: await headers(),
   });
 
   if (!session?.user) {
-    return { user: null, limits: null };
+    return { proUpgradeEnabled: PRO_UPGRADE_ENABLED, user: null, limits: null };
   }
 
   const user = await prisma.user.findUnique({
@@ -49,12 +67,13 @@ export async function getSubscriptionData(): Promise<SubscriptionData> {
   });
 
   if (!user) {
-    return { user: null, limits: null };
+    return { proUpgradeEnabled: PRO_UPGRADE_ENABLED, user: null, limits: null };
   }
 
   const limits = await getRemainingLimits(user.id);
 
   return {
+    proUpgradeEnabled: PRO_UPGRADE_ENABLED,
     user: {
       id: user.id,
       name: user.name,
@@ -93,10 +112,10 @@ export async function syncSubscriptionStatus() {
       customerId: user.polarCustomerId,
     });
 
-    const subscriptions = result.result?.items ?? [];
+    const subscriptions = (result.result?.items ?? []).filter(isPolarSubscriptionLike);
 
     // Find the active subscription
-    const activeSubscription = subscriptions.find((subscription: any) => subscription.status === "active");
+    const activeSubscription = subscriptions.find((subscription) => subscription.status === "active");
     const lastestSubscription = subscriptions[0]; // Assuming the latest subscription is the active one
 
     if (activeSubscription) {

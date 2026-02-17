@@ -7,9 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { checkout, customer } from "@/lib/auth-client";
 import { getSubscriptionData, syncSubscriptionStatus } from "@/module/payment/action/config";
 import { useQuery } from "@tanstack/react-query";
-import { Check, ExternalLink, Loader2, RefreshCw, SplinePointer, TruckElectric, X } from "lucide-react";
+import { Check, ExternalLink, Loader2, RefreshCw, SplinePointer, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { Toast } from "radix-ui";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -19,8 +18,8 @@ const PLAN_FEATURES = {
       name: "Up to 5 repositories",
       included: true,
     },
-    { name: "Up to 5 reviews per repository", included: true },
-    { name: "Basic code review", included: true },
+    { name: "No AI reviews (Pro only)", included: false },
+    { name: "Basic code review", included: false },
     { name: "Community support", included: true },
     { name: "Advanced analytics", included: false },
     { name: "Priority support", included: false },
@@ -55,7 +54,7 @@ export default function SubscriptionPage() {
         try {
           await syncSubscriptionStatus();
           refetch();
-        } catch (error) {
+        } catch {
           console.error("Failed to sync subscription status");
         }
       };
@@ -104,6 +103,7 @@ export default function SubscriptionPage() {
   const currentTier = data.user.subscriptionTier as "FREE" | "PRO";
   const isPro = currentTier === "PRO";
   const isActive = data.user.subscriptionStatus === "ACTIVE";
+  const canUpgrade = data.proUpgradeEnabled;
 
   const handleSync = async () => {
     try {
@@ -116,7 +116,7 @@ export default function SubscriptionPage() {
       } else {
         toast.error("Failed to sync subscription status");
       }
-    } catch (error) {
+    } catch {
       console.error("Failed to sync subscription status");
     } finally {
       setSyncLoading(false);
@@ -124,6 +124,11 @@ export default function SubscriptionPage() {
   };
 
   const handleUpgrade = async () => {
+    if (!canUpgrade) {
+      toast.info("Pro upgrades are temporarily unavailable.");
+      return;
+    }
+
     try {
       setCheckoutLoading(true);
       await checkout({ slug: "pro" });
@@ -158,6 +163,13 @@ export default function SubscriptionPage() {
           Sync Status
         </Button>
       </div>
+
+      {!canUpgrade && (
+        <Alert>
+          <AlertTitle>Upgrade Paused</AlertTitle>
+          <AlertDescription>New Pro upgrades are temporarily unavailable.</AlertDescription>
+        </Alert>
+      )}
 
       {success === "true" && (
         <Alert className="border-green-500 bg-green-50 dark:bg-green-950">
@@ -196,10 +208,10 @@ export default function SubscriptionPage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Reviews per Repository</span>
-                  <Badge variant="outline">{isPro ? "Unlimited" : "5 per repo"}</Badge>
+                  <Badge variant="outline">{isPro ? "Unlimited" : "0 per repo"}</Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {isPro ? "No limits on reviews" : "Free tier allows 5 reviews per repository"}
+                  {isPro ? "No limits on reviews" : "Free tier cannot create reviews"}
                 </p>
               </div>
             </div>
@@ -243,7 +255,7 @@ export default function SubscriptionPage() {
           </CardContent>
         </Card>
 
-        {/* Free Plan */}
+        {/* Pro Plan */}
         <Card className={isPro ? "ring-2 ring-primary" : ""}>
           <CardHeader>
             <div className="flex items-start justify-between">
@@ -260,7 +272,7 @@ export default function SubscriptionPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              {PLAN_FEATURES.free.map((feature) => (
+              {PLAN_FEATURES.pro.map((feature) => (
                 <div key={feature.name} className="flex items-center gap-2">
                   {feature.included ? (
                     <Check className="h-4 w-4 text-primary shrink-0" />
@@ -285,14 +297,19 @@ export default function SubscriptionPage() {
                 )}
               </Button>
             ) : (
-              <Button className="w-full" variant="outline" onClick={handleUpgrade} disabled={checkoutLoading}>
+              <Button
+                className="w-full"
+                variant="outline"
+                onClick={handleUpgrade}
+                disabled={!canUpgrade || checkoutLoading}
+              >
                 {checkoutLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Loading Checking out...
                   </>
                 ) : (
-                  "Upgrade to Pro"
+                  canUpgrade ? "Upgrade to Pro" : "Upgrade Temporarily Unavailable"
                 )}
               </Button>
             )}
