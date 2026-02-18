@@ -18,13 +18,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { AlertTriangle, ExternalLink, FolderOpen, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-
-function getErrorMessage(error: unknown, fallbackMessage: string) {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return fallbackMessage;
-}
+import { getErrorMessage } from "@/lib/utils";
 
 export default function RepositoryList() {
   const queryClient = useQueryClient();

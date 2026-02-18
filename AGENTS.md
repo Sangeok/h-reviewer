@@ -13,7 +13,6 @@
 - Apply convention updates immediately when new files are added under `docs/conventions/`.
 - If a task conflicts with a convention, call out the conflict explicitly and ask for direction before proceeding.
 - When a spec under `docs/specs/` reaches `Implemented` status, move it to `docs/archive/` in the same task.
-- Use `npm run docs:archive-implemented-specs` to archive implemented specs automatically.
 
 ## Build, Test, and Development Commands
 - `npm run dev`: start the Next.js dev server.
