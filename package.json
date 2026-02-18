@@ -10,7 +10,6 @@
     "vercel-build": "prisma generate && prisma migrate deploy && next build",
     "start": "next start",
     "lint": "eslint",
-    "docs:archive-implemented-specs": "node scripts/archive-implemented-specs.mjs",
     "inngest-dev": "npx inngest-cli@latest dev",
     "ngrok": "ngrok http 3000"
   },

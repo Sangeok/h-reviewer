@@ -21,6 +21,8 @@ export interface UserLimits {
   };
 }
 
+type UserUsageClient = Pick<typeof prisma, "userUsage">;
+
 const TIER_LIMITS = {
   FREE: {
     repositories: 5,
@@ -93,8 +95,11 @@ export async function canCreateReview(userId: string, repositoryId: string): Pro
   return currentCount < limit;
 }
 
-export async function incrementRepositoryCount(userId: string): Promise<void> {
-  await prisma.userUsage.upsert({
+export async function incrementRepositoryCount(
+  userId: string,
+  userUsageClient: UserUsageClient = prisma
+): Promise<void> {
+  await userUsageClient.userUsage.upsert({
     where: {
       userId,
     },
