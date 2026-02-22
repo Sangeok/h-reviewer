@@ -4,9 +4,11 @@
 // ===== Constants =====
 export * from "./constants";
 
-// ===== Utils =====
-export * from "./utils/auth-utils";
+// ===== Types =====
+export type { LoginFeature } from "./types";
+
+// ===== Auth Guards =====
+export * from "./lib/auth-utils";
 
 // ===== UI Components =====
 export { default as LoginUI } from "./ui/login-ui";
-export { default as Logout } from "./ui/logout";

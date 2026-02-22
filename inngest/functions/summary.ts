@@ -3,7 +3,7 @@ import { inngest } from "../client";
 import { getPullRequestDiff, postReviewComment } from "@/module/github/lib/github";
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
-import { stripFencedCodeBlocks } from "@/module/ai/utils/text-sanitizer";
+import { stripFencedCodeBlocks } from "@/module/ai";
 import { getLanguageName, isValidLanguageCode } from "@/module/settings/constants";
 
 export const generateSummary = inngest.createFunction(

@@ -1,41 +1,43 @@
 "use server";
 
-import { requireAuthSession } from "@/lib/server-utils";
-import { fetchUserContribution, getGithubAccessToken } from "@/module/github";
-import { Octokit } from "octokit";
+import prisma from "@/lib/db";
+import { fetchUserContribution } from "@/module/github";
+import { getDashboardGithubContext } from "../lib/get-dashboard-github-context";
+import { parseContributionCalendar } from "../lib/parse-contribution-calendar";
+import type { DashboardStats } from "../types";
 
-export interface DashboardStats {
-  totalRepos: number;
-  totalContributions: number;
-  totalPRs: number;
-  totalReviews: number;
-}
+const EMPTY_DASHBOARD_STATS: DashboardStats = {
+  totalRepos: 0,
+  totalContributions: 0,
+  totalPRs: 0,
+  totalReviews: 0,
+};
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   try {
-    await requireAuthSession();
+    const { userId, accessToken, username, octokit } = await getDashboardGithubContext();
 
-    const accessToken = await getGithubAccessToken();
-    const octokit = new Octokit({ auth: accessToken });
+    const [totalRepos, totalReviews, rawCalendar, prsResult] = await Promise.all([
+      prisma.repository.count({
+        where: { userId },
+      }),
+      prisma.review.count({
+        where: {
+          repository: {
+            userId,
+          },
+        },
+      }),
+      fetchUserContribution(accessToken, username),
+      octokit.rest.search.issuesAndPullRequests({
+        q: `author:${username} type:pr`,
+        per_page: 1,
+      }),
+    ]);
 
-    const { data: user } = await octokit.rest.users.getAuthenticated();
-
-    // TODO: FETCH TOTAL CONNECTED REPO FROM DB
-    const totalRepos = 30;
-
-    const calendar = await fetchUserContribution(accessToken, user.login);
-    const totalContributions =
-      (calendar as { totalContributions?: number })?.totalContributions || 0;
-
-    const { data: prs } = await octokit.rest.search.issuesAndPullRequests({
-      q: `author:${user.login} type:pr`,
-      per_page: 1,
-    });
-
-    const totalPRs = prs.total_count;
-
-    // TODO: COUNT AI REVIEWS FROM DB
-    const totalReviews = 44;
+    const calendar = parseContributionCalendar(rawCalendar);
+    const totalContributions = calendar?.totalContributions ?? 0;
+    const totalPRs = prsResult.data.total_count;
 
     return {
       totalRepos,
@@ -45,11 +47,6 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     };
   } catch (error) {
     console.error("Error fetching dashboard stats:", error);
-    return {
-      totalRepos: 0,
-      totalContributions: 0,
-      totalPRs: 0,
-      totalReviews: 0,
-    };
+    return EMPTY_DASHBOARD_STATS;
   }
 }

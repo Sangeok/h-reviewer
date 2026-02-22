@@ -23,8 +23,7 @@
 
 | 문서 | 상태 | 설명 |
 |------|------|------|
-| `specs/pr-summary-feature.md` | `IN_PROGRESS` | PR 요약 기능 |
-| `specs/review-language-feature.md` | `TODO` | 언어 설정 기능 명세 |
+| `specs/ai-module-refactoring.md` | `TODO` | AI 모듈 리팩토링 명세 |
 | `specs/one-click-fix-feature.md` | `TODO` | 원클릭 코드 수정 제안 |
 
 ---
@@ -35,6 +34,11 @@
 
 | 문서 | 날짜 | 설명 |
 |------|------|------|
+| `archive/2026-02-auth-module-refactoring.md` | 2026-02 | auth 모듈 리팩토링 구현 기록 |
+| `archive/2026-02-dashboard-refactoring-feature.md` | 2026-02 | dashboard 모듈 리팩토링 구현 기록 |
+| `archive/2026-02-pr-summary-feature.md` | 2026-02 | PR 요약 기능 구현 기록 |
+| `archive/2026-02-review-language-feature.md` | 2026-02 | PR 리뷰 언어 설정 기능 구현 기록 |
+| `archive/2026-02-remove-rag-from-summary.md` | 2026-02 | Summary 경로 RAG 제거 구현 기록 |
 | `archive/2024-12-folder-structure-review.md` | 2024-12 | 폴더 구조 리뷰 |
 | `archive/2024-12-frontend-review.md` | 2024-12 | 프론트엔드 구조 리뷰 |
 | `archive/2024-12-refactoring-recommendations.md` | 2024-12 | 리팩토링 권장사항 |

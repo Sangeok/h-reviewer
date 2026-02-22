@@ -1,14 +1,25 @@
 // Barrel Export - AI Module Public API
-// 이 파일을 통해 AI 모듈의 모든 공개 API를 관리합니다.
 
 // ===== Actions =====
-export * from "./actions";
+export { generatePRSummary, reviewPullRequest } from "./actions";
+
+// ===== Constants =====
+export {
+  DEFAULT_TOP_K,
+  EMBEDDING_CONTENT_MAX_LENGTH,
+  EMBEDDING_MODEL_ID,
+  EMBEDDING_OUTPUT_DIMENSION,
+  GITHUB_PROVIDER_ID,
+  PINECONE_BATCH_SIZE,
+  buildPRUrl,
+} from "./constants";
 
 // ===== Library Functions =====
-export * from "./lib/rag";
+export { generateEmbedding, getRepositoryWithToken, indexCodebase, retrieveContext } from "./lib";
 
 // ===== Types =====
-export * from "./types";
+export type { EmbeddingTaskType, PRCommand, ReviewPullRequestResult } from "./types";
 
 // ===== Utils =====
 export { parseCommand } from "./utils/command-parser";
+export { stripFencedCodeBlocks } from "./utils/text-sanitizer";
