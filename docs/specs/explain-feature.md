@@ -897,4 +897,4 @@ console.log(user.id); // "user_123"
 **Document Version:** 1.0
 **Last Updated:** 2025-12-31
 **Status:** Ready for Implementation
-**Prerequisites:** PR Summary Feature (pr-summary-feature.md)
+**Prerequisites:** PR Summary Feature (`docs/archive/2026-02-pr-summary-feature.md`)

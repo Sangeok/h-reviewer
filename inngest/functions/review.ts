@@ -1,11 +1,11 @@
 import prisma from "@/lib/db";
 import { inngest } from "../client";
 import { getPullRequestDiff, postReviewComment } from "@/module/github/lib/github";
-import { retrieveContext } from "@/module/ai/lib/rag";
+import { retrieveContext } from "@/module/ai";
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
 import { sanitizeMermaidSequenceDiagrams } from "@/module/github/lib/github-markdown";
-import { type LanguageCode, getLanguageName, isValidLanguageCode } from "@/module/settings/constants";
+import { getLanguageName, isValidLanguageCode } from "@/module/settings/constants";
 import { SECTION_HEADERS } from "@/shared/constants";
 
 export const generateReview = inngest.createFunction(

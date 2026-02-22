@@ -6,4 +6,6 @@ export * from "./actions";
 
 // ===== UI Components =====
 export { default as StatsOverview } from "./ui/stats-overview";
-export { default as ContributionGraph } from "./ui/parts/contribution-graph";
+
+// ===== Types =====
+export type { ContributionStats, DashboardStats, MonthlyActivity } from "./types";

@@ -1,8 +1,9 @@
 "use server";
 
-import { requireAuthSession } from "@/lib/server-utils";
-import { fetchUserContribution, getGithubAccessToken } from "@/module/github";
-import { Octokit } from "octokit";
+import { fetchUserContribution } from "@/module/github";
+import { getDashboardGithubContext } from "../lib/get-dashboard-github-context";
+import { parseContributionCalendar } from "../lib/parse-contribution-calendar";
+import type { ContributionStats } from "../types";
 
 const CONTRIBUTION_LEVEL_MAP: Record<string, number> = {
   NONE: 0,
@@ -12,46 +13,11 @@ const CONTRIBUTION_LEVEL_MAP: Record<string, number> = {
   FOURTH_QUARTILE: 4,
 };
 
-interface ContributionDay {
-  date: string;
-  contributionCount: number;
-  contributionLevel: string;
-}
-
-interface ContributionWeek {
-  contributionDays: ContributionDay[];
-}
-
-interface ContributionCalendar {
-  weeks: ContributionWeek[];
-  totalContributions: number;
-}
-
-export interface ContributionData {
-  date: string;
-  count: number;
-  level: number;
-}
-
-export interface ContributionStats {
-  contributions: ContributionData[];
-  totalContributions: number;
-}
-
 export async function getContributionStats(): Promise<ContributionStats | null> {
   try {
-    await requireAuthSession();
-
-    const accessToken = await getGithubAccessToken();
-    const octokit = new Octokit({ auth: accessToken });
-
-    const { data: user } = await octokit.rest.users.getAuthenticated();
-    const username = user.login;
-
-    const calendar = (await fetchUserContribution(
-      accessToken,
-      username
-    )) as ContributionCalendar | null;
+    const { accessToken, username } = await getDashboardGithubContext();
+    const rawCalendar = await fetchUserContribution(accessToken, username);
+    const calendar = parseContributionCalendar(rawCalendar);
 
     if (!calendar) {
       return null;
@@ -61,7 +27,7 @@ export async function getContributionStats(): Promise<ContributionStats | null> 
       week.contributionDays.map((day) => ({
         date: day.date,
         count: day.contributionCount,
-        level: CONTRIBUTION_LEVEL_MAP[day.contributionLevel] ?? 0,
+        level: CONTRIBUTION_LEVEL_MAP[day.contributionLevel ?? "NONE"] ?? 0,
       }))
     );
 
