@@ -214,6 +214,9 @@ export async function getPullRequestDiff(token: string, owner: string, repo: str
     title: pr.title,
     diff: diff as unknown as string,
     description: pr.body || "",
+    additions: pr.additions,
+    deletions: pr.deletions,
+    changedFiles: pr.changed_files,
   };
 }
 

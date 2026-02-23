@@ -15,10 +15,11 @@ export {
 } from "./constants";
 
 // ===== Library Functions =====
-export { generateEmbedding, getRepositoryWithToken, indexCodebase, retrieveContext } from "./lib";
+export { generateEmbedding, getRepositoryWithToken, indexCodebase, retrieveContext, classifyPRSize, getTopKForSizeMode, getSectionPolicy } from "./lib";
 
 // ===== Types =====
 export type { EmbeddingTaskType, PRCommand, ReviewPullRequestResult } from "./types";
+export type { ReviewSizeMode, PRSizeInfo } from "./lib";
 
 // ===== Utils =====
 export { parseCommand } from "./utils/command-parser";
