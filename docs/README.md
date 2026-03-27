@@ -24,7 +24,13 @@
 | 문서 | 상태 | 설명 |
 |------|------|------|
 | `specs/ai-module-refactoring.md` | `TODO` | AI 모듈 리팩토링 명세 |
-| `specs/one-click-fix-feature.md` | `TODO` | 원클릭 코드 수정 제안 |
+| `specs/structured-inline-review-feature.md` | `TODO` | 구조화 인라인 리뷰 (원클릭 수정 + 라인별 코멘트 통합) |
+| `specs/one-click-fix-feature.md` | `SUPERSEDED` | → `structured-inline-review-feature.md`에 통합 |
+| `specs/inline-line-level-review.md` | `SUPERSEDED` | → `structured-inline-review-feature.md`에 통합 |
+| `specs/auto-pr-description.md` | `TODO` | PR 설명 자동 생성 |
+| `specs/review-analytics-dashboard.md` | `TODO` | 리뷰 분석 대시보드 |
+| `specs/adaptive-learning-feedback.md` | `TODO` | 사용자 피드백 기반 적응형 학습 |
+| `specs/pr-risk-scoring.md` | `TODO` | PR 리스크 점수 및 리뷰 깊이 자동 조절 |
 
 ---
 

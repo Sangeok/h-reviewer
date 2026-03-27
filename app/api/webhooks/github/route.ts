@@ -1,4 +1,5 @@
 import { generatePRSummary, parseCommand, reviewPullRequest } from "@/module/ai";
+import prisma from "@/lib/db";
 import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -85,6 +86,22 @@ export async function POST(request: NextRequest) {
       }
 
       if (action === "opened" || action === "synchronize") {
+        // Apply Fix 커밋으로 인한 무한 루프 방지
+        if (action === "synchronize") {
+          const afterSha = isRecord(body) ? (body as Record<string, unknown>)["after"] : undefined;
+
+          if (typeof afterSha === "string") {
+            const appliedSuggestion = await prisma.suggestion.findFirst({
+              where: { appliedCommitSha: afterSha },
+            });
+
+            if (appliedSuggestion) {
+              console.info(`Skipping review for ${repoInfo.fullName} #${prNumber}: commit ${afterSha} is from HReviewer apply fix`);
+              return NextResponse.json({ message: "Skipped: HReviewer commit" }, { status: 200 });
+            }
+          }
+        }
+
         const reviewResult = await reviewPullRequest(repoInfo.owner, repoInfo.repoName, prNumber);
 
         if (!reviewResult.success) {

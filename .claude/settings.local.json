@@ -11,7 +11,21 @@
       "Bash(npm run lint:*)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:docs.github.com)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(python3:*)",
+      "Bash(node:*)",
+      "Bash(xargs git:*)",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "Bash(npm install:*)",
+      "Bash(xargs grep:*)",
+      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")",
+      "Bash(grep -E \"\\\\.md$\")",
+      "Bash(grep -E \"md$\")",
+      "mcp__plugin_context7_context7__query-docs",
+      "Bash(node -e \"const z = require\\(''''zod''''\\); console.log\\(''''zod version:'''', z.z ? ''''v4+'''' : ''''v3'''', typeof z.object\\)\")",
+      "Bash(npx prisma:*)",
+      "Bash(grep -r export.*Badge C:UsershamsoOneDriveDesktopgithreviewernode_moduleslucide-reactdist)",
+      "Bash(npm ls:*)"
     ]
   }
 }

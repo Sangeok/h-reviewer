@@ -1,0 +1,13 @@
+export const SEVERITY_CONFIG = {
+  CRITICAL:   { emoji: "🚨", color: "text-red-400",   bgColor: "bg-red-950/50",   borderColor: "border-red-800/30" },
+  WARNING:    { emoji: "⚠️",  color: "text-amber-400", bgColor: "bg-amber-950/50", borderColor: "border-amber-800/30" },
+  SUGGESTION: { emoji: "💡", color: "text-blue-400",  bgColor: "bg-blue-950/50",  borderColor: "border-blue-800/30" },
+  INFO:       { emoji: "ℹ️",  color: "text-gray-400",  bgColor: "bg-gray-950/50",  borderColor: "border-gray-800/30" },
+} as const;
+
+export const STATUS_CONFIG = {
+  PENDING:    { label: { en: "Pending",   ko: "대기 중" }, color: "text-[#707070]" },
+  APPLIED:    { label: { en: "Applied",   ko: "적용됨"  }, color: "text-[#4a6a4a]" },
+  DISMISSED:  { label: { en: "Dismissed", ko: "무시됨"  }, color: "text-[#606060]" },
+  CONFLICTED: { label: { en: "Conflict",  ko: "충돌"    }, color: "text-red-400"   },
+} as const;
