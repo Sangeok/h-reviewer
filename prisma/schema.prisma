@@ -98,6 +98,20 @@ enum ReviewType {
   FULL_REVIEW
 }
 
+enum SuggestionStatus {
+  PENDING
+  APPLIED
+  DISMISSED
+  CONFLICTED
+}
+
+enum SuggestionSeverity {
+  CRITICAL
+  WARNING
+  SUGGESTION
+  INFO
+}
+
 model Review {
   id  String @id @default(cuid())
   repositoryId  String
@@ -108,11 +122,39 @@ model Review {
   review    String  @db.Text
   reviewType ReviewType @default(FULL_REVIEW)
   status    String  @default("completed") // completed, failed, pending
+  headSha   String?
+  suggestions Suggestion[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([repositoryId])
   @@map("review")
+}
+
+model Suggestion {
+  id            String              @id @default(cuid())
+  reviewId      String
+  review        Review              @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  filePath      String
+  lineNumber    Int
+  beforeCode    String   @db.Text
+  afterCode     String   @db.Text
+  explanation   String   @db.Text
+  severity      SuggestionSeverity  @default(SUGGESTION)
+
+  status        SuggestionStatus    @default(PENDING)
+  appliedAt     DateTime?
+  appliedCommitSha String?
+  dismissedAt   DateTime?
+
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([reviewId])
+  @@index([status])
+  @@index([appliedCommitSha])
+  @@map("suggestion")
 }
 
 model UserUsage {
