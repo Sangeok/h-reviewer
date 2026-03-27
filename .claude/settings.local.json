@@ -25,7 +25,8 @@
       "Bash(node -e \"const z = require\\(''''zod''''\\); console.log\\(''''zod version:'''', z.z ? ''''v4+'''' : ''''v3'''', typeof z.object\\)\")",
       "Bash(npx prisma:*)",
       "Bash(grep -r export.*Badge C:UsershamsoOneDriveDesktopgithreviewernode_moduleslucide-reactdist)",
-      "Bash(npm ls:*)"
+      "Bash(npm ls:*)",
+      "Bash(grep -r \"BETTER_AUTH_URL\\\\|baseURL\" /c/Users/hamso/OneDrive/Desktop/git/hreviewer --include=*.ts --include=*.tsx)"
     ]
   }
 }
