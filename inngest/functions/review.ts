@@ -138,6 +138,23 @@ export const generateReview = inngest.createFunction(
             return ++generalCount <= maxGeneral;
           }),
         };
+
+        // suggestion이 있는 file+line과 동일한 issue 제거 (중복 인라인 댓글 방지)
+        // 업계 표준: 한 위치에 하나의 인라인 댓글 — suggestion의 explanation이 이미 문제를 설명함
+        if (validatedOutput.suggestions && validatedOutput.suggestions.length > 0) {
+          const suggestionLineSet = new Set(
+            validatedOutput.suggestions.map(s => `${s.file}:${s.line}`)
+          );
+          validatedOutput = {
+            ...validatedOutput,
+            issues: validatedOutput.issues.filter(issue => {
+              if (issue.file !== null && issue.line !== null) {
+                return !suggestionLineSet.has(`${issue.file}:${issue.line}`);
+              }
+              return true;
+            }),
+          };
+        }
       }
 
       return {

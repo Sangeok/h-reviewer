@@ -101,7 +101,8 @@ ${diff}
   - line: line number in new file, or null for file-level or project-level issues
   - category: bug, design, security, performance, testing, or general
   - severity: CRITICAL for blocking issues, WARNING for important concerns, SUGGESTION for improvements, INFO for observations
-- Provide up to ${issueLimit.inline} code-level issues (with file and line) and up to ${issueLimit.general} project-level issues (without line), prioritized by severity`;
+- Provide up to ${issueLimit.inline} code-level issues (with file and line) and up to ${issueLimit.general} project-level issues (without line), prioritized by severity
+- Do not generate an issue for a file+line that already has a suggestion — the suggestion's explanation already communicates the problem`;
 }
 
 // ⚠️ userPreference는 상한(cap)으로 적용, PR 크기 기본값을 초과하지 않음
