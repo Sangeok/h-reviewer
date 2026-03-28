@@ -33,12 +33,15 @@ export function formatStructuredReviewToMarkdown(
 
   if (bodyIssues.length > 0) {
     const rows = bodyIssues.map(i => {
-      const cat = `${CATEGORY_EMOJI[i.category] ?? "📋"} ${i.category}`;
-      const sev = `${SEVERITY_EMOJI[i.severity] ?? ""} ${i.severity}`;
+      const cat = `${CATEGORY_EMOJI[i.category] ?? "📋"}\u00A0${i.category}`;
+      const sev = `${SEVERITY_EMOJI[i.severity] ?? ""}\u00A0${i.severity}`;
       const filePrefix = i.file ? `\`${i.file}\`: ` : "";
       return `| ${cat} | ${sev} | ${filePrefix}${i.description} |`;
     }).join("\n");
-    sections.push(`## ${headers.issues}\n\n| Category | Severity | Description |\n|----------|----------|-------------|\n${rows}`);
+    // \u00A0 padding in headers forces GitHub to allocate minimum column width
+    const catHeader = `Category${"\u00A0".repeat(8)}`;
+    const sevHeader = `Severity${"\u00A0".repeat(8)}`;
+    sections.push(`## ${headers.issues}\n\n| ${catHeader} | ${sevHeader} | Description |\n|----------|----------|-------------|\n${rows}`);
   }
 
   if (output.suggestions.length > 0) {
