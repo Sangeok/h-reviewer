@@ -155,7 +155,6 @@
     @apply bg-background text-foreground;
   }
 }
-
 /* Custom Animations for Login UI */
 @keyframes gridSlide {
   0% {

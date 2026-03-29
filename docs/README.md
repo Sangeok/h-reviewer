@@ -31,6 +31,7 @@
 | `specs/review-analytics-dashboard.md` | `TODO` | 리뷰 분석 대시보드 |
 | `specs/adaptive-learning-feedback.md` | `TODO` | 사용자 피드백 기반 적응형 학습 |
 | `specs/pr-risk-scoring.md` | `TODO` | PR 리스크 점수 및 리뷰 깊이 자동 조절 |
+| `specs/merge-adjacent-suggestions.md` | `TODO` | Review output 개선 (프롬프트 수정 + issues 구조화 + suggestion 개수 설정) |
 
 ---
 
@@ -64,7 +65,7 @@
 | 유형 | 폴더 | 기준 |
 |------|------|------|
 | 코딩 규칙 | `conventions/` | 코드 작성 시 반드시 따라야 할 규칙 |
-| 구현 명세 | `specs/` | 구현 예정/진행 중인 기능 설계 |
+| 구현 명세 | `specs/` | 구현 예정/진행 중인 기능 설계 + 구체적 코드 변경 포함 |
 | 분석/리뷰 | `archive/` | 완료된 분석, 일회성 리뷰 결과 |
 
 #### 2. 파일명 규칙
@@ -80,6 +81,11 @@
 
 #### 4. 내용 작성 규칙
 `conventions/writing-docs.md` 참조:
-- 최대 200줄, 5분 내 읽기
+- 길이보다 복잡도 관리 — 섹션별 역할과 메시지가 단순하면 길어도 OK
 - 구조: 규칙 → 예시 1개 → (선택) 안티패턴 1개
 - 불필요한 설명, 중복 예시 금지
+
+#### 5. Specs 작성 규칙
+- 배경/설계 결정 + **구체적 코드 변경**까지 포함
+- 수정 대상 파일별로 현재 코드 → 변경 후 코드를 명시
+- 구현자가 스펙만 보고 바로 코딩 가능한 수준으로 작성
