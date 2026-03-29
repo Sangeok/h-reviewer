@@ -34,6 +34,7 @@ model User {
   polarSubscriptionId String? @unique
 
   preferredLanguage String @default("en")
+  maxSuggestions    Int?   // null = PR 크기별 기본값 사용, 1-15 범위
 
   @@unique([email])
   @@map("user")

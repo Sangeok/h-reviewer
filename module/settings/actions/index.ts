@@ -5,6 +5,7 @@ import prisma from "@/lib/db";
 import { deleteWebhook } from "@/module/github";
 import { decrementRepositoryCount } from "@/module/payment/lib/subscription";
 import { DEFAULT_LANGUAGE, normalizeLanguageCode, type LanguageCode } from "../constants";
+import { MAX_SUGGESTION_CAP } from "@/module/ai/constants";
 
 export async function getUserProfile() {
   try {
@@ -21,6 +22,7 @@ export async function getUserProfile() {
         image: true,
         createdAt: true,
         preferredLanguage: true,
+        maxSuggestions: true,
       },
     });
 
@@ -38,10 +40,20 @@ export async function getUserProfile() {
   }
 }
 
-export async function updateUserProfile(data: { name?: string; email?: string; preferredLanguage?: string }) {
+export async function updateUserProfile(data: {
+  name?: string;
+  email?: string;
+  preferredLanguage?: string;
+  maxSuggestions?: number | null;
+}) {
   try {
     const session = await requireAuthSession();
-    const updateData: { name?: string; email?: string; preferredLanguage?: LanguageCode } = {};
+    const updateData: {
+      name?: string;
+      email?: string;
+      preferredLanguage?: LanguageCode;
+      maxSuggestions?: number | null;
+    } = {};
 
     if (typeof data.name === "string") {
       updateData.name = data.name.trim();
@@ -64,6 +76,25 @@ export async function updateUserProfile(data: { name?: string; email?: string; p
       updateData.preferredLanguage = normalizedLanguage;
     }
 
+    // ⚠️ Object.keys(updateData).length === 0 early return guard 이전에 배치
+    // 그렇지 않으면 { maxSuggestions: 5 } 만 전달 시 "No profile fields" 에러 발생
+    if (data.maxSuggestions !== undefined) {
+      if (data.maxSuggestions === null) {
+        updateData.maxSuggestions = null;
+      } else if (
+        Number.isInteger(data.maxSuggestions) &&
+        data.maxSuggestions >= 1 &&
+        data.maxSuggestions <= MAX_SUGGESTION_CAP
+      ) {
+        updateData.maxSuggestions = data.maxSuggestions;
+      } else {
+        return {
+          success: false,
+          message: `maxSuggestions must be between 1 and ${MAX_SUGGESTION_CAP}`,
+        };
+      }
+    }
+
     if (Object.keys(updateData).length === 0) {
       return {
         success: false,
@@ -81,6 +112,7 @@ export async function updateUserProfile(data: { name?: string; email?: string; p
         name: true,
         email: true,
         preferredLanguage: true,
+        maxSuggestions: true,
       },
     });
 

@@ -43,6 +43,14 @@ export function parseDiffToChangedFiles(diffText: string): string {
     .join("\n");
 }
 
+/**
+ * diff에 포함된 파일 경로 Set을 반환한다.
+ * issue의 file 필드가 실제 diff 파일인지 검증할 때 사용한다.
+ */
+export function extractDiffFileSet(diffText: string): Set<string> {
+  return new Set(parseDiffFiles(diffText).map(f => f.filePath));
+}
+
 function summarizeLineRanges(lines: number[]): string {
   if (lines.length === 0) return "none";
   if (lines.length <= 10) return lines.join(", ");

@@ -26,7 +26,22 @@
       "Bash(npx prisma:*)",
       "Bash(grep -r export.*Badge C:UsershamsoOneDriveDesktopgithreviewernode_moduleslucide-reactdist)",
       "Bash(npm ls:*)",
-      "Bash(grep -r \"BETTER_AUTH_URL\\\\|baseURL\" /c/Users/hamso/OneDrive/Desktop/git/hreviewer --include=*.ts --include=*.tsx)"
+      "Bash(grep -r \"BETTER_AUTH_URL\\\\|baseURL\" /c/Users/hamso/OneDrive/Desktop/git/hreviewer --include=*.ts --include=*.tsx)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:docs.coderabbit.ai)",
+      "WebFetch(domain:deepwiki.com)",
+      "WebFetch(domain:docs.sonarsource.com)",
+      "WebFetch(domain:graphite.com)",
+      "WebFetch(domain:github.blog)",
+      "WebFetch(domain:www.awesomecodereviews.com)",
+      "WebFetch(domain:dev.to)",
+      "WebFetch(domain:haacked.com)",
+      "WebFetch(domain:blog.codacy.com)",
+      "Bash(grep -r \"prose-table\\\\|table.*prose\\\\|markdown-table\" /c/Users/hamso/OneDrive/Desktop/git/hreviewer --include=*.css --include=*.tsx --include=*.ts)",
+      "Bash(grep -r components= /c/Users/hamso/OneDrive/Desktop/git/hreviewer/module --include=*.tsx --include=*.ts)",
+      "Bash(grep -r \"w-\\\\|max-w-\\\\|min-w-\\\\|table-\\\\|col-\" /c/Users/hamso/OneDrive/Desktop/git/hreviewer/app /c/Users/hamso/OneDrive/Desktop/git/hreviewer/module --include=*.tsx --include=*.css)",
+      "Bash(grep -r \"table\\\\|prose\" /c/Users/hamso/OneDrive/Desktop/git/hreviewer --include=*.css --include=*.scss)",
+      "Bash(npx next:*)"
     ]
   }
 }
