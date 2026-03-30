@@ -10,7 +10,7 @@ import { RepositoryListSkeleton } from "./parts/repository-card-skeleton";
 import { RepositorySearchInput } from "./parts/repository-search-input";
 
 export default function RepositoryList() {
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useRepositories();
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useRepositories();
 
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [localConnectingId, setLocalConnectingId] = useState<number | null>(null);
@@ -54,6 +54,10 @@ export default function RepositoryList() {
       }
     );
   };
+
+  if (isLoading) {
+    return <RepositoryListSkeleton />;
+  }
 
   return (
     <div className="space-y-6">
