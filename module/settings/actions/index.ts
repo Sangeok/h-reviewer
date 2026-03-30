@@ -4,8 +4,9 @@ import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
 import { deleteWebhook } from "@/module/github";
 import { decrementRepositoryCount } from "@/module/payment/lib/subscription";
-import { DEFAULT_LANGUAGE, normalizeLanguageCode, type LanguageCode } from "../constants";
+import { DEFAULT_LANGUAGE, LanguageCode } from "../constants";
 import { MAX_SUGGESTION_CAP } from "@/module/ai/constants";
+import { normalizeLanguageCode } from "../lib/language";
 
 export async function getUserProfile() {
   try {

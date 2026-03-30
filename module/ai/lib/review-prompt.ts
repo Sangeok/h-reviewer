@@ -1,9 +1,9 @@
 import type { ReviewSizeMode } from "./review-size-policy";
 import type { LanguageCode } from "@/module/settings/constants";
-import { getLanguageName } from "@/module/settings/constants";
 import { SECTION_HEADERS } from "@/shared/constants";
 import { getSectionPolicy } from "./review-size-policy";
 import { MAX_SUGGESTION_CAP } from "@/module/ai/constants";
+import { getLanguageName } from "@/module/settings";
 
 /**
  * 기존 review.ts에서 이동한 함수.

@@ -10,7 +10,7 @@ import { RepositoryListSkeleton } from "./parts/repository-card-skeleton";
 import { RepositorySearchInput } from "./parts/repository-search-input";
 
 export default function RepositoryList() {
-  const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } = useRepositories();
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useRepositories();
 
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [localConnectingId, setLocalConnectingId] = useState<number | null>(null);
@@ -55,37 +55,8 @@ export default function RepositoryList() {
     );
   };
 
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-medium tracking-tight text-[#e0e0e0]">Repositories</h1>
-          <p className="text-[#707070] font-light mt-1">Manage and view your github repositories</p>
-        </div>
-        <RepositoryListSkeleton />
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-medium tracking-tight text-[#e0e0e0]">Failed to load repositories</h1>
-          <p className="text-[#707070] font-light mt-1">There was an error loading your repositories</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h2 className="text-3xl font-medium tracking-tight text-[#e0e0e0]">Repositories</h2>
-        <p className="text-[#707070] font-light mt-1">Manage and view your github repositories</p>
-      </div>
-
       <RepositorySearchInput value={searchQuery} onChange={setSearchQuery} />
 
       <div className="grid gap-4">

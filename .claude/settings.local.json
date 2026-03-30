@@ -41,7 +41,15 @@
       "Bash(grep -r components= /c/Users/hamso/OneDrive/Desktop/git/hreviewer/module --include=*.tsx --include=*.ts)",
       "Bash(grep -r \"w-\\\\|max-w-\\\\|min-w-\\\\|table-\\\\|col-\" /c/Users/hamso/OneDrive/Desktop/git/hreviewer/app /c/Users/hamso/OneDrive/Desktop/git/hreviewer/module --include=*.tsx --include=*.css)",
       "Bash(grep -r \"table\\\\|prose\" /c/Users/hamso/OneDrive/Desktop/git/hreviewer --include=*.css --include=*.scss)",
-      "Bash(npx next:*)"
+      "Bash(npx next:*)",
+      "Bash(xargs cat:*)",
+      "Bash(grep -r listWebhooks /c/Users/hamso/OneDrive/Desktop/git/hreviewer/node_modules/@octokit --include=*.d.ts)",
+      "Bash(grep -r listWebhooks.*response /c/Users/hamso/OneDrive/Desktop/git/hreviewer/node_modules/@octokit --include=*.d.ts)",
+      "Bash(grep -r 'GET /repos/{owner}/{repo}/hooks' /c/Users/hamso/OneDrive/Desktop/git/hreviewer/node_modules/@octokit --include=*.d.ts)",
+      "Bash(grep -r 'GET /repos/{owner}/{repo}/hooks:' /c/Users/hamso/OneDrive/Desktop/git/hreviewer/node_modules/@octokit --include=*.d.ts -A 15)",
+      "Bash(grep -r config.*url /c/Users/hamso/OneDrive/Desktop/git/hreviewer/node_modules/@octokit/types --include=*.d.ts)",
+      "Bash(grep -r Hook /c/Users/hamso/OneDrive/Desktop/git/hreviewer/node_modules/@octokit/types/dist-types/generated --include=*.d.ts)",
+      "Bash(grep -r listWebhooks /c/Users/hamso/OneDrive/Desktop/git/hreviewer/node_modules/@octokit/types --include=*.d.ts)"
     ]
   }
 }

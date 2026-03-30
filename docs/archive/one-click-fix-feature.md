@@ -168,15 +168,90 @@ model Review {
 }
 ```
 
+<<<<<<< HEAD
+**마이그레이션 명령어**:
+```bash
+npx prisma migrate dev --name add_suggestions_to_review
+=======
 ### 3.3 마이그레이션
 
 ```bash
 npx prisma migrate dev --name add-suggestion-model
 npx prisma generate
+>>>>>>> 730fd80bdd4df8eb1d3ebc46877de1750870c7a0
 ```
 
 ---
 
+<<<<<<< HEAD
+## Example Diff & AI Response
+
+### Input Diff Example
+
+```diff
+diff --git a/src/api/users.ts b/src/api/users.ts
+index abc123..def456 100644
+--- a/src/api/users.ts
++++ b/src/api/users.ts
+@@ -10,6 +10,10 @@ export async function getUser(id: string) {
++  const response = fetch(`/api/users/${id}`);
++  const data = response.json();
++  console.log(data);
++  return data;
+ }
+```
+
+> **Note**: Suggestions can only be placed on **added lines** (lines starting with `+`).
+> In this example, lines 10-13 are all added lines.
+
+### Expected AI JSON Response
+
+```json
+{
+  "summary": "사용자 조회 API에 fetch 및 응답 파싱 로직이 추가되었습니다.",
+  "walkthrough": "src/api/users.ts: getUser 함수에서 fetch로 사용자 데이터를 가져오고 JSON으로 파싱하여 반환하도록 수정되었습니다.",
+  "strengths": ["응답 데이터 파싱 로직 추가", "디버깅용 로그 추가"],
+  "issues": ["async/await 누락으로 인한 Promise 처리 오류 가능성"],
+  "suggestions": [
+    {
+      "file": "src/api/users.ts",
+      "line": 10,
+      "before": "  const response = fetch(`/api/users/${id}`);",
+      "after": "  const response = await fetch(`/api/users/${id}`);",
+      "explanation": "fetch는 비동기 함수이므로 await로 응답을 기다려야 합니다.",
+      "severity": "critical"
+    },
+    {
+      "file": "src/api/users.ts",
+      "line": 11,
+      "before": "  const data = response.json();",
+      "after": "  const data = await response.json();",
+      "explanation": "fetch 응답의 json() 메서드는 Promise를 반환하므로 await가 필요합니다.",
+      "severity": "critical"
+    },
+    {
+      "file": "src/api/users.ts",
+      "line": 12,
+      "before": "  console.log(data);",
+      "after": "  // console.log(data);",
+      "explanation": "프로덕션 코드에서는 디버깅용 console.log를 제거하거나 주석 처리하는 것이 좋습니다.",
+      "severity": "suggestion"
+    }
+  ]
+}
+```
+
+### GitHub에 게시되는 Suggestion 형태
+
+```markdown
+**🚨 CRITICAL**
+
+fetch 응답의 json() 메서드는 Promise를 반환하므로 await가 필요합니다.
+
+\`\`\`suggestion
+  const data = await response.json();
+\`\`\`
+=======
 ## 4. 타입 정의
 
 ### 4.1 `module/ai/types/suggestion.ts` (신규)
@@ -238,10 +313,19 @@ export interface SuggestionWithReview {
     };
   };
 }
+>>>>>>> 730fd80bdd4df8eb1d3ebc46877de1750870c7a0
 ```
 
 ---
 
+<<<<<<< HEAD
+## References
+
+- [GitHub Pull Request Reviews API](https://docs.github.com/en/rest/pulls/reviews)
+- [GitHub Suggesting Changes](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/reviewing-changes-in-pull-requests/incorporating-feedback-in-your-pull-request)
+- [parse-diff npm](https://www.npmjs.com/package/parse-diff)
+- [CodeRabbit Committable Fixes](https://www.coderabbit.ai/)
+=======
 ## 5. AI 파이프라인 수정
 
 ### 5.1 Zod 스키마: `module/ai/lib/review-schema.ts` (신규)
@@ -2232,3 +2316,4 @@ export async function getReviewById(reviewId: string) {
 - **Stage 1**: 1회 iteration (CRITICAL 0, WARNING 5 → 모두 수정/해소)
 - **Stage 2**: 1회 iteration (CRITICAL 0, WARNING 3 → 모두 수정)
 - **최종 상태**: 전 차원 CRITICAL 0, WARNING 0 — **VALIDATED**
+>>>>>>> 730fd80bdd4df8eb1d3ebc46877de1750870c7a0

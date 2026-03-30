@@ -1,7 +1,8 @@
 "use client";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { SUPPORTED_LANGUAGES, isValidLanguageCode, type LanguageCode } from "../../constants";
+import { SUPPORTED_LANGUAGES, type LanguageCode } from "../../../constants";
+import { isValidLanguageCode } from "../../../lib/language";
 
 interface LanguageSelectorProps {
   value: LanguageCode;

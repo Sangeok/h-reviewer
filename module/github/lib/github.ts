@@ -52,7 +52,23 @@ export async function fetchUserContribution(token: string, username: string) {
   `;
 
   try {
-    const response: any = await octokit.graphql(query, { username });
+    const response = await octokit.graphql<{
+      user: {
+        contributionsCollection: {
+          contributionCalendar: {
+            totalContributions: number;
+            weeks: {
+              contributionDays: {
+                contributionCount: number;
+                contributionLevel: string;
+                date: string;
+                color: string;
+              }[];
+            }[];
+          };
+        };
+      };
+    }>(query, { username });
     return response.user.contributionsCollection.contributionCalendar;
   } catch (error) {
     console.error("Error fetching user contributions:", error);
@@ -86,7 +102,7 @@ export const createWebhook = async (owner: string, repo: string) => {
     repo,
   });
 
-  const existingHook = hooks.find((hook: any) => hook.config.url === webhookUrl);
+  const existingHook = hooks.find((hook) => hook.config.url === webhookUrl);
 
   if (existingHook) {
     return existingHook;
@@ -117,7 +133,7 @@ export const deleteWebhook = async (owner: string, repo: string) => {
       repo,
     });
 
-    const hookToDelete = hooks.find((hook: any) => hook.config.url === webhookUrl);
+    const hookToDelete = hooks.find((hook) => hook.config.url === webhookUrl);
 
     if (hookToDelete) {
       await octokit.rest.repos.deleteWebhook({

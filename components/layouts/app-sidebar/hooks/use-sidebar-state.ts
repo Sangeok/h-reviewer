@@ -1,18 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { THEME_CONFIG } from "../constants/config";
 
-export function useSidebarState(defaultCollapsed = false) {
-  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+function getInitialCollapsed(defaultCollapsed: boolean): boolean {
+  if (typeof window === "undefined") return defaultCollapsed;
+  const saved = localStorage.getItem(THEME_CONFIG.storageKey);
+  if (saved !== null) {
+    return JSON.parse(saved);
+  }
+  return defaultCollapsed;
+}
 
-  // localStorage에서 초기값 복원
-  useEffect(() => {
-    const saved = localStorage.getItem(THEME_CONFIG.storageKey);
-    if (saved !== null) {
-      setIsCollapsed(JSON.parse(saved));
-    }
-  }, []);
+export function useSidebarState(defaultCollapsed = false) {
+  const [isCollapsed, setIsCollapsed] = useState(() => getInitialCollapsed(defaultCollapsed));
 
   // 상태 변경 시 localStorage에 저장
   const toggleCollapse = useCallback(() => {

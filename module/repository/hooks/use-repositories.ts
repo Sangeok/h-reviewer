@@ -1,9 +1,9 @@
 "use client";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useSuspenseInfiniteQuery } from "@tanstack/react-query";
 import { getUserRepositories } from "../actions";
 
 export const useRepositories = () => {
-  return useInfiniteQuery({
+  return useSuspenseInfiniteQuery({
     queryKey: ["repositories"],
     queryFn: async ({ pageParam = 1 }) => {
       const repositories = await getUserRepositories(pageParam, 10);

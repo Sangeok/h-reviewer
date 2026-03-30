@@ -11,10 +11,12 @@
 | 문서 | 설명 |
 |------|------|
 | `conventions/component-parts.md` | 컴포넌트 parts/ 패턴 |
+| `conventions/component-props.md` | 컴포넌트 Props 설계 규칙 |
 | `conventions/file-naming.md` | 파일 네이밍 규칙 |
 | `conventions/folder-structure.md` | 컴포넌트 폴더 구조 |
 | `conventions/writing-docs.md` | 문서 작성 가이드 |
 | `conventions/type-guard-over-assertion.md` | 타입 가드 사용 규칙 |
+| `conventions/query-boundary.md` | QueryBoundary 사용 규칙 |
 ---
 
 ## 📝 Specs (to implement)
@@ -23,6 +25,7 @@
 
 | 문서 | 상태 | 설명 |
 |------|------|------|
+| `specs/settings-module-refactoring-feature.md` | `TODO` | Settings 모듈 리팩토링 (7개 스킬 기준) |
 | `specs/ai-module-refactoring.md` | `TODO` | AI 모듈 리팩토링 명세 |
 | `specs/structured-inline-review-feature.md` | `TODO` | 구조화 인라인 리뷰 (원클릭 수정 + 라인별 코멘트 통합) |
 | `specs/one-click-fix-feature.md` | `SUPERSEDED` | → `structured-inline-review-feature.md`에 통합 |

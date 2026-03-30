@@ -4,7 +4,7 @@ import prisma from "@/lib/db";
 import { requireAuthSession } from "@/lib/server-utils";
 import { createWebhook, deleteWebhook, getRepositories } from "@/module/github";
 import { inngest } from "@/inngest/client";
-import { canConnectRepository, incrementRepositoryCount } from "@/module/payment/lib/subscription";
+import { canConnectRepository, incrementRepositoryCount, decrementRepositoryCount } from "@/module/payment/lib/subscription";
 import { isGitHubRepositoryDto, mapGitHubRepositoryDtoToRepository } from "../lib/map-github-repository";
 import type { ConnectRepositoryResult, Repository } from "../types";
 
@@ -122,4 +122,56 @@ export async function connectRepository(
   return {
     status: "connected",
   };
+}
+
+export async function disconnectRepository(repositoryId: string, userId: string): Promise<void> {
+  const repository = await prisma.repository.findUnique({
+    where: {
+      id: repositoryId,
+      userId,
+    },
+  });
+
+  if (!repository) {
+    throw new Error("Repository not found");
+  }
+
+  await deleteWebhook(repository.owner, repository.name);
+
+  await prisma.repository.delete({
+    where: {
+      id: repositoryId,
+      userId,
+    },
+  });
+
+  await decrementRepositoryCount(userId);
+}
+
+export async function disconnectAllRepositoriesInternal(userId: string): Promise<void> {
+  const repositories = await prisma.repository.findMany({
+    where: { userId },
+  });
+
+  await Promise.all(
+    repositories.map(async (repository) => {
+      await deleteWebhook(repository.owner, repository.name);
+    })
+  );
+
+  await prisma.repository.deleteMany({
+    where: { userId },
+  });
+
+  await prisma.userUsage.upsert({
+    where: { userId },
+    create: {
+      userId,
+      repositoryCount: 0,
+      reviewCounts: {},
+    },
+    update: {
+      repositoryCount: 0,
+    },
+  });
 }
