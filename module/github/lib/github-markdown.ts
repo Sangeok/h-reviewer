@@ -1,6 +1,6 @@
 import { validateMermaidSequenceDiagram } from "./mermaid-validator";
 import { DIAGRAM_FALLBACK_TEXT } from "@/shared/constants";
-import type { LanguageCode } from "@/module/settings/constants";
+import type { LanguageCode } from "@/module/settings";
 
 /** 위험 문자 패턴 - Unicode 텍스트(한국어 등)는 허용, 구문 파괴 문자만 금지. 소괄호는 메서드 호출에 빈번 사용되므로 허용 */
 const DANGEROUS_CHARS = /[`"'{};<>\[\]]/g;

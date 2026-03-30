@@ -1,58 +1,75 @@
 "use server";
 
+import * as z from "zod";
 import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
-import { deleteWebhook } from "@/module/github";
-import { decrementRepositoryCount } from "@/module/payment/lib/subscription";
-import { DEFAULT_LANGUAGE, normalizeLanguageCode, type LanguageCode } from "../constants";
+import {
+  disconnectRepository as repoDisconnectRepository,
+  disconnectAllRepositoriesInternal,
+} from "@/module/repository/actions";
+import { DEFAULT_LANGUAGE, type LanguageCode } from "../constants";
+import { normalizeLanguageCode } from "../lib/language";
+import type { UserProfile, UpdateProfileResult } from "../types";
 
-export async function getUserProfile() {
-  try {
-    const session = await requireAuthSession();
+const updateProfileSchema = z.object({
+  name: z.string().trim().max(100).optional(),
+  email: z.union([z.email(), z.literal("")]).optional(),
+  preferredLanguage: z.string().optional(),
+});
 
-    const user = await prisma.user.findUnique({
-      where: {
-        id: session.user.id,
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        image: true,
-        createdAt: true,
-        preferredLanguage: true,
-      },
-    });
+export async function getUserProfile(): Promise<UserProfile> {
+  const session = await requireAuthSession();
 
-    if (!user) {
-      return null;
-    }
+  const user = await prisma.user.findUnique({
+    where: {
+      id: session.user.id,
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+      createdAt: true,
+      preferredLanguage: true,
+    },
+  });
 
-    return {
-      ...user,
-      preferredLanguage: normalizeLanguageCode(user.preferredLanguage) ?? DEFAULT_LANGUAGE,
-    };
-  } catch (error) {
-    console.error("Error fetching user profile:", error);
-    return null;
+  if (!user) {
+    throw new Error("User not found");
   }
+
+  return {
+    ...user,
+    preferredLanguage: normalizeLanguageCode(user.preferredLanguage) ?? DEFAULT_LANGUAGE,
+  };
 }
 
-export async function updateUserProfile(data: { name?: string; email?: string; preferredLanguage?: string }) {
+export async function updateUserProfile(
+  data: { name?: string; email?: string; preferredLanguage?: string }
+): Promise<UpdateProfileResult> {
   try {
     const session = await requireAuthSession();
+
+    const parsed = updateProfileSchema.safeParse(data);
+    if (!parsed.success) {
+      return {
+        success: false,
+        message: parsed.error.issues[0]?.message ?? "Invalid input",
+      };
+    }
+
     const updateData: { name?: string; email?: string; preferredLanguage?: LanguageCode } = {};
 
-    if (typeof data.name === "string") {
-      updateData.name = data.name.trim();
+    if (typeof parsed.data.name === "string") {
+      updateData.name = parsed.data.name;
     }
 
-    if (typeof data.email === "string") {
-      updateData.email = data.email.trim();
+    if (typeof parsed.data.email === "string") {
+      updateData.email = parsed.data.email;
     }
 
-    if (typeof data.preferredLanguage === "string") {
-      const normalizedLanguage = normalizeLanguageCode(data.preferredLanguage);
+    if (typeof parsed.data.preferredLanguage === "string") {
+      const normalizedLanguage = normalizeLanguageCode(parsed.data.preferredLanguage);
 
       if (!normalizedLanguage) {
         return {
@@ -97,7 +114,9 @@ export async function updateUserProfile(data: { name?: string; email?: string; p
   }
 }
 
-export async function getConnectedRepositories() {
+export async function getConnectedRepositories(): Promise<
+  Array<{ id: string; name: string; fullName: string; url: string; createdAt: Date }>
+> {
   try {
     const session = await requireAuthSession();
 
@@ -124,95 +143,19 @@ export async function getConnectedRepositories() {
   }
 }
 
-export async function deleteRepository(repositoryId: string) {
-  try {
-    const session = await requireAuthSession();
-
-    const repository = await prisma.repository.findUnique({
-      where: {
-        id: repositoryId,
-        userId: session.user.id,
-      },
-    });
-
-    if (!repository) {
-      throw new Error("Repository not found");
-    }
-
-    await deleteWebhook(repository.owner, repository.name);
-
-    await prisma.repository.delete({
-      where: {
-        id: repositoryId,
-        userId: session.user.id,
-      },
-    });
-
-    await decrementRepositoryCount(session.user.id);
-
-    return {
-      success: true,
-      message: "Repository deleted successfully",
-    };
-  } catch (error) {
-    console.error("Error deleting repository:", error);
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error("Failed to delete repository");
-  }
+export async function disconnectRepository(repositoryId: string): Promise<{ success: true; message: string }> {
+  const session = await requireAuthSession();
+  await repoDisconnectRepository(repositoryId, session.user.id);
+  return { success: true, message: "Repository disconnected successfully" };
 }
 
-export async function disconnectAllRepositories() {
-  try {
-    const session = await requireAuthSession();
-
-    const repositories = await prisma.repository.findMany({
-      where: {
-        userId: session.user.id,
-      },
-    });
-
-    await Promise.all(
-      repositories.map(async (repository) => {
-        await deleteWebhook(repository.owner, repository.name);
-      })
-    );
-
-    await prisma.repository.deleteMany({
-      where: {
-        userId: session.user.id,
-      },
-    });
-
-    await prisma.userUsage.upsert({
-      where: {
-        userId: session.user.id,
-      },
-      create: {
-        userId: session.user.id,
-        repositoryCount: 0,
-        reviewCounts: {},
-      },
-      update: {
-        repositoryCount: 0,
-      },
-    });
-
-    return {
-      success: true,
-      message: "All repositories disconnected successfully",
-    };
-  } catch (error) {
-    console.error("Error disconnecting all repositories:", error);
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error("Failed to disconnect all repositories");
-  }
+export async function disconnectRepositoriesAndResetUsage(): Promise<{ success: true; message: string }> {
+  const session = await requireAuthSession();
+  await disconnectAllRepositoriesInternal(session.user.id);
+  return { success: true, message: "All repositories disconnected successfully" };
 }
 
-export async function getUserLanguageByUserId(userId: string): Promise<string> {
+export async function getUserLanguageByUserId(userId: string): Promise<LanguageCode> {
   try {
     const user = await prisma.user.findUnique({
       where: {

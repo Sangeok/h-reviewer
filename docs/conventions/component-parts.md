@@ -104,7 +104,53 @@ module/dashboard/ui/parts/graph/parts/tooltip.tsx
 module/dashboard/ui/parts/graph-tooltip.tsx
 ```
 
-**원칙**: Parts는 1단계만 (`ui/parts/`)
+**원칙**: Parts 안에 parts/ 중첩 금지
+
+---
+
+## 도메인별 서브그룹
+
+부모 컴포넌트가 **여러 독립 도메인**을 포함할 때, `parts/` 내부를 도메인별로 그룹화한다.
+
+### 판단 기준
+> "parts/ 안의 파일들이 2개 이상의 독립된 관심사에 속하는가?"
+> - 예 → 도메인별 서브폴더
+> - 아니오 → flat 유지
+
+### 예시
+```
+# ✅ 여러 도메인 → 서브그룹
+module/settings/ui/
+├── settings-page.tsx
+└── parts/
+    ├── profile/
+    │   ├── profile-form.tsx
+    │   ├── profile-skeleton.tsx
+    │   └── language-selector.tsx
+    └── repository/
+        ├── repository-list.tsx
+        ├── repository-item.tsx
+        └── repository-skeleton.tsx
+
+# ✅ 단일 도메인 → flat 유지
+components/app-sidebar/ui/
+├── app-sidebar.tsx
+└── parts/
+    ├── logo.tsx
+    ├── navigation.tsx
+    └── footer.tsx
+```
+
+### Import 규칙
+```typescript
+// settings-page.tsx → 도메인 서브폴더 경로
+import ProfileForm from "./parts/profile/profile-form";
+import { RepositorySkeleton } from "./parts/repository/repository-skeleton";
+```
+
+### ⚠️ 주의
+- 서브폴더 안에 다시 `parts/`를 만들지 않는다 (최대 1단계 그룹)
+- 단일 도메인이면 불필요한 서브폴더를 만들지 않는다
 
 ---
 

@@ -5,11 +5,11 @@ import { retrieveContext } from "@/module/ai";
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
 import { sanitizeMermaidSequenceDiagrams } from "@/module/github/lib/github-markdown";
-import { getLanguageName, isValidLanguageCode } from "@/module/settings/constants";
+import { getLanguageName, isValidLanguageCode } from "@/module/settings";
 import { SECTION_HEADERS, DIAGRAM_FALLBACK_TEXT } from "@/shared/constants";
 import { classifyPRSize, getTopKForSizeMode, getSectionPolicy } from "@/module/ai/lib/review-size-policy";
 import type { ReviewSizeMode } from "@/module/ai/lib/review-size-policy";
-import type { LanguageCode } from "@/module/settings/constants";
+import type { LanguageCode } from "@/module/settings";
 
 /** size 모드별 프롬프트 섹션 지시문 생성 */
 function buildSectionInstruction(

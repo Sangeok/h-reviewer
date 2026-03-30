@@ -3,40 +3,18 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getReviews } from "@/module/review";
-import { useQuery } from "@tanstack/react-query";
-import { Badge, ExternalLink, Loader2, FileCode } from "lucide-react";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { Badge, ExternalLink, FileCode } from "lucide-react";
 import { formatDistanceToNow } from "@/lib/formatDistanceToNow";
 
 export default function ReviewList() {
-  const { data: reviews, isLoading } = useQuery({
+  const { data: reviews } = useSuspenseQuery({
     queryKey: ["reviews"],
     queryFn: async () => await getReviews(),
   });
 
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-medium tracking-tight text-[#e0e0e0]">Review History</h1>
-          <p className="text-[#707070] font-light mt-1">View your AI-powered code reviews</p>
-        </div>
-
-        <div className="flex flex-col items-center justify-center gap-3 p-12 rounded-lg border border-[#1a1a1a] bg-gradient-to-b from-[#0a0a0a] to-black">
-          <Loader2 className="h-6 w-6 text-[#4a6a4a] animate-spin" />
-          <p className="text-sm text-[#707070] font-light">Loading reviews...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-medium tracking-tight text-[#e0e0e0]">Review History</h1>
-        <p className="text-[#707070] font-light mt-1">View your AI-powered code reviews</p>
-      </div>
-
+    <>
       {/* Empty State */}
       {reviews?.length === 0 && (
         <Card className="relative overflow-hidden bg-gradient-to-b from-[#0a0a0a] to-black border-[#1a1a1a]">
@@ -158,6 +136,6 @@ export default function ReviewList() {
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 }

@@ -4,7 +4,7 @@ import { getPullRequestDiff, postReviewComment } from "@/module/github/lib/githu
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
 import { stripFencedCodeBlocks } from "@/module/ai";
-import { getLanguageName, isValidLanguageCode } from "@/module/settings/constants";
+import { getLanguageName, isValidLanguageCode } from "@/module/settings";
 
 export const generateSummary = inngest.createFunction(
   { id: "generate-summary" },

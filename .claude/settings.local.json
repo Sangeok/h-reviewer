@@ -11,7 +11,23 @@
       "Bash(npm run lint:*)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:docs.github.com)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(grep:*)",
+      "Bash(find /c/Users/hamso/OneDrive/Desktop/git/hreviewer -type f \\\\\\(-name naming-conventions.md -o -name *.ts -o -name *.tsx \\\\\\))",
+      "Bash(find C:/Users/hamso/OneDrive/Desktop/git/hreviewer -type f \\\\\\(-name *.ts -o -name *.tsx \\\\\\) ! -path */node_modules/* ! -path */.next/*)",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__plugin_context7_context7__query-docs",
+      "Bash(node:*)",
+      "Bash(node -e \"const z = require\\(''zod''\\); console.log\\(''z.email type:'', typeof z.email\\); const s = z.object\\({ email: z.union\\([z.email\\(\\), z.literal\\(''''\\)]\\).optional\\(\\) }\\); console.log\\(''valid email:'', s.safeParse\\({ email: ''test@test.com'' }\\).success\\); console.log\\(''empty string:'', s.safeParse\\({ email: '''' }\\).success\\); console.log\\(''invalid:'', s.safeParse\\({ email: ''bad'' }\\).success\\); console.log\\(''undefined:'', s.safeParse\\({}\\).success\\);\")",
+      "Bash(npx eslint:*)",
+      "Bash(xargs cat:*)",
+      "Bash(python3 -c \"import sys, json; d = json.load\\(sys.stdin\\); print\\(list\\(d.get\\(''''dependencies'''', {}\\).keys\\(\\)\\)\\)\")",
+      "Bash(npm install:*)",
+      "Bash(cd:*)",
+      "Bash(mv module/settings/ui/parts/profile-form.tsx module/settings/ui/parts/profile/profile-form.tsx)",
+      "Bash(mv module/settings/ui/parts/profile-skeleton.tsx module/settings/ui/parts/profile/profile-skeleton.tsx)",
+      "Bash(mv module/settings/ui/parts/repository-item.tsx module/settings/ui/parts/repository/repository-item.tsx)",
+      "Bash(mv module/settings/ui/parts/repository-skeleton.tsx module/settings/ui/parts/repository/repository-skeleton.tsx)"
     ]
   }
 }

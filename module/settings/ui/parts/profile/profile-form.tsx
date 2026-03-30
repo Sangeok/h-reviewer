@@ -1,33 +1,22 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { getUserProfile, updateUserProfile } from "@/module/settings/actions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useSession } from "@/lib/auth-client";
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
-import { DEFAULT_LANGUAGE, LanguageCode } from "../../constants";
+import { DEFAULT_LANGUAGE, type LanguageCode } from "../../../constants";
+import { useUserProfile } from "../../../hooks/use-user-profile";
 import LanguageSelector from "./language-selector";
 
 export default function ProfileForm() {
-  const queryClient = useQueryClient();
-  const { refetch: refetchSession } = useSession();
+  const { profile, updateMutation } = useUserProfile();
 
   const [formState, setFormState] = useState<{
     name: string;
     email: string;
     preferredLanguage: LanguageCode;
   } | null>(null);
-
-  const { data: profile, isLoading } = useQuery({
-    queryKey: ["user-profile"],
-    queryFn: getUserProfile,
-    staleTime: 1000 * 60 * 5,
-    refetchOnWindowFocus: false,
-  });
 
   const getInitialFormState = () => ({
     name: profile?.name || "",
@@ -37,53 +26,24 @@ export default function ProfileForm() {
 
   const currentFormState = formState ?? getInitialFormState();
 
-  const updateMutation = useMutation({
-    mutationFn: updateUserProfile,
-    onSuccess: async (result) => {
-      if (result?.success) {
-        setFormState(null);
-        queryClient.invalidateQueries({ queryKey: ["user-profile"] });
-        await refetchSession();
-        toast.success("Profile updated successfully");
-      } else {
-        toast.error(result?.message || "Failed to update profile");
-      }
-    },
-    onError: (error) => {
-      toast.error("Failed to update profile");
-      console.error(error);
-    },
-  });
-
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    updateMutation.mutate({
-      name: currentFormState.name,
-      email: currentFormState.email,
-      preferredLanguage: currentFormState.preferredLanguage,
-    });
-  };
-
-  if (isLoading) {
-    return (
-      <Card className="relative overflow-hidden border-border bg-gradient-to-b from-card to-background">
-        <CardHeader className="relative z-10">
-          <CardTitle className="text-lg font-medium text-foreground">Profile Settings</CardTitle>
-          <CardDescription className="font-light text-muted-foreground">Update your profile information</CardDescription>
-        </CardHeader>
-        <CardContent className="relative z-10">
-          <div className="space-y-4">
-            <div className="h-10 animate-pulse rounded-lg bg-secondary" />
-            <div className="h-10 animate-pulse rounded-lg bg-secondary" />
-          </div>
-        </CardContent>
-      </Card>
+    updateMutation.mutate(
+      {
+        name: currentFormState.name,
+        email: currentFormState.email,
+        preferredLanguage: currentFormState.preferredLanguage,
+      },
+      {
+        onSuccess: (result) => {
+          if (result.success) setFormState(null);
+        },
+      }
     );
-  }
+  };
 
   return (
     <Card className="relative overflow-hidden border-border bg-gradient-to-b from-card to-background">
-      {/* Subtle background gradient */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-ring/3 to-transparent" />
 
       <CardHeader className="relative z-10">
@@ -93,7 +53,6 @@ export default function ProfileForm() {
 
       <CardContent className="relative z-10">
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-          {/* Full Name Field */}
           <div className="flex flex-col gap-2">
             <label htmlFor="name" className="text-sm font-medium text-secondary-foreground">
               Full Name
@@ -114,7 +73,6 @@ export default function ProfileForm() {
             />
           </div>
 
-          {/* Email Field */}
           <div className="flex flex-col gap-2">
             <label htmlFor="email" className="text-sm font-medium text-secondary-foreground">
               Email
@@ -151,7 +109,6 @@ export default function ProfileForm() {
             />
           </div>
 
-          {/* Submit Button */}
           <Button
             type="submit"
             disabled={updateMutation.isPending}

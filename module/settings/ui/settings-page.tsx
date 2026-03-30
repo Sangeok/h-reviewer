@@ -1,5 +1,8 @@
-import ProfileForm from "./parts/profile-form";
-import RepositoryList from "./parts/repository-list";
+import { QueryBoundary } from "@/components/error-boundary/query-error-boundary";
+import ProfileForm from "./parts/profile/profile-form";
+import RepositoryList from "./parts/repository/repository-list";
+import { ProfileSkeleton } from "./parts/profile/profile-skeleton";
+import { RepositorySkeleton } from "./parts/repository/repository-skeleton";
 
 export default function SettingsPage() {
   return (
@@ -11,10 +14,22 @@ export default function SettingsPage() {
       </div>
 
       {/* Profile Form */}
-      <ProfileForm />
+      <QueryBoundary
+        fallback={<ProfileSkeleton />}
+        title="Profile Settings"
+        description="Failed to load profile"
+      >
+        <ProfileForm />
+      </QueryBoundary>
 
       {/* Repository List */}
-      <RepositoryList />
+      <QueryBoundary
+        fallback={<RepositorySkeleton />}
+        title="Connected Repository"
+        description="Failed to load connected GitHub repositories"
+      >
+        <RepositoryList />
+      </QueryBoundary>
     </div>
   );
 }
