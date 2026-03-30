@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { checkout, customer } from "@/lib/auth-client";
 import { getSubscriptionData, syncSubscriptionStatus } from "@/module/payment/action/config";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { Check, ExternalLink, Loader2, RefreshCw, X } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Check, ExternalLink, Loader2, RefreshCw, SplinePointer, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -42,9 +42,9 @@ export default function SubscriptionContent() {
   const searchParams = useSearchParams();
   const success = searchParams.get("success");
 
-  const { data, refetch } = useSuspenseQuery({
+  const { data, refetch, isLoading } = useQuery({
     queryKey: ["subscription-data"],
-    queryFn: getSubscriptionData,
+    queryFn: () => getSubscriptionData(),
     refetchOnWindowFocus: true,
   });
 
@@ -61,6 +61,15 @@ export default function SubscriptionContent() {
       sync();
     }
   }, [success, refetch]);
+
+  if (isLoading || !data) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px]">
+        <SplinePointer />
+        <p className="text-sm text-[#707070] font-light">Loading subscription data...</p>
+      </div>
+    );
+  }
 
   if (!data.user) {
     return (

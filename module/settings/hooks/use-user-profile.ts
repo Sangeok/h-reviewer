@@ -1,14 +1,12 @@
 "use client";
 
 import { useMutation, useSuspenseQuery, useQueryClient } from "@tanstack/react-query";
-import { useSession } from "@/lib/auth-client";
 import { toast } from "sonner";
 import { getUserProfile, updateUserProfile } from "../actions";
 import { SETTINGS_QUERY_KEYS, PROFILE_STALE_TIME_MS } from "../constants";
 
 export function useUserProfile() {
   const queryClient = useQueryClient();
-  const { refetch: refetchSession } = useSession();
 
   const { data: profile } = useSuspenseQuery({
     queryKey: SETTINGS_QUERY_KEYS.USER_PROFILE,
@@ -22,7 +20,6 @@ export function useUserProfile() {
     onSuccess: async (result) => {
       if (result.success) {
         await queryClient.invalidateQueries({ queryKey: SETTINGS_QUERY_KEYS.USER_PROFILE });
-        await refetchSession();
         toast.success("Profile updated successfully");
       } else {
         toast.error(result.message);

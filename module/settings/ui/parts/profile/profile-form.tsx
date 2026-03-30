@@ -5,12 +5,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+import { useSession } from "@/lib/auth-client";
 import { DEFAULT_LANGUAGE, type LanguageCode } from "../../../constants";
 import { useUserProfile } from "../../../hooks/use-user-profile";
 import LanguageSelector from "./language-selector";
 
 export default function ProfileForm() {
   const { profile, updateMutation } = useUserProfile();
+  const { refetch: refetchSession } = useSession();
 
   const [formState, setFormState] = useState<{
     name: string;
@@ -35,8 +37,11 @@ export default function ProfileForm() {
         preferredLanguage: currentFormState.preferredLanguage,
       },
       {
-        onSuccess: (result) => {
-          if (result.success) setFormState(null);
+        onSuccess: async (result) => {
+          if (result.success) {
+            setFormState(null);
+            await refetchSession();
+          }
         },
       }
     );
