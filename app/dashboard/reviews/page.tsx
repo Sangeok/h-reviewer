@@ -1,8 +1,10 @@
 import { QueryBoundary } from "@/components/error-boundary/query-error-boundary";
-import { ReviewList } from "@/module/review";
+import { ReviewList, getReviews } from "@/module/review";
 import { Loader2 } from "lucide-react";
 
-export default function ReviewsPage() {
+export default async function ReviewsPage() {
+  const initialData = await getReviews();
+
   return (
     <div className="space-y-6">
       <div>
@@ -10,7 +12,7 @@ export default function ReviewsPage() {
         <p className="text-[#707070] font-light mt-1">View your AI-powered code reviews</p>
       </div>
       <QueryBoundary fallback={<ReviewSkeleton />}>
-        <ReviewList />
+        <ReviewList initialData={initialData} />
       </QueryBoundary>
     </div>
   );

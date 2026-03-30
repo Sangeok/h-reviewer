@@ -2,17 +2,20 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { getReviews } from "@/module/review";
-import { useSuspenseQuery } from "@tanstack/react-query";
 import { Badge, ExternalLink, FileCode, Lightbulb } from "lucide-react";
 import { formatDistanceToNow } from "@/lib/formatDistanceToNow";
 import Link from "next/link";
+import { useReviews } from "../hooks/use-reviews";
+import type { getReviews } from "../actions";
 
-export default function ReviewList() {
-  const { data: reviews } = useSuspenseQuery({
-    queryKey: ["reviews"],
-    queryFn: async () => await getReviews(),
-  });
+type ReviewsData = Awaited<ReturnType<typeof getReviews>>;
+
+interface ReviewListProps {
+  initialData?: ReviewsData;
+}
+
+export default function ReviewList({ initialData }: ReviewListProps) {
+  const { reviews } = useReviews(initialData);
 
   return (
     <>
