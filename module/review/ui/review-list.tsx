@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getReviews } from "@/module/review";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { Badge, ExternalLink, FileCode } from "lucide-react";
+import { Badge, ExternalLink, FileCode, Lightbulb } from "lucide-react";
 import { formatDistanceToNow } from "@/lib/formatDistanceToNow";
+import Link from "next/link";
 
 export default function ReviewList() {
   const { data: reviews } = useSuspenseQuery({
@@ -51,7 +52,7 @@ export default function ReviewList() {
                         {review.prTitle}
                       </CardTitle>
 
-                      {/* Status Badges - Refined Colors */}
+                      {/* Status Badges */}
                       {review.status === "completed" && (
                         <Badge className="bg-gradient-to-r from-[#2d3e2d]/30 to-[#3d523d]/20 text-[#4a6a4a] border border-[#2d3e2d]/30 hover:bg-gradient-to-r hover:from-[#2d3e2d]/40 hover:to-[#3d523d]/30">
                           Completed
@@ -65,6 +66,14 @@ export default function ReviewList() {
                       {review.status === "pending" && (
                         <Badge className="bg-[#3a3020]/30 text-[#d4a574] border border-[#3a3020]/50 hover:bg-[#3a3020]/40">
                           Pending
+                        </Badge>
+                      )}
+
+                      {/* Suggestion Count Badge */}
+                      {review._count.suggestions > 0 && (
+                        <Badge className="bg-blue-950/30 text-blue-400 border border-blue-800/30 hover:bg-blue-950/40">
+                          <Lightbulb className="w-3 h-3 mr-1" />
+                          {review._count.suggestions} suggestion{review._count.suggestions !== 1 ? "s" : ""}
                         </Badge>
                       )}
                     </div>
@@ -115,15 +124,25 @@ export default function ReviewList() {
                     <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-[#0a0a0a] to-transparent pointer-events-none" />
                   </div>
 
-                  {/* Action Button */}
-                  <div>
+                  {/* Action Buttons */}
+                  <div className="flex gap-2">
                     <Button
                       variant="outline"
                       asChild
                       className="border-[#2d3e2d]/30 text-[#d0d0d0] hover:border-[#2d3e2d]/50 hover:bg-[#1a1a1a] hover:text-[#4a6a4a] transition-all duration-300"
                     >
+                      <Link href={`/dashboard/reviews/${review.id}`}>
+                        View Details
+                      </Link>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      asChild
+                      className="text-[#707070] hover:text-[#4a6a4a] transition-all duration-300"
+                    >
                       <a href={review.prUrl} target="_blank" rel="noopener noreferrer">
-                        View Full Review on GitHub
+                        <ExternalLink className="w-4 h-4 mr-1" />
+                        GitHub
                       </a>
                     </Button>
                   </div>

@@ -36,6 +36,7 @@ export async function reviewPullRequest(
         prNumber,
         userId: repository.user.id,
         preferredLanguage,
+        maxSuggestions: repository.user.maxSuggestions ?? null,
       },
     });
 

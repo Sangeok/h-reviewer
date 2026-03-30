@@ -24,7 +24,7 @@ export const getGithubAccessToken = async () => {
  * Create Octokit client instance with authentication token.
  * Centralizes Octokit initialization to avoid code duplication.
  */
-function createOctokitClient(token: string): Octokit {
+export function createOctokitClient(token: string): Octokit {
   return new Octokit({ auth: token });
 }
 
@@ -52,7 +52,23 @@ export async function fetchUserContribution(token: string, username: string) {
   `;
 
   try {
-    const response: any = await octokit.graphql(query, { username });
+    const response = await octokit.graphql<{
+      user: {
+        contributionsCollection: {
+          contributionCalendar: {
+            totalContributions: number;
+            weeks: {
+              contributionDays: {
+                contributionCount: number;
+                contributionLevel: string;
+                date: string;
+                color: string;
+              }[];
+            }[];
+          };
+        };
+      };
+    }>(query, { username });
     return response.user.contributionsCollection.contributionCalendar;
   } catch (error) {
     console.error("Error fetching user contributions:", error);
@@ -86,7 +102,7 @@ export const createWebhook = async (owner: string, repo: string) => {
     repo,
   });
 
-  const existingHook = hooks.find((hook: any) => hook.config.url === webhookUrl);
+  const existingHook = hooks.find((hook) => hook.config.url === webhookUrl);
 
   if (existingHook) {
     return existingHook;
@@ -117,7 +133,7 @@ export const deleteWebhook = async (owner: string, repo: string) => {
       repo,
     });
 
-    const hookToDelete = hooks.find((hook: any) => hook.config.url === webhookUrl);
+    const hookToDelete = hooks.find((hook) => hook.config.url === webhookUrl);
 
     if (hookToDelete) {
       await octokit.rest.repos.deleteWebhook({
@@ -217,6 +233,97 @@ export async function getPullRequestDiff(token: string, owner: string, repo: str
     additions: pr.additions,
     deletions: pr.deletions,
     changedFiles: pr.changed_files,
+    headSha: pr.head.sha,
+    headBranch: pr.head.ref,
+    state: pr.state,
+    merged: pr.merged,
+  };
+}
+
+export async function getFileContent(
+  token: string,
+  owner: string,
+  repo: string,
+  path: string,
+  ref: string
+): Promise<{ content: string; sha: string } | null> {
+  const octokit = createOctokitClient(token);
+
+  try {
+    const { data } = await octokit.rest.repos.getContent({
+      owner, repo, path, ref,
+    });
+
+    if (Array.isArray(data) || data.type !== "file" || !data.content) {
+      return null;
+    }
+
+    return {
+      content: Buffer.from(data.content, "base64").toString("utf-8"),
+      sha: data.sha,
+    };
+  } catch (error) {
+    if (error instanceof Error && "status" in error && (error as NodeJS.ErrnoException & { status?: number }).status === 404) return null;
+    throw error;
+  }
+}
+
+export async function commitFileUpdate(
+  token: string,
+  owner: string,
+  repo: string,
+  path: string,
+  content: string,
+  fileSha: string,
+  message: string,
+  branch: string
+): Promise<{ commitSha: string }> {
+  const octokit = createOctokitClient(token);
+
+  const { data } = await octokit.rest.repos.createOrUpdateFileContents({
+    owner,
+    repo,
+    path,
+    message,
+    content: Buffer.from(content).toString("base64"),
+    sha: fileSha,
+    branch,
+  });
+
+  return { commitSha: data.commit.sha ?? "" };
+}
+
+export async function getPullRequestBranch(
+  token: string,
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<{
+  branch: string;
+  headSha: string;
+  state: string;
+  merged: boolean;
+  headRepoOwner: string;
+  headRepoName: string;
+  isFork: boolean;
+}> {
+  const octokit = createOctokitClient(token);
+
+  const { data: pr } = await octokit.rest.pulls.get({
+    owner, repo, pull_number: prNumber,
+  });
+
+  const headRepo = pr.head.repo;
+  const isFork = headRepo ? headRepo.full_name !== `${owner}/${repo}` : false;
+
+  return {
+    branch: pr.head.ref,
+    headSha: pr.head.sha,
+    state: pr.state,
+    merged: pr.merged,
+    headRepoOwner: headRepo?.owner?.login ?? owner,
+    headRepoName: headRepo?.name ?? repo,
+    isFork,
   };
 }
 

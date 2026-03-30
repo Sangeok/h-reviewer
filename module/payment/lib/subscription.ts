@@ -187,8 +187,8 @@ export async function updateUserTier(
   userId: string,
   tier: SubscriptionTier,
   status: SubscriptionStatus,
-  polarSubscriptionId?: string,
-  polarCustomerId?: string,
+  _polarSubscriptionId?: string,
+  _polarCustomerId?: string,
 ): Promise<void> {
   await prisma.user.update({
     where: {

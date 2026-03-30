@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -154,7 +155,6 @@
     @apply bg-background text-foreground;
   }
 }
-
 /* Custom Animations for Login UI */
 @keyframes gridSlide {
   0% {

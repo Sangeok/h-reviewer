@@ -1,62 +1,29 @@
 import prisma from "@/lib/db";
 import { inngest } from "../client";
 import { getPullRequestDiff, postReviewComment } from "@/module/github/lib/github";
+import { postPRReviewWithSuggestions } from "@/module/github/lib/pr-review";
 import { retrieveContext } from "@/module/ai";
-import { generateText } from "ai";
+import { generateText, Output } from "ai";
 import { google } from "@ai-sdk/google";
 import { sanitizeMermaidSequenceDiagrams } from "@/module/github/lib/github-markdown";
-import { getLanguageName, isValidLanguageCode } from "@/module/settings";
+import { isValidLanguageCode } from "@/module/settings";
 import { SECTION_HEADERS, DIAGRAM_FALLBACK_TEXT } from "@/shared/constants";
-import { classifyPRSize, getTopKForSizeMode, getSectionPolicy } from "@/module/ai/lib/review-size-policy";
+import { classifyPRSize, getTopKForSizeMode } from "@/module/ai/lib/review-size-policy";
+import { structuredReviewSchema } from "@/module/ai/lib/review-schema";
+import { buildStructuredPrompt, buildFallbackPrompt, getIssueLimit } from "@/module/ai/lib/review-prompt";
+import { formatStructuredReviewToMarkdown } from "@/module/ai/lib/review-formatter";
+import { parseDiffToChangedFiles, extractDiffFileSet } from "@/module/github/lib/diff-parser";
 import type { ReviewSizeMode } from "@/module/ai/lib/review-size-policy";
 import type { LanguageCode } from "@/module/settings";
-
-/** size 모드별 프롬프트 섹션 지시문 생성 */
-function buildSectionInstruction(
-  mode: ReviewSizeMode,
-  headers: (typeof SECTION_HEADERS)[LanguageCode],
-): string {
-  const policy = getSectionPolicy(mode);
-  const sections: string[] = [];
-  let idx = 1;
-
-  if (policy.summary) {
-    const extra = mode === "tiny" ? " (2-3 sentences only)" : mode === "large" ? " (focus on key changed files)" : "";
-    sections.push(`${idx++}. **${headers.summary}**${extra}`);
-  }
-  if (policy.walkthrough) {
-    const extra = mode === "small" ? " (brief, one line per file)" : mode === "large" ? " (top 10 changed files only)" : "";
-    sections.push(`${idx++}. **${headers.walkthrough}**${extra}`);
-  }
-  if (policy.sequenceDiagram) {
-    sections.push(`${idx++}. **${headers.sequenceDiagram}**: Use \`\`\`mermaid block.`);
-  }
-  if (policy.strengths) {
-    sections.push(`${idx++}. **${headers.strengths}**`);
-  }
-  if (policy.issues) {
-    const extra = mode === "tiny" ? " (max 1 issue unless critical)" : mode === "large" ? " (prioritized by severity)" : "";
-    sections.push(`${idx++}. **${headers.issues}**${extra}`);
-  }
-  if (policy.suggestions) {
-    const extra = mode === "tiny" ? " (max 2 suggestions)" : mode === "large" ? " (top 5 only)" : "";
-    sections.push(`${idx++}. **${headers.suggestions}**${extra}`);
-  }
-  if (policy.poem) {
-    sections.push(`${idx++}. **${headers.poem}**: A short creative poem.`);
-  }
-
-  return `Provide the review with these sections:\n${sections.join("\n")}`;
-}
 
 export const generateReview = inngest.createFunction(
   { id: "generate-review" },
   { event: "pr.review.requested" },
   async ({ event, step }) => {
-    const { owner, repo, prNumber, userId, preferredLanguage = "en" } = event.data;
+    const { owner, repo, prNumber, userId, preferredLanguage = "en", maxSuggestions = null } = event.data;
 
     // ── Step 1: PR 데이터 + 크기 정보 가져오기 ──
-    const { diff, title, description, token, additions, deletions, changedFiles } =
+    const { diff, title, description, token, additions, deletions, changedFiles, headSha } =
       await step.run("fetch-pr-data", async () => {
         const account = await prisma.account.findFirst({
           where: {
@@ -75,8 +42,8 @@ export const generateReview = inngest.createFunction(
       });
 
     // ── Step 2: 크기 분류 + 언어 코드 (이후 모든 step에서 공유) ──
-    const langCode = isValidLanguageCode(preferredLanguage) ? preferredLanguage : "en";
-    const sizeMode = classifyPRSize({ additions, deletions, changedFiles });
+    const langCode: LanguageCode = isValidLanguageCode(preferredLanguage) ? preferredLanguage : "en";
+    const sizeMode: ReviewSizeMode = classifyPRSize({ additions, deletions, changedFiles });
     const topK = getTopKForSizeMode(sizeMode);
 
     // ── Step 3: RAG 컨텍스트 (tiny면 생략) ──
@@ -88,76 +55,137 @@ export const generateReview = inngest.createFunction(
     });
 
     // ── Step 4: AI 리뷰 생성 ──
-    const rawReview = await step.run("generate-ai-review", async () => {
+    // BREAKING CHANGE: 기존 step은 plain string(text)을 반환했으나, 변경 후 { rawReview, structuredOutput } 객체를 반환한다.
+    const { rawReview, structuredOutput } = await step.run("generate-ai-review", async () => {
       const headers = SECTION_HEADERS[langCode];
+      const changedFilesSummary = parseDiffToChangedFiles(diff);
 
-      const languageInstruction =
-        langCode !== "en"
-          ? `\n\nIMPORTANT: Write the entire review in ${getLanguageName(langCode)}. All section headers must be exactly as specified below. However, keep technical terms in English where appropriate.`
-          : "";
+      // 구조화 출력 시도
+      try {
+        const prompt = buildStructuredPrompt({
+          title, description, diff, context, langCode, sizeMode, changedFilesSummary, maxSuggestions,
+        });
 
-      const mermaidInstruction = getSectionPolicy(sizeMode).sequenceDiagram
-        ? `\nIf you include a Mermaid sequence diagram, follow these rules STRICTLY:
-- Use ONLY sequenceDiagram type.
-- participant ids must match [a-zA-Z0-9_]+ only.
-- In message/note/label text: NEVER use backticks, quotes, braces, brackets, semicolons, or angle brackets. Parentheses are OK. Unicode letters (Korean, etc.) are allowed.
-- Allowed control structures: loop/end, alt/else/end, opt/end, autonumber.
-- Do NOT use activate/deactivate or +/- on arrows.
-- If you are uncertain about the validity, output "Diagram omitted" instead.`
-        : "";
+        const { experimental_output } = await generateText({
+          model: google("gemini-2.5-flash"),
+          experimental_output: Output.object({ schema: structuredReviewSchema }),
+          prompt,
+        });
 
-      const sectionInstruction = buildSectionInstruction(sizeMode, headers);
+        if (experimental_output) {
+          const markdown = formatStructuredReviewToMarkdown(experimental_output, langCode);
+          return { rawReview: markdown, structuredOutput: experimental_output };
+        }
+      } catch (error) {
+        console.warn("Structured output failed, falling back to markdown:", error);
+      }
 
-      const prompt = `You are an expert code reviewer.${languageInstruction}
-
-PR Title: ${title}
-PR Description: ${description || "No description provided"}
-
-${context.length > 0 ? `Context from Codebase:\n${context.join("\n\n")}` : ""}
-
-Code Changes:
-\`\`\`diff
-${diff}
-\`\`\`
-
-Review Mode: ${sizeMode.toUpperCase()}
-${sectionInstruction}
-${mermaidInstruction}
-
-Format your response in markdown.`;
-
+      // 폴백: 기존 마크다운 경로
+      const fallbackPrompt = buildFallbackPrompt({
+        title, description, diff, context, langCode, sizeMode, headers,
+      });
       const { text } = await generateText({
         model: google("gemini-2.5-flash"),
-        prompt,
+        prompt: fallbackPrompt,
       });
 
-      return text;
+      return { rawReview: text, structuredOutput: null };
     });
 
     // ── Step 5: 검증 게이트 (sanitize → validate → fallback) ──
-    const { review, validationMeta } = await step.run("validate-review", async () => {
+    const { review, validatedStructuredOutput } = await step.run("validate-review", async () => {
       const sanitized = sanitizeMermaidSequenceDiagrams(rawReview, langCode);
 
-      const hadMermaidBlock = /```mermaid/i.test(rawReview);
-      const hasFallback =
-        sanitized.includes(DIAGRAM_FALLBACK_TEXT.en) ||
-        sanitized.includes(DIAGRAM_FALLBACK_TEXT.ko);
+      // 구조화 출력의 sequenceDiagram도 검증
+      let validatedOutput = structuredOutput;
+      if (structuredOutput?.sequenceDiagram) {
+        const wrappedDiagram = `\`\`\`mermaid\n${structuredOutput.sequenceDiagram}\n\`\`\``;
+        const sanitizedDiagram = sanitizeMermaidSequenceDiagrams(wrappedDiagram, langCode);
+        const diagramFailed =
+          sanitizedDiagram.includes(DIAGRAM_FALLBACK_TEXT.en) ||
+          sanitizedDiagram.includes(DIAGRAM_FALLBACK_TEXT.ko);
+
+        if (diagramFailed) {
+          validatedOutput = { ...structuredOutput, sequenceDiagram: null };
+        }
+      }
+
+      // issues 검증: diff 파일 목록으로 사전 필터링 + count-trimming
+      if (validatedOutput?.issues) {
+        const diffFiles = extractDiffFileSet(diff);
+        validatedOutput = {
+          ...validatedOutput,
+          issues: validatedOutput.issues.filter(issue => {
+            // project-level issues (file: null)는 항상 유효
+            if (issue.file === null) return true;
+            // file이 diff에 존재하는지 검증
+            if (!diffFiles.has(issue.file)) return false;
+            // line-specific issue의 line이 양수인지만 기본 검증
+            // (정확한 diff hunk 범위 검증은 비용 대비 효과가 낮음)
+            if (issue.line !== null && issue.line < 1) return false;
+            return true;
+          }),
+        };
+
+        // ⚠️ AI가 prompt limit을 초과할 수 있으므로 count-trimming 적용
+        // (Zod schema에는 동적 .max() 불가 — sizeMode 기반이므로 런타임 필터링)
+        const { inline: maxInline, general: maxGeneral } = getIssueLimit(sizeMode);
+        let inlineCount = 0, generalCount = 0;
+        validatedOutput = {
+          ...validatedOutput,
+          issues: validatedOutput.issues.filter(issue => {
+            if (issue.line !== null) return ++inlineCount <= maxInline;
+            return ++generalCount <= maxGeneral;
+          }),
+        };
+
+        // suggestion이 있는 file+line과 동일한 issue 제거 (중복 인라인 댓글 방지)
+        // 업계 표준: 한 위치에 하나의 인라인 댓글 — suggestion의 explanation이 이미 문제를 설명함
+        if (validatedOutput.suggestions && validatedOutput.suggestions.length > 0) {
+          const suggestionLineSet = new Set(
+            validatedOutput.suggestions.map(s => `${s.file}:${s.line}`)
+          );
+          validatedOutput = {
+            ...validatedOutput,
+            issues: validatedOutput.issues.filter(issue => {
+              if (issue.file !== null && issue.line !== null) {
+                return !suggestionLineSet.has(`${issue.file}:${issue.line}`);
+              }
+              return true;
+            }),
+          };
+        }
+      }
 
       return {
         review: sanitized,
-        validationMeta: {
-          diagramPresent: hadMermaidBlock,
-          diagramValidationPassed: hadMermaidBlock ? !hasFallback : null,
-          diagramFailureReason: hasFallback ? "diagram replaced with fallback" : null,
-          sanitizerApplied: true,
-          sizeMode,
-        },
+        validatedStructuredOutput: validatedOutput,
       };
     });
 
-    // ── Step 6: GitHub에 코멘트 게시 ──
-    await step.run("post-comment", async () => {
-      await postReviewComment(token, owner, repo, prNumber, review);
+    // ── Step 6: GitHub에 리뷰 게시 ──
+    // IMPORTANT: postedAsReview는 반드시 step.run()의 반환값으로 캡처해야 한다.
+    const postedAsReview = await step.run("post-review", async () => {
+      const suggestions = validatedStructuredOutput?.suggestions ?? [];
+      const issues = validatedStructuredOutput?.issues ?? [];
+      const inlineIssues = issues.filter(i => i.file !== null && i.line !== null);
+      const hasInlineContent = suggestions.length > 0 || inlineIssues.length > 0;
+
+      if (hasInlineContent) {
+        try {
+          await postPRReviewWithSuggestions({
+            token, owner, repo, prNumber, reviewBody: review, suggestions, issues, headSha,
+          });
+          return true;
+        } catch (error) {
+          console.warn("PR Review API failed, falling back to comment:", error);
+          await postReviewComment(token, owner, repo, prNumber, review);
+          return false;
+        }
+      } else {
+        await postReviewComment(token, owner, repo, prNumber, review);
+        return false;
+      }
     });
 
     // ── Step 7: DB에 리뷰 저장 ──
@@ -173,17 +201,38 @@ Format your response in markdown.`;
         throw new Error("Repository not found");
       }
 
-      await prisma.review.create({
-        data: {
-          repositoryId: repository.id,
-          prNumber,
-          prTitle: title,
-          prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
-          review,
-          reviewType: "FULL_REVIEW",
-          status: "completed",
-        },
+      await prisma.$transaction(async (tx) => {
+        const createdReview = await tx.review.create({
+          data: {
+            repositoryId: repository.id,
+            prNumber,
+            prTitle: title,
+            prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
+            review,
+            reviewType: "FULL_REVIEW",
+            status: "completed",
+            headSha,
+          },
+        });
+
+        if (validatedStructuredOutput?.suggestions?.length) {
+          await tx.suggestion.createMany({
+            data: validatedStructuredOutput.suggestions.map((s) => ({
+              reviewId: createdReview.id,
+              filePath: s.file,
+              lineNumber: s.line,
+              beforeCode: s.before,
+              afterCode: s.after,
+              explanation: s.explanation,
+              severity: s.severity,
+              status: "PENDING",
+            })),
+          });
+        }
       });
+
+      // postedAsReview 참조로 Inngest replay 경고 방지
+      void postedAsReview;
     });
 
     return { success: true };
