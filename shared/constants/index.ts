@@ -1,4 +1,4 @@
-import type { LanguageCode } from "@/module/settings";
+import type { LanguageCode } from "@/shared/types/language";
 
 export const SECTION_HEADERS = {
   en: {
