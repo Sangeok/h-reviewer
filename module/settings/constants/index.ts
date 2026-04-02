@@ -1,4 +1,5 @@
-export type LanguageCode = "en" | "ko";
+import type { LanguageCode } from "@/shared/types/language";
+export type { LanguageCode };
 
 export interface SupportedLanguage {
   code: LanguageCode;

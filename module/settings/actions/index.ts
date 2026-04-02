@@ -4,9 +4,27 @@ import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
 import { deleteWebhook } from "@/module/github";
 import { decrementRepositoryCount } from "@/module/payment/lib/subscription";
-import { DEFAULT_LANGUAGE, LanguageCode } from "../constants";
+import { z } from "zod";
+import { DEFAULT_LANGUAGE, LANGUAGE_BY_CODE, type LanguageCode } from "../constants";
 import { MAX_SUGGESTION_CAP } from "@/module/ai/constants";
-import { normalizeLanguageCode } from "../lib/language";
+import { isValidLanguageCode } from "../lib/language";
+
+const LANGUAGE_CODES = Object.keys(LANGUAGE_BY_CODE) as [LanguageCode, ...LanguageCode[]];
+
+const profileUpdateSchema = z
+  .object({
+    name: z.string().trim().max(100).optional(),
+    email: z.union([z.string().email(), z.literal("")]).optional(),
+    preferredLanguage: z.enum(LANGUAGE_CODES).optional(),
+    maxSuggestions: z
+      .union([z.number().int().min(1).max(MAX_SUGGESTION_CAP), z.null()])
+      .optional(),
+  })
+  .refine((data) => Object.values(data).some((v) => v !== undefined), {
+    message: "No profile fields were provided",
+  });
+
+type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
 
 export async function getUserProfile() {
   try {
@@ -33,7 +51,7 @@ export async function getUserProfile() {
 
     return {
       ...user,
-      preferredLanguage: normalizeLanguageCode(user.preferredLanguage) ?? DEFAULT_LANGUAGE,
+      preferredLanguage: isValidLanguageCode(user.preferredLanguage) ? user.preferredLanguage : DEFAULT_LANGUAGE,
     };
   } catch (error) {
     console.error("Error fetching user profile:", error);
@@ -41,73 +59,21 @@ export async function getUserProfile() {
   }
 }
 
-export async function updateUserProfile(data: {
-  name?: string;
-  email?: string;
-  preferredLanguage?: string;
-  maxSuggestions?: number | null;
-}) {
+export async function updateUserProfile(data: ProfileUpdateInput) {
   try {
     const session = await requireAuthSession();
-    const updateData: {
-      name?: string;
-      email?: string;
-      preferredLanguage?: LanguageCode;
-      maxSuggestions?: number | null;
-    } = {};
 
-    if (typeof data.name === "string") {
-      updateData.name = data.name.trim();
-    }
-
-    if (typeof data.email === "string") {
-      updateData.email = data.email.trim();
-    }
-
-    if (typeof data.preferredLanguage === "string") {
-      const normalizedLanguage = normalizeLanguageCode(data.preferredLanguage);
-
-      if (!normalizedLanguage) {
-        return {
-          success: false,
-          message: "Invalid language code",
-        };
-      }
-
-      updateData.preferredLanguage = normalizedLanguage;
-    }
-
-    // ⚠️ Object.keys(updateData).length === 0 early return guard 이전에 배치
-    // 그렇지 않으면 { maxSuggestions: 5 } 만 전달 시 "No profile fields" 에러 발생
-    if (data.maxSuggestions !== undefined) {
-      if (data.maxSuggestions === null) {
-        updateData.maxSuggestions = null;
-      } else if (
-        Number.isInteger(data.maxSuggestions) &&
-        data.maxSuggestions >= 1 &&
-        data.maxSuggestions <= MAX_SUGGESTION_CAP
-      ) {
-        updateData.maxSuggestions = data.maxSuggestions;
-      } else {
-        return {
-          success: false,
-          message: `maxSuggestions must be between 1 and ${MAX_SUGGESTION_CAP}`,
-        };
-      }
-    }
-
-    if (Object.keys(updateData).length === 0) {
+    const parsed = profileUpdateSchema.safeParse(data);
+    if (!parsed.success) {
       return {
         success: false,
-        message: "No profile fields were provided",
+        message: parsed.error.issues[0]?.message ?? "Validation failed",
       };
     }
 
     const updatedUser = await prisma.user.update({
-      where: {
-        id: session.user.id,
-      },
-      data: updateData,
+      where: { id: session.user.id },
+      data: parsed.data,
       select: {
         id: true,
         name: true,
@@ -117,10 +83,7 @@ export async function updateUserProfile(data: {
       },
     });
 
-    return {
-      success: true,
-      user: updatedUser,
-    };
+    return { success: true, user: updatedUser };
   } catch (error) {
     console.error("Error updating user profile:", error);
     return {
@@ -256,9 +219,8 @@ export async function getUserLanguageByUserId(userId: string): Promise<string> {
       },
     });
 
-    const normalizedLanguage = normalizeLanguageCode(user?.preferredLanguage);
-    if (normalizedLanguage) {
-      return normalizedLanguage;
+    if (user && isValidLanguageCode(user.preferredLanguage)) {
+      return user.preferredLanguage;
     }
 
     return DEFAULT_LANGUAGE;
