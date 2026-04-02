@@ -2,11 +2,13 @@
 
 import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
-import { deleteWebhook } from "@/module/github";
-import { decrementRepositoryCount } from "@/module/payment/lib/subscription";
+import {
+  disconnectRepository as disconnectRepositoryInternal,
+  disconnectAllRepositoriesInternal,
+} from "@/module/repository/actions";
 import { z } from "zod";
 import { DEFAULT_LANGUAGE, LANGUAGE_BY_CODE, type LanguageCode } from "../constants";
-import { MAX_SUGGESTION_CAP } from "@/module/ai/constants";
+import { MAX_SUGGESTION_CAP } from "@/shared/constants";
 import { isValidLanguageCode } from "../lib/language";
 
 const LANGUAGE_CODES = Object.keys(LANGUAGE_BY_CODE) as [LanguageCode, ...LanguageCode[]];
@@ -120,95 +122,29 @@ export async function getConnectedRepositories() {
   }
 }
 
-export async function deleteRepository(repositoryId: string) {
+export async function disconnectRepository(repositoryId: string) {
+  const session = await requireAuthSession();
   try {
-    const session = await requireAuthSession();
-
-    const repository = await prisma.repository.findUnique({
-      where: {
-        id: repositoryId,
-        userId: session.user.id,
-      },
-    });
-
-    if (!repository) {
-      throw new Error("Repository not found");
-    }
-
-    await deleteWebhook(repository.owner, repository.name);
-
-    await prisma.repository.delete({
-      where: {
-        id: repositoryId,
-        userId: session.user.id,
-      },
-    });
-
-    await decrementRepositoryCount(session.user.id);
-
-    return {
-      success: true,
-      message: "Repository deleted successfully",
-    };
+    await disconnectRepositoryInternal(repositoryId, session.user.id);
+    return { success: true, message: "Repository disconnected successfully" };
   } catch (error) {
-    console.error("Error deleting repository:", error);
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error("Failed to delete repository");
+    console.error("Error disconnecting repository:", error);
+    throw error instanceof Error ? error : new Error("Failed to disconnect repository");
   }
 }
 
 export async function disconnectAllRepositories() {
+  const session = await requireAuthSession();
   try {
-    const session = await requireAuthSession();
-
-    const repositories = await prisma.repository.findMany({
-      where: {
-        userId: session.user.id,
-      },
-    });
-
-    await Promise.all(
-      repositories.map(async (repository) => {
-        await deleteWebhook(repository.owner, repository.name);
-      })
-    );
-
-    await prisma.repository.deleteMany({
-      where: {
-        userId: session.user.id,
-      },
-    });
-
-    await prisma.userUsage.upsert({
-      where: {
-        userId: session.user.id,
-      },
-      create: {
-        userId: session.user.id,
-        repositoryCount: 0,
-        reviewCounts: {},
-      },
-      update: {
-        repositoryCount: 0,
-      },
-    });
-
-    return {
-      success: true,
-      message: "All repositories disconnected successfully",
-    };
+    await disconnectAllRepositoriesInternal(session.user.id);
+    return { success: true, message: "All repositories disconnected successfully" };
   } catch (error) {
     console.error("Error disconnecting all repositories:", error);
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error("Failed to disconnect all repositories");
+    throw error instanceof Error ? error : new Error("Failed to disconnect all repositories");
   }
 }
 
-export async function getUserLanguageByUserId(userId: string): Promise<string> {
+export async function getUserLanguageByUserId(userId: string): Promise<LanguageCode> {
   try {
     const user = await prisma.user.findUnique({
       where: {

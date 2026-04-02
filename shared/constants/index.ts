@@ -1,5 +1,7 @@
 import type { LanguageCode } from "@/shared/types/language";
 
+export const MAX_SUGGESTION_CAP = 15;
+
 export const SECTION_HEADERS = {
   en: {
     walkthrough: "Walkthrough",
