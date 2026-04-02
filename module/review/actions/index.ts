@@ -3,7 +3,7 @@
 import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
 
-export async function getReviews() {
+export async function getUserReviews() {
   const session = await requireAuthSession();
 
   return prisma.review.findMany({
@@ -23,7 +23,9 @@ export async function getReviews() {
   });
 }
 
-export async function getReviewById(reviewId: string) {
+export async function getUserReviewById(reviewId: string) {
+  if (!reviewId.trim()) return null;
+
   const session = await requireAuthSession();
 
   return prisma.review.findFirst({

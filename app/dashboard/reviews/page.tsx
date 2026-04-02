@@ -1,9 +1,9 @@
 import { QueryBoundary } from "@/components/error-boundary/query-error-boundary";
-import { ReviewList, getReviews } from "@/module/review";
+import { ReviewList, getUserReviews } from "@/module/review";
 import { Loader2 } from "lucide-react";
 
 export default async function ReviewsPage() {
-  const initialData = await getReviews();
+  const initialData = await getUserReviews();
 
   return (
     <div className="space-y-6">

@@ -1,5 +1,4 @@
-import { getReviewById } from "@/module/review/actions";
-import { ReviewDetail } from "@/module/review/ui/review-detail";
+import { getUserReviewById, ReviewDetail } from "@/module/review";
 import { notFound } from "next/navigation";
 
 interface Props {
@@ -8,7 +7,7 @@ interface Props {
 
 export default async function ReviewDetailPage({ params }: Props) {
   const { id } = await params;
-  const review = await getReviewById(id);
+  const review = await getUserReviewById(id);
 
   if (!review) notFound();
 

@@ -27,6 +27,8 @@
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-destructive-bg: var(--destructive-bg);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -68,6 +70,8 @@
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-bg: oklch(0.92 0.03 27.325);
+  --warning: oklch(0.769 0.188 70.08);
+  --warning-foreground: oklch(0.31 0.10 70);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
@@ -119,6 +123,10 @@
   /* Destructive - Refined red for danger actions */
   --destructive: #ff6b6b;
   --destructive-bg: #3a1a1a;
+
+  /* Warning - Amber for pending/caution states */
+  --warning: #3a3020;
+  --warning-foreground: #d4a574;
 
   /* Borders - Very dark gray, barely visible */
   --border: #1a1a1a;

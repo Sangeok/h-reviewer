@@ -1,8 +1,12 @@
 // ===== Actions =====
 export * from "./actions";
 
+// ===== Types =====
+export * from "./types";
+
 // ===== UI Components =====
 export { default as ReviewList } from "./ui/review-list";
+export { default as ReviewDetail } from "./ui/review-detail";
 
 // ===== Hooks =====
 export { useReviews } from "./hooks/use-reviews";
