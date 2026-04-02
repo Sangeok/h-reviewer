@@ -1,5 +1,5 @@
 import type { StructuredReviewOutput } from "./review-schema";
-import type { LanguageCode } from "@/module/settings/constants";
+import type { LanguageCode } from "@/shared/types/language";
 import { SECTION_HEADERS } from "@/shared/constants";
 import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "@/module/ai/constants/review-emoji";
 

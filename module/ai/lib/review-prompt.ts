@@ -1,8 +1,8 @@
 import type { ReviewSizeMode } from "./review-size-policy";
-import type { LanguageCode } from "@/module/settings/constants";
+import type { LanguageCode } from "@/shared/types/language";
 import { SECTION_HEADERS } from "@/shared/constants";
 import { getSectionPolicy } from "./review-size-policy";
-import { MAX_SUGGESTION_CAP } from "@/module/ai/constants";
+import { MAX_SUGGESTION_CAP } from "@/shared/constants";
 import { getLanguageName } from "@/module/settings";
 
 /**
