@@ -3,7 +3,7 @@
 import { useMutation, useSuspenseQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils";
-import { getConnectedRepositories, deleteRepository, disconnectAllRepositories } from "../actions";
+import { getConnectedRepositories, disconnectRepository, disconnectAllRepositories } from "../actions";
 import { SETTINGS_QUERY_KEYS, REPOSITORIES_STALE_TIME_MS } from "../constants";
 
 export function useConnectedRepositories() {
@@ -17,7 +17,7 @@ export function useConnectedRepositories() {
   });
 
   const disconnectMutation = useMutation({
-    mutationFn: deleteRepository,
+    mutationFn: disconnectRepository,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: SETTINGS_QUERY_KEYS.CONNECTED_REPOSITORIES });
       toast.success("Repository disconnected successfully");
