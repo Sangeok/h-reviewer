@@ -52,7 +52,15 @@
       "Bash(grep -r listWebhooks /c/Users/hamso/OneDrive/Desktop/git/hreviewer/node_modules/@octokit/types --include=*.d.ts)",
       "Bash(grep -E \"\\\\.\\(tsx?|md\\)$\")",
       "Bash(npm list:*)",
-      "Bash(npm search:*)"
+      "Bash(npm search:*)",
+      "Bash(gh pr create --base main --title 'refactor: clean up cross-module dependencies' --body ':*)",
+      "Bash(xargs head:*)",
+      "Bash(grep:*)",
+      "Bash(python:*)",
+      "Read(//tmp/**)",
+      "Bash(echo \"Part 1: $?\")",
+      "Bash(echo \"Phase 3: $?\")",
+      "Bash(echo \"Final: $?\")"
     ]
   }
 }

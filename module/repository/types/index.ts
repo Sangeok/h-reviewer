@@ -27,6 +27,13 @@ export interface Repository {
   isConnected: boolean;
 }
 
-export interface ConnectRepositoryResult {
-  status: "connected" | "already_connected";
+export interface ConnectRepositoryParams {
+  owner: string;
+  repo: string;
+  githubId: number;
 }
+
+export type ConnectRepositoryResult =
+  | { status: "connected" }
+  | { status: "already_connected" }
+  | { status: "error"; error: "ALREADY_CONNECTED_BY_OTHER" | "QUOTA_EXCEEDED" };

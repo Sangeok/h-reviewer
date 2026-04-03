@@ -13,7 +13,7 @@ export default function RepositoryList() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useRepositories();
 
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [localConnectingId, setLocalConnectingId] = useState<number | null>(null);
+  const [connectingRepositoryId, setConnectingRepositoryId] = useState<number | null>(null);
 
   const { mutate: connectRepository } = useConnectRepository();
 
@@ -25,21 +25,19 @@ export default function RepositoryList() {
     },
   });
 
-  const allRepositories = useMemo(() => data?.pages.flatMap((page) => page) || [], [data]);
+  const repositories = useMemo(() => data?.pages.flatMap((page) => page) ?? [], [data]);
 
-  const normalizedSearchQuery = searchQuery.toLowerCase();
-  const filteredRepositories = useMemo(
-    () =>
-      allRepositories.filter(
-        (repo: Repository) =>
-          repo.name.toLowerCase().includes(normalizedSearchQuery) ||
-          repo.fullName.toLowerCase().includes(normalizedSearchQuery)
-      ),
-    [allRepositories, normalizedSearchQuery]
-  );
+  const filteredRepositories = useMemo(() => {
+    const normalized = searchQuery.toLowerCase();
+    return repositories.filter(
+      (repo) =>
+        repo.name.toLowerCase().includes(normalized) ||
+        repo.fullName.toLowerCase().includes(normalized)
+    );
+  }, [repositories, searchQuery]);
 
   const handleConnect = (repo: Repository) => {
-    setLocalConnectingId(repo.id);
+    setConnectingRepositoryId(repo.id);
 
     connectRepository(
       {
@@ -49,7 +47,7 @@ export default function RepositoryList() {
       },
       {
         onSettled: () => {
-          setLocalConnectingId(null);
+          setConnectingRepositoryId(null);
         },
       }
     );
@@ -68,7 +66,7 @@ export default function RepositoryList() {
           <RepositoryCard
             key={repo.id}
             repository={repo}
-            isConnecting={localConnectingId === repo.id}
+            isConnecting={connectingRepositoryId === repo.id}
             onConnect={handleConnect}
           />
         ))}
@@ -76,7 +74,7 @@ export default function RepositoryList() {
 
       <div ref={observerTarget} className="py-8">
         {isFetchingNextPage && <RepositoryListSkeleton />}
-        {!hasNextPage && allRepositories.length > 0 && (
+        {!hasNextPage && repositories.length > 0 && (
           <p className="text-center text-[#606060] font-light text-sm">
             No more repositories
           </p>
