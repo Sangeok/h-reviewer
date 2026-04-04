@@ -3,7 +3,7 @@
 import { signIn } from "@/lib/auth-client";
 import { useState } from "react";
 import { toast } from "sonner";
-import { LOGIN_ANIMATION } from "../constants";
+import { LOGIN_ANIMATION, LOGIN_BACKGROUND, LOGIN_STRINGS } from "../constants";
 import LoginCard from "./parts/login-card";
 import LoginFooter from "./parts/login-footer";
 import LoginHeader from "./parts/login-header";
@@ -19,7 +19,7 @@ export default function LoginUI() {
       });
     } catch (error) {
       console.error("Error logging in with GitHub:", error);
-      toast.error("GitHub 로그인에 실패했습니다. 다시 시도해주세요.");
+      toast.error(LOGIN_STRINGS.loginError);
     } finally {
       setIsLoading(false);
     }
@@ -29,9 +29,7 @@ export default function LoginUI() {
     <div className="relative min-h-screen w-full overflow-hidden bg-background">
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.015]"
-        style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
-        }}
+        style={{ backgroundImage: LOGIN_BACKGROUND.noiseSvg }}
       />
 
       <div className="absolute inset-0 opacity-[0.02]">
