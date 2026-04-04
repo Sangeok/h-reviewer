@@ -2,22 +2,26 @@ import { Octokit } from "octokit";
 import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
 
-// Getting the github access token
-export const getGithubAccessToken = async () => {
+export async function getAuthenticatedGithubAccount(): Promise<{ userId: string; accessToken: string }> {
   const session = await requireAuthSession();
+  const userId = session.user.id;
 
   const account = await prisma.account.findFirst({
-    where: {
-      userId: session.user.id,
-      providerId: "github",
-    },
+    where: { userId, providerId: "github" },
+    select: { accessToken: true },
   });
 
   if (!account?.accessToken) {
     throw new Error("Github access token not found");
   }
 
-  return account.accessToken;
+  return { userId, accessToken: account.accessToken };
+}
+
+// Getting the github access token
+export const getGithubAccessToken = async () => {
+  const { accessToken } = await getAuthenticatedGithubAccount();
+  return accessToken;
 };
 
 /**

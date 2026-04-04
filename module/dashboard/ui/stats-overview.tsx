@@ -1,19 +1,21 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { GitBranch, GitCommit, GitPullRequest, MessageCircle } from "lucide-react";
-import { getContributionStats, getDashboardStats } from "../actions";
+import { getDashboardData } from "../actions";
 import ContributionGraph from "./parts/contribution-graph";
 
 const STAT_ICON_SIZE = "h-4 w-4";
 
-export default async function StatsOverview() {
-  const [stats, contributionStats] = await Promise.all([getDashboardStats(), getContributionStats()]);
+interface StatCardConfig {
+  title: string;
+  value: number;
+  description: string;
+  icon: typeof GitBranch;
+}
 
-  const statCards: Array<{
-    title: string;
-    value: number;
-    description: string;
-    icon: typeof GitBranch;
-  }> = [
+export default async function StatsOverview() {
+  const { stats, contributionStats } = await getDashboardData();
+
+  const statCards: StatCardConfig[] = [
     {
       title: "Total Repositories",
       value: stats.totalRepos,
