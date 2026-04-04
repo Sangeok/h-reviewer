@@ -1,5 +1,3 @@
-"use server";
-
 import { requireAuthSession } from "@/lib/server-utils";
 import { redirect } from "next/navigation";
 
