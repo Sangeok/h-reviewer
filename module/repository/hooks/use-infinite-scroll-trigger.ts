@@ -6,12 +6,16 @@ interface UseInfiniteScrollTriggerParams {
   hasNextPage: boolean | undefined;
   isFetchingNextPage: boolean;
   onLoadMore: () => void;
+  threshold?: number;
 }
+
+const DEFAULT_SCROLL_THRESHOLD = 0.1;
 
 export function useInfiniteScrollTrigger({
   hasNextPage,
   isFetchingNextPage,
   onLoadMore,
+  threshold = DEFAULT_SCROLL_THRESHOLD,
 }: UseInfiniteScrollTriggerParams) {
   const observerTarget = useRef<HTMLDivElement>(null);
 
@@ -31,7 +35,7 @@ export function useInfiniteScrollTrigger({
         }
       },
       {
-        threshold: 0.1,
+        threshold,
       }
     );
 
@@ -40,7 +44,7 @@ export function useInfiniteScrollTrigger({
     return () => {
       observer.unobserve(currentTarget);
     };
-  }, [hasNextPage, isFetchingNextPage, onLoadMore]);
+  }, [hasNextPage, isFetchingNextPage, onLoadMore, threshold]);
 
   return observerTarget;
 }

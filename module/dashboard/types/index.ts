@@ -1,3 +1,12 @@
+import type { Octokit } from "octokit";
+
+export interface DashboardGithubContext {
+  userId: string;
+  accessToken: string;
+  username: string;
+  octokit: Octokit;
+}
+
 export interface DashboardStats {
   totalRepos: number;
   totalContributions: number;
@@ -31,9 +40,3 @@ export interface ContributionStats {
   totalContributions: number;
 }
 
-export interface MonthlyActivity {
-  name: string;
-  commits: number;
-  prs: number;
-  reviews: number;
-}

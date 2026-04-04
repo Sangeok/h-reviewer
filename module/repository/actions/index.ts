@@ -6,7 +6,7 @@ import { createWebhook, deleteWebhook, getRepositories } from "@/module/github";
 import { inngest } from "@/inngest/client";
 import { canConnectRepository, incrementRepositoryCount, decrementRepositoryCount } from "@/module/payment/lib/subscription";
 import { isGitHubRepositoryDto, mapGitHubRepositoryDtoToRepository } from "../lib/map-github-repository";
-import type { ConnectRepositoryResult, Repository } from "../types";
+import type { ConnectRepositoryParams, ConnectRepositoryResult, Repository } from "../types";
 
 export async function getUserRepositories(page: number = 1, perPage: number = 10): Promise<Repository[]> {
   const session = await requireAuthSession();
@@ -26,11 +26,11 @@ export async function getUserRepositories(page: number = 1, perPage: number = 10
     .map((repository) => mapGitHubRepositoryDtoToRepository(repository, connectedRepoIds));
 }
 
-export async function connectRepository(
-  owner: string,
-  repo: string,
-  githubId: number
-): Promise<ConnectRepositoryResult> {
+export async function connectRepository({
+  owner,
+  repo,
+  githubId,
+}: ConnectRepositoryParams): Promise<ConnectRepositoryResult> {
   const session = await requireAuthSession();
   const repositoryGithubId = BigInt(githubId);
 
@@ -51,13 +51,13 @@ export async function connectRepository(
   }
 
   if (existingRepository) {
-    throw new Error("Repository is already connected by another user");
+    return { status: "error", error: "ALREADY_CONNECTED_BY_OTHER" };
   }
 
   const canConnect = await canConnectRepository(session.user.id);
 
   if (!canConnect) {
-    throw new Error("You have reached the maximum number of repositories");
+    return { status: "error", error: "QUOTA_EXCEEDED" };
   }
 
   await createWebhook(owner, repo);

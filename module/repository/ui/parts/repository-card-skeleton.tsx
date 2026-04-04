@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SKELETON_COUNT } from "../../constants";
 
 export default function RepositoryCardSkeleton() {
   return (
@@ -34,7 +35,7 @@ export default function RepositoryCardSkeleton() {
 export function RepositoryListSkeleton() {
   return (
     <div className="grid gap-4">
-      {Array.from({ length: 5 }).map((_, index) => (
+      {Array.from({ length: SKELETON_COUNT }).map((_, index) => (
         <RepositoryCardSkeleton key={index} />
       ))}
     </div>

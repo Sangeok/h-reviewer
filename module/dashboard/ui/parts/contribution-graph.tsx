@@ -3,12 +3,27 @@
 import { ActivityCalendar } from "react-activity-calendar";
 import type { ContributionStats } from "../../types";
 
+const CALENDAR_CONFIG = {
+  BLOCK_SIZE: 14,
+  BLOCK_MARGIN: 4,
+  BLOCK_RADIUS: 3,
+  FONT_SIZE: 11,
+} as const;
+
+const CONTRIBUTION_THEME_COLORS = [
+  "var(--color-card)",
+  "var(--color-ring)",
+  "var(--color-chart-2)",
+  "var(--color-primary)",
+  "var(--color-primary-hover)",
+] as const;
+
 interface ContributionGraphProps {
-  stats: ContributionStats | null;
+  stats: ContributionStats;
 }
 
 export default function ContributionGraph({ stats }: ContributionGraphProps) {
-  if (!stats || !stats.contributions.length) {
+  if (!stats.contributions.length) {
     return (
       <div className="flex w-full flex-col items-center justify-center p-12">
         <p className="text-sm font-light text-muted-foreground">No contribution data available</p>
@@ -30,26 +45,13 @@ export default function ContributionGraph({ stats }: ContributionGraphProps) {
           <ActivityCalendar
             data={stats.contributions}
             colorScheme="dark"
-            blockSize={14}
-            blockMargin={4}
-            blockRadius={3}
-            fontSize={11}
+            blockSize={CALENDAR_CONFIG.BLOCK_SIZE}
+            blockMargin={CALENDAR_CONFIG.BLOCK_MARGIN}
+            blockRadius={CALENDAR_CONFIG.BLOCK_RADIUS}
+            fontSize={CALENDAR_CONFIG.FONT_SIZE}
             showWeekdayLabels
             theme={{
-              light: [
-                "var(--color-secondary)",
-                "var(--color-ring)",
-                "var(--color-chart-2)",
-                "var(--color-primary)",
-                "var(--color-primary-hover)",
-              ],
-              dark: [
-                "var(--color-card)",
-                "var(--color-ring)",
-                "var(--color-chart-2)",
-                "var(--color-primary)",
-                "var(--color-primary-hover)",
-              ],
+              dark: [...CONTRIBUTION_THEME_COLORS],
             }}
             labels={{
               totalCount: "{{count}} contributions in the last year",

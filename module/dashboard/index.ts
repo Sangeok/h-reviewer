@@ -8,4 +8,4 @@ export * from "./actions";
 export { default as StatsOverview } from "./ui/stats-overview";
 
 // ===== Types =====
-export type { ContributionStats, DashboardStats, MonthlyActivity } from "./types";
+export type { ContributionStats, DashboardStats } from "./types";

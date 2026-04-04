@@ -12,6 +12,12 @@ interface RepositoryCardProps {
   onConnect: (repository: Repository) => void;
 }
 
+function getConnectButtonLabel(isConnecting: boolean, isConnected: boolean): string {
+  if (isConnecting) return "Connecting...";
+  if (isConnected) return "Connected";
+  return "Connect";
+}
+
 export function RepositoryCard({ repository, isConnecting, onConnect }: RepositoryCardProps) {
   return (
     <Card className="group relative overflow-hidden bg-gradient-to-b from-[#0a0a0a] to-black border-[#1a1a1a] hover:border-[#2d3e2d]/50 transition-all duration-300">
@@ -63,7 +69,7 @@ export function RepositoryCard({ repository, isConnecting, onConnect }: Reposito
                   : "bg-gradient-to-r from-[#4a6a4a] to-[#3d523d] hover:from-[#5a7a5a] hover:to-[#4d624d] text-black font-medium shadow-lg shadow-[#2d3e2d]/10 transition-all duration-300"
               }
             >
-              {isConnecting ? "Connecting..." : repository.isConnected ? "Connected" : "Connect"}
+              {getConnectButtonLabel(isConnecting, repository.isConnected)}
             </Button>
           </div>
         </div>
