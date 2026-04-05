@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { issueCategorySchema } from "@/module/ai/lib/review-schema";
+import { issueCategorySchema, severitySchema } from "../lib/review-schema";
 
-export type SuggestionSeverity = "CRITICAL" | "WARNING" | "SUGGESTION" | "INFO";
+export type SuggestionSeverity = z.infer<typeof severitySchema>;
 
 export interface CodeSuggestion {
   file: string;
