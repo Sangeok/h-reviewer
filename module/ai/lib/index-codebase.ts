@@ -36,5 +36,4 @@ export async function indexCodebase(repoId: string, files: RepositoryFile[]) {
     await pineconeIndex.upsert(batch);
   }
 
-  console.log("indexing complete");
 }

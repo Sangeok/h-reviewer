@@ -14,3 +14,9 @@ export type ReviewPullRequestResult =
       message: string;
       reason: "plan_restricted" | "internal_error";
     };
+
+export type GeneratePRSummaryResult =
+  | { success: true; message: "Summary Queued" }
+  | { success: false; message: string; reason: "internal_error" };
+
+export type { CodeSuggestion, StructuredIssue, SuggestionSeverity, IssueCategory } from "./suggestion";

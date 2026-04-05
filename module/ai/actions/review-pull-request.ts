@@ -3,7 +3,7 @@ import prisma from "@/lib/db";
 import { getPullRequestDiff } from "@/module/github";
 import { canCreateReview, incrementReviewCount } from "@/module/payment/lib/subscription";
 import { getUserLanguageByUserId } from "@/module/settings";
-import { buildPRUrl } from "../constants";
+import { buildPRUrl } from "../utils";
 import { getRepositoryWithToken } from "../lib/get-repository-with-token";
 import { type ReviewPullRequestResult } from "../types";
 

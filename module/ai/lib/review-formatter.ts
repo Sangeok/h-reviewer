@@ -1,7 +1,7 @@
 import type { StructuredReviewOutput } from "./review-schema";
 import type { LanguageCode } from "@/shared/types/language";
 import { SECTION_HEADERS } from "@/shared/constants";
-import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "@/module/ai/constants/review-emoji";
+import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "../constants/review-emoji";
 
 export function formatStructuredReviewToMarkdown(
   output: StructuredReviewOutput,
@@ -31,8 +31,8 @@ export function formatStructuredReviewToMarkdown(
 
   if (bodyIssues.length > 0) {
     const items = bodyIssues.map(i => {
-      const sev = `${SEVERITY_EMOJI[i.severity] ?? ""} **${i.severity}**`;
-      const cat = `${CATEGORY_EMOJI[i.category] ?? "📋"} ${i.category}`;
+      const sev = `${SEVERITY_EMOJI[i.severity]} **${i.severity}**`;
+      const cat = `${CATEGORY_EMOJI[i.category]} ${i.category}`;
       const fileTag = i.file ? ` · \`${i.file}\`` : "";
       const desc = i.description.replace(/[\r\n]+/g, " ").trim();
       return `- ${sev} · ${cat}${fileTag}  \n  ${desc}`;

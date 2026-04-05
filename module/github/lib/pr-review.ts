@@ -1,6 +1,6 @@
 import { createOctokitClient } from "./github";
-import type { CodeSuggestion, StructuredIssue } from "@/module/ai/types/suggestion";
-import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "@/module/ai/constants/review-emoji";
+import type { CodeSuggestion, StructuredIssue } from "@/module/ai";
+import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "@/module/ai";
 
 interface ReviewComment {
   path: string;
@@ -101,7 +101,7 @@ export async function postPRReviewWithSuggestions(params: PostPRReviewParams): P
 }
 
 function formatSuggestionComment(suggestion: CodeSuggestion): string {
-  return `${SEVERITY_EMOJI[suggestion.severity] ?? ""} **${suggestion.severity}**: ${suggestion.explanation}
+  return `${SEVERITY_EMOJI[suggestion.severity]} **${suggestion.severity}**: ${suggestion.explanation}
 
 \`\`\`suggestion
 ${suggestion.after}
@@ -109,5 +109,5 @@ ${suggestion.after}
 }
 
 function formatIssueComment(issue: StructuredIssue): string {
-  return `${CATEGORY_EMOJI[issue.category] ?? "📋"} ${SEVERITY_EMOJI[issue.severity] ?? ""} **${issue.severity}** | ${issue.category}\n\n${issue.description}`;
+  return `${CATEGORY_EMOJI[issue.category]} ${SEVERITY_EMOJI[issue.severity]} **${issue.severity}** | ${issue.category}\n\n${issue.description}`;
 }

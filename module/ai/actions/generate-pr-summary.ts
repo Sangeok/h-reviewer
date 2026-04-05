@@ -1,8 +1,13 @@
 import { inngest } from "@/inngest/client";
 import { getUserLanguageByUserId } from "@/module/settings";
 import { getRepositoryWithToken } from "../lib/get-repository-with-token";
+import { type GeneratePRSummaryResult } from "../types";
 
-export async function generatePRSummary(owner: string, repo: string, prNumber: number) {
+export async function generatePRSummary(
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<GeneratePRSummaryResult> {
   try {
     const { repository } = await getRepositoryWithToken(owner, repo);
     const preferredLanguage = await getUserLanguageByUserId(repository.user.id);
@@ -28,6 +33,7 @@ export async function generatePRSummary(owner: string, repo: string, prNumber: n
     return {
       success: false,
       message: "Error Queueing Summary",
+      reason: "internal_error",
     };
   }
 }

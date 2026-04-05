@@ -1,22 +1,25 @@
 import { z } from "zod";
 
-// MAINTENANCE NOTE: severity 값이 다음 4곳에서 독립적으로 정의된다:
-// 1. prisma/schema.prisma — enum SuggestionSeverity (source of truth)
-// 2. 여기 (Zod 스키마) — z.enum([...])
-// 3. module/ai/types/suggestion.ts — type SuggestionSeverity
-// 4. module/suggestion/constants/index.ts — SEVERITY_CONFIG 키
-// 5. module/github/lib/pr-review.ts — SEVERITY_EMOJI 상수 (review-emoji.ts에서 import)
-// 새 severity 추가 시 5곳 모두 업데이트 필요.
+// MAINTENANCE NOTE: severity 값의 독립 동기화 지점은 3곳이다:
+// 1. prisma/schema.prisma — enum SuggestionSeverity (source of truth, Zod 파생 불가)
+// 2. 여기 — severitySchema (Zod single source)
+// 3. module/suggestion/constants/index.ts — SEVERITY_CONFIG 키
 //
-// IssueCategory는 여기(Zod enum, single source of truth)에서 정의되며,
-// module/ai/types/suggestion.ts에서 z.infer로 derive된다.
+// 다음은 위 소스에서 파생되어 컴파일 타임에 검증된다:
+// - module/ai/types/suggestion.ts — z.infer<typeof severitySchema>
+// - module/ai/constants/review-emoji.ts — Record<SuggestionSeverity, string>
+//
+// 새 severity 추가 시 위 3곳 업데이트 + Prisma migrate 필요.
+// IssueCategory는 issueCategorySchema(Zod)에서 정의, suggestion.ts에서 z.infer로 derive.
+export const severitySchema = z.enum(["CRITICAL", "WARNING", "SUGGESTION", "INFO"]);
+
 export const codeSuggestionSchema = z.object({
   file: z.string().describe("Exact relative file path from the diff"),
   line: z.number().describe("Line number in the new file (added line from diff)"),
   before: z.string().describe("Current code at that location (exact match required)"),
   after: z.string().describe("Suggested replacement code"),
   explanation: z.string().describe("Why this change improves the code"),
-  severity: z.enum(["CRITICAL", "WARNING", "SUGGESTION", "INFO"]),
+  severity: severitySchema,
 });
 
 // issueCategorySchema를 export하여 suggestion.ts에서 z.infer로 derive 가능하게 함
@@ -36,7 +39,7 @@ export const structuredReviewSchema = z.object({
     file: z.string().nullable().describe("File path from diff, or null for project-level issues"),
     line: z.number().nullable().describe("Line number in new file, or null for file/project-level issues"),
     description: z.string().describe("Clear description of the issue"),
-    severity: z.enum(["CRITICAL", "WARNING", "SUGGESTION", "INFO"]),
+    severity: severitySchema,
     category: issueCategorySchema,
   })).describe(
     "List of issues found. Use file+line for specific code issues, " +

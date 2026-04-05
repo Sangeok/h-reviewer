@@ -2,18 +2,18 @@ import prisma from "@/lib/db";
 import { inngest } from "../client";
 import { getPullRequestDiff, postReviewComment } from "@/module/github/lib/github";
 import { postPRReviewWithSuggestions } from "@/module/github/lib/pr-review";
-import { retrieveContext } from "@/module/ai";
+import {
+  retrieveContext, classifyPRSize, getTopKForSizeMode,
+  structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt,
+  getIssueLimit, formatStructuredReviewToMarkdown,
+} from "@/module/ai";
+import type { ReviewSizeMode } from "@/module/ai";
 import { generateText, Output } from "ai";
 import { google } from "@ai-sdk/google";
 import { sanitizeMermaidSequenceDiagrams } from "@/module/github/lib/github-markdown";
 import { isValidLanguageCode } from "@/module/settings";
 import { SECTION_HEADERS, DIAGRAM_FALLBACK_TEXT } from "@/shared/constants";
-import { classifyPRSize, getTopKForSizeMode } from "@/module/ai/lib/review-size-policy";
-import { structuredReviewSchema } from "@/module/ai/lib/review-schema";
-import { buildStructuredPrompt, buildFallbackPrompt, getIssueLimit } from "@/module/ai/lib/review-prompt";
-import { formatStructuredReviewToMarkdown } from "@/module/ai/lib/review-formatter";
 import { parseDiffToChangedFiles, extractDiffFileSet } from "@/module/github/lib/diff-parser";
-import type { ReviewSizeMode } from "@/module/ai/lib/review-size-policy";
 import type { LanguageCode } from "@/module/settings";
 
 export const generateReview = inngest.createFunction(
