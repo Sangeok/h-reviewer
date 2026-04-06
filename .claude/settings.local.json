@@ -61,7 +61,8 @@
       "Bash(echo \"Part 1: $?\")",
       "Bash(echo \"Phase 3: $?\")",
       "Bash(echo \"Final: $?\")",
-      "Bash(echo \"EXIT:$?\")"
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(sed 's/=.*//')"
     ]
   }
 }

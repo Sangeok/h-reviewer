@@ -13,7 +13,7 @@ import { z } from "zod";
 // IssueCategory는 issueCategorySchema(Zod)에서 정의, suggestion.ts에서 z.infer로 derive.
 export const severitySchema = z.enum(["CRITICAL", "WARNING", "SUGGESTION", "INFO"]);
 
-export const codeSuggestionSchema = z.object({
+const codeSuggestionSchema = z.object({
   file: z.string().describe("Exact relative file path from the diff"),
   line: z.number().describe("Line number in the new file (added line from diff)"),
   before: z.string().describe("Current code at that location (exact match required)"),
