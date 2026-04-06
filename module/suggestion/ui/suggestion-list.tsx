@@ -2,19 +2,20 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { getSuggestionsByReviewId } from "../actions";
+import { SUGGESTION_QUERY_KEYS, SUGGESTIONS_STALE_TIME_MS } from "../constants";
 import { SuggestionCard } from "./suggestion-card";
 
-interface Props {
+interface SuggestionListProps {
   reviewId: string;
   initialData?: Awaited<ReturnType<typeof getSuggestionsByReviewId>>;
 }
 
-export function SuggestionList({ reviewId, initialData }: Props) {
+export function SuggestionList({ reviewId, initialData }: SuggestionListProps) {
   const { data: suggestions, isLoading } = useQuery({
-    queryKey: ["suggestions", reviewId],
+    queryKey: SUGGESTION_QUERY_KEYS.DETAIL(reviewId),
     queryFn: () => getSuggestionsByReviewId(reviewId),
     initialData,
-    staleTime: 60 * 1000,
+    staleTime: SUGGESTIONS_STALE_TIME_MS,
   });
 
   if (isLoading) return <div>Loading suggestions...</div>;

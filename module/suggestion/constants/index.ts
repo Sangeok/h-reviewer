@@ -11,3 +11,10 @@ export const STATUS_CONFIG = {
   DISMISSED:  { label: { en: "Dismissed", ko: "무시됨"  }, color: "text-[#606060]" },
   CONFLICTED: { label: { en: "Conflict",  ko: "충돌"    }, color: "text-red-400"   },
 } as const;
+
+export const SUGGESTION_QUERY_KEYS = {
+  DETAIL: (reviewId: string) => ["suggestions", reviewId] as const,
+  LIST: ["suggestions"] as const,
+} as const;
+
+export const SUGGESTIONS_STALE_TIME_MS = 60 * 1000;

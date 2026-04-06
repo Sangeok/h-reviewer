@@ -2,11 +2,13 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { useApplySuggestion, useDismissSuggestion } from "../hooks/use-apply-suggestion";
+import { useApplySuggestion } from "../hooks/use-apply-suggestion";
+import { useDismissSuggestion } from "../hooks/use-dismiss-suggestion";
 import { SEVERITY_CONFIG, STATUS_CONFIG } from "../constants";
 import { Check, X, Loader2, AlertTriangle } from "lucide-react";
+import type { SuggestionSeverity, SuggestionStatus } from "@/lib/generated/prisma/client";
 
-interface Props {
+interface SuggestionCardProps {
   suggestion: {
     id: string;
     filePath: string;
@@ -14,12 +16,12 @@ interface Props {
     beforeCode: string;
     afterCode: string;
     explanation: string;
-    severity: keyof typeof SEVERITY_CONFIG;
-    status: keyof typeof STATUS_CONFIG;
+    severity: SuggestionSeverity;
+    status: SuggestionStatus;
   };
 }
 
-export function SuggestionCard({ suggestion }: Props) {
+export function SuggestionCard({ suggestion }: SuggestionCardProps) {
   const applyMutation = useApplySuggestion();
   const dismissMutation = useDismissSuggestion();
 

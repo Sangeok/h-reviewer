@@ -1,4 +1,4 @@
-import type { SuggestionStatus, SuggestionSeverity } from "@/lib/generated/prisma/client";
+import type { Suggestion } from "@/lib/generated/prisma/client";
 
 export interface ApplySuggestionResult {
   success: boolean;
@@ -7,26 +7,5 @@ export interface ApplySuggestionResult {
   reason?: "conflict" | "not_found" | "pr_merged" | "unauthorized" | "api_error" | "fork_no_access";
 }
 
-export interface SuggestionWithReview {
-  id: string;
-  filePath: string;
-  lineNumber: number;
-  beforeCode: string;
-  afterCode: string;
-  explanation: string;
-  severity: SuggestionSeverity;
-  status: SuggestionStatus;
-  appliedAt: Date | null;
-  appliedCommitSha: string | null;
-  review: {
-    id: string;
-    prNumber: number;
-    prTitle: string;
-    prUrl: string;
-    headSha: string | null;
-    repository: {
-      owner: string;
-      name: string;
-    };
-  };
-}
+export type SuggestionItem = Suggestion;
+export type SuggestionsData = SuggestionItem[];
