@@ -69,12 +69,8 @@ export async function applySuggestion(suggestionId: string): Promise<ApplySugges
   try {
     const prInfo = await getPullRequestBranch(account.accessToken, owner, repo, prNumber);
 
-    if (prInfo.merged) {
-      return { success: false, error: "PR is already merged", reason: "pr_merged" };
-    }
-    if (prInfo.state !== "open") {
-      return { success: false, error: "PR is closed", reason: "conflict" };
-    }
+    const prStatusError = validatePrStatus(prInfo);
+    if (prStatusError) return prStatusError;
 
     const targetOwner = prInfo.headRepoOwner;
     const targetRepo = prInfo.headRepoName;
@@ -88,14 +84,11 @@ export async function applySuggestion(suggestionId: string): Promise<ApplySugges
       return { success: false, error: "File not found on PR branch", reason: "not_found" };
     }
 
-    // 충돌 감지: 공백 정규화는 비교 전용
+    // 충돌 감지: DB side effect는 오케스트레이터에 유지
     const normalizeWhitespace = (s: string) =>
       s.replace(/\r\n/g, "\n").replace(/[ \t]+$/gm, "");
 
-    const normalizedContent = normalizeWhitespace(fileData.content);
-    const normalizedBefore = normalizeWhitespace(suggestion.beforeCode);
-
-    if (!normalizedContent.includes(normalizedBefore)) {
+    if (!normalizeWhitespace(fileData.content).includes(normalizeWhitespace(suggestion.beforeCode))) {
       await prisma.suggestion.update({
         where: { id: suggestionId },
         data: { status: "CONFLICTED" },
@@ -103,45 +96,12 @@ export async function applySuggestion(suggestionId: string): Promise<ApplySugges
       return { success: false, error: "Code has changed since review", reason: "conflict" };
     }
 
-    // 코드 교체 (항상 원본 content 기반)
-    const originalContent = fileData.content.replace(/\r\n/g, "\n");
-    const originalBefore = suggestion.beforeCode.replace(/\r\n/g, "\n");
-    const originalAfter = suggestion.afterCode.replace(/\r\n/g, "\n");
-
-    let updatedContent: string;
-
-    if (originalContent.includes(originalBefore)) {
-      updatedContent = replaceNearestOccurrence(
-        originalContent,
-        originalBefore,
-        originalAfter,
-        suggestion.lineNumber,
-      );
-    } else {
-      const escaped = normalizedBefore.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const flexPattern = escaped.split('\n').map(line => line + '[ \\t]*').join('\\n');
-      const regex = new RegExp(flexPattern, 'g');
-
-      const matches: { index: number; length: number }[] = [];
-      let match: RegExpExecArray | null;
-      while ((match = regex.exec(originalContent)) !== null) {
-        matches.push({ index: match.index, length: match[0].length });
-        regex.lastIndex = match.index + 1;
-      }
-
-      if (matches.length === 0) {
-        updatedContent = originalContent;
-      } else {
-        const lineOfIndex = (idx: number) => originalContent.slice(0, idx).split("\n").length;
-        let best = matches[0];
-        let bestDist = Math.abs(lineOfIndex(best.index) - suggestion.lineNumber);
-        for (let i = 1; i < matches.length; i++) {
-          const dist = Math.abs(lineOfIndex(matches[i].index) - suggestion.lineNumber);
-          if (dist < bestDist) { bestDist = dist; best = matches[i]; }
-        }
-        updatedContent = originalContent.slice(0, best.index) + originalAfter + originalContent.slice(best.index + best.length);
-      }
-    }
+    const updatedContent = applyCodeChange(
+      fileData.content,
+      suggestion.beforeCode,
+      suggestion.afterCode,
+      suggestion.lineNumber,
+    );
 
     const commitMessage = `refactor: ${truncate(suggestion.explanation, 72)}\n\nApplied via HReviewer one-click fix`;
     const { commitSha } = await commitFileUpdate(
@@ -205,6 +165,53 @@ export async function dismissSuggestion(suggestionId: string): Promise<{ success
   }
 
   return { success: true };
+}
+
+// — Helpers —
+
+function validatePrStatus(prInfo: { merged: boolean; state: string }): ApplySuggestionResult | null {
+  if (prInfo.merged) return { success: false, error: "PR is already merged", reason: "pr_merged" };
+  if (prInfo.state !== "open") return { success: false, error: "PR is closed", reason: "conflict" };
+  return null;
+}
+
+function applyCodeChange(
+  fileContent: string,
+  beforeCode: string,
+  afterCode: string,
+  lineNumber: number,
+): string {
+  const originalContent = fileContent.replace(/\r\n/g, "\n");
+  const originalBefore = beforeCode.replace(/\r\n/g, "\n");
+  const originalAfter = afterCode.replace(/\r\n/g, "\n");
+
+  if (originalContent.includes(originalBefore)) {
+    return replaceNearestOccurrence(originalContent, originalBefore, originalAfter, lineNumber);
+  }
+
+  // flex regex fallback: 후행 공백 정규화 후 패턴 매칭
+  const normalizedBefore = originalBefore.replace(/[ \t]+$/gm, "");
+  const escaped = normalizedBefore.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const flexPattern = escaped.split('\n').map(line => line + '[ \\t]*').join('\\n');
+  const regex = new RegExp(flexPattern, 'g');
+
+  const matches: { index: number; length: number }[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(originalContent)) !== null) {
+    matches.push({ index: match.index, length: match[0].length });
+    regex.lastIndex = match.index + 1;
+  }
+
+  if (matches.length === 0) return originalContent;
+
+  const lineOfIndex = (idx: number) => originalContent.slice(0, idx).split("\n").length;
+  let best = matches[0];
+  let bestDist = Math.abs(lineOfIndex(best.index) - lineNumber);
+  for (let i = 1; i < matches.length; i++) {
+    const dist = Math.abs(lineOfIndex(matches[i].index) - lineNumber);
+    if (dist < bestDist) { bestDist = dist; best = matches[i]; }
+  }
+  return originalContent.slice(0, best.index) + originalAfter + originalContent.slice(best.index + best.length);
 }
 
 function truncate(text: string, maxLength: number): string {

@@ -14,7 +14,7 @@ export {
 } from "./constants";
 
 // ===== Library Functions =====
-export { generateEmbedding, getRepositoryWithToken, indexCodebase, retrieveContext, classifyPRSize, getTopKForSizeMode, getSectionPolicy } from "./lib";
+export { generateEmbedding, getRepositoryWithToken, indexCodebase, retrieveContext, classifyPRSize, getTopKForSizeMode } from "./lib";
 export { structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt, getIssueLimit, formatStructuredReviewToMarkdown } from "./lib";
 
 // ===== Types =====
