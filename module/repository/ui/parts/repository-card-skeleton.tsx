@@ -4,28 +4,28 @@ import { SKELETON_COUNT } from "../../constants";
 
 export default function RepositoryCardSkeleton() {
   return (
-    <Card className="relative overflow-hidden bg-gradient-to-b from-[#0a0a0a] to-black border-[#1a1a1a]">
+    <Card className="relative overflow-hidden bg-gradient-to-b from-sidebar to-black border-border">
       {/* Subtle pulsing glow effect */}
-      <div className="absolute inset-0 bg-gradient-to-r from-[#2d3e2d]/3 to-transparent animate-pulse pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-r from-ring/[0.03] to-transparent animate-pulse pointer-events-none" />
 
       <CardHeader className="relative z-10">
         <div className="flex items-start justify-between">
           <div className="space-y-3 flex-1">
             <div className="flex items-center gap-3">
-              <Skeleton className="h-6 w-48 bg-[#1a1a1a]" />
-              <Skeleton className="h-5 w-20 bg-[#1a1a1a]" />
+              <Skeleton className="h-6 w-48 bg-secondary" />
+              <Skeleton className="h-5 w-20 bg-secondary" />
             </div>
-            <Skeleton className="h-4 w-full max-w-md bg-[#1a1a1a]" />
+            <Skeleton className="h-4 w-full max-w-md bg-secondary" />
           </div>
           <div className="flex gap-2">
-            <Skeleton className="h-9 w-9 bg-[#1a1a1a]" />
-            <Skeleton className="h-9 w-24 bg-[#1a1a1a]" />
+            <Skeleton className="h-9 w-9 bg-secondary" />
+            <Skeleton className="h-9 w-24 bg-secondary" />
           </div>
         </div>
       </CardHeader>
       <CardContent className="relative z-10">
         <div className="flex items-center gap-4">
-          <Skeleton className="h-4 w-16 bg-[#1a1a1a]" />
+          <Skeleton className="h-4 w-16 bg-secondary" />
         </div>
       </CardContent>
     </Card>

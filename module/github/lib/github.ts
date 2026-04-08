@@ -212,7 +212,15 @@ export async function getRepoFileContents(
   return files;
 }
 
-export async function getPullRequestDiff(token: string, owner: string, repo: string, prNumber: number) {
+interface GetPullRequestDiffParams {
+  token: string;
+  owner: string;
+  repo: string;
+  prNumber: number;
+}
+
+export async function getPullRequestDiff(params: GetPullRequestDiffParams) {
+  const { token, owner, repo, prNumber } = params;
   const octokit = createOctokitClient(token);
 
   const { data: pr } = await octokit.rest.pulls.get({
@@ -244,13 +252,16 @@ export async function getPullRequestDiff(token: string, owner: string, repo: str
   };
 }
 
-export async function getFileContent(
-  token: string,
-  owner: string,
-  repo: string,
-  path: string,
-  ref: string
-): Promise<{ content: string; sha: string } | null> {
+interface GetFileContentParams {
+  token: string;
+  owner: string;
+  repo: string;
+  path: string;
+  ref: string;
+}
+
+export async function getFileContent(params: GetFileContentParams): Promise<{ content: string; sha: string } | null> {
+  const { token, owner, repo, path, ref } = params;
   const octokit = createOctokitClient(token);
 
   try {
@@ -272,16 +283,19 @@ export async function getFileContent(
   }
 }
 
-export async function commitFileUpdate(
-  token: string,
-  owner: string,
-  repo: string,
-  path: string,
-  content: string,
-  fileSha: string,
-  message: string,
-  branch: string
-): Promise<{ commitSha: string }> {
+interface CommitFileUpdateParams {
+  token: string;
+  owner: string;
+  repo: string;
+  path: string;
+  content: string;
+  fileSha: string;
+  message: string;
+  branch: string;
+}
+
+export async function commitFileUpdate(params: CommitFileUpdateParams): Promise<{ commitSha: string }> {
+  const { token, owner, repo, path, content, fileSha, message, branch } = params;
   const octokit = createOctokitClient(token);
 
   const { data } = await octokit.rest.repos.createOrUpdateFileContents({

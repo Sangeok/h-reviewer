@@ -1,11 +1,10 @@
 "use server";
 
-import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
-import { headers } from "next/headers";
-import { PRO_UPGRADE_ENABLED } from "../config/flags";
+import { requireAuthSession } from "@/lib/server-utils";
+import { PRO_UPGRADE_ENABLED } from "../constants/flags";
 import { getRemainingLimits, updateUserTier } from "../lib/subscription";
-import { polarClient } from "../config/polar";
+import { polarClient } from "../constants/polar";
 
 export interface SubscriptionData {
   proUpgradeEnabled: boolean;
@@ -52,13 +51,7 @@ function isPolarSubscriptionLike(value: unknown): value is PolarSubscriptionLike
 }
 
 export async function getSubscriptionData(): Promise<SubscriptionData> {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-
-  if (!session?.user) {
-    return { proUpgradeEnabled: PRO_UPGRADE_ENABLED, user: null, limits: null };
-  }
+  const session = await requireAuthSession();
 
   const user = await prisma.user.findUnique({
     where: {
@@ -88,13 +81,7 @@ export async function getSubscriptionData(): Promise<SubscriptionData> {
 }
 
 export async function syncSubscriptionStatus() {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-
-  if (!session?.user) {
-    throw new Error("Not authenticated");
-  }
+  const session = await requireAuthSession();
 
   const user = await prisma.user.findUnique({
     where: {
@@ -119,15 +106,15 @@ export async function syncSubscriptionStatus() {
     const lastestSubscription = subscriptions[0]; // Assuming the latest subscription is the active one
 
     if (activeSubscription) {
-      await updateUserTier(user.id, "PRO", "ACTIVE", activeSubscription.id);
-      return { success: true, message: "ACTIVE" };
+      await updateUserTier(user.id, "PRO", "ACTIVE");
+      return { success: true, status: "ACTIVE" };
     } else if (lastestSubscription) {
       // if lastest is canceled/expired
       const status = lastestSubscription.status === "canceled" ? "CANCELLED" : "EXPIRED";
 
       // only downgrade if the lastest is not active
       if (lastestSubscription.status !== "active") {
-        await updateUserTier(user.id, "FREE", status, lastestSubscription.id);
+        await updateUserTier(user.id, "FREE", status);
         return { success: true, status };
       }
     }
@@ -135,6 +122,6 @@ export async function syncSubscriptionStatus() {
     return { success: false, message: "No active subscription found" };
   } catch (error) {
     console.error("Error syncing subscription status:", error);
-    return { success: false, message: "Failed t o sync with Polar" };
+    return { success: false, message: "Failed to sync with Polar" };
   }
 }

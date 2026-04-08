@@ -1,11 +1,8 @@
 import { LayoutDashboard, FolderGit2, FileCheck, Settings, CreditCard } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import type { NavItem } from "../types";
 
-export interface NavItem {
-  title: string;
-  url: string;
-  icon: LucideIcon;
-}
+export { SIDEBAR_CONFIG, ANIMATION_CONFIG, THEME_CONFIG } from "./config";
+export { SIDEBAR_STYLES } from "./styles";
 
 export const NAV_ITEMS: NavItem[] = [
   {

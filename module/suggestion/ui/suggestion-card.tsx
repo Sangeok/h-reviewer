@@ -30,7 +30,7 @@ export function SuggestionCard({ suggestion }: SuggestionCardProps) {
   const isApplying = applyMutation.isPending;
 
   return (
-    <Card className={`border-[#1a1a1a] bg-[#0a0a0a] ${severityConfig.borderColor}`}>
+    <Card className={`border-border bg-sidebar ${severityConfig.borderColor}`}>
       <CardContent className="p-4 space-y-3">
         {/* Header: severity + file path + status */}
         <div className="flex items-center justify-between">
@@ -38,7 +38,7 @@ export function SuggestionCard({ suggestion }: SuggestionCardProps) {
             <span className={severityConfig.color}>
               {severityConfig.emoji} {suggestion.severity}
             </span>
-            <span className="text-sm text-[#707070] font-mono">
+            <span className="text-sm text-muted-foreground font-mono">
               {suggestion.filePath}:{suggestion.lineNumber}
             </span>
           </div>
@@ -48,11 +48,11 @@ export function SuggestionCard({ suggestion }: SuggestionCardProps) {
         </div>
 
         {/* Explanation */}
-        <p className="text-sm text-[#d0d0d0]">{suggestion.explanation}</p>
+        <p className="text-sm text-secondary-foreground">{suggestion.explanation}</p>
 
         {/* Code diff */}
-        <div className="rounded border border-[#1a1a1a] overflow-hidden">
-          <div className="bg-red-950/20 p-3 border-b border-[#1a1a1a]">
+        <div className="rounded border border-border overflow-hidden">
+          <div className="bg-red-950/20 p-3 border-b border-border">
             <pre className="text-xs font-mono text-red-300 whitespace-pre-wrap">{`- ${suggestion.beforeCode}`}</pre>
           </div>
           <div className="bg-green-950/20 p-3">
@@ -67,7 +67,7 @@ export function SuggestionCard({ suggestion }: SuggestionCardProps) {
               size="sm"
               onClick={() => applyMutation.mutate(suggestion.id)}
               disabled={isApplying}
-              className="bg-[#2d3e2d] hover:bg-[#3d523d] text-[#e0e0e0]"
+              className="bg-ring hover:bg-primary-muted text-sidebar-foreground"
             >
               {isApplying ? (
                 <Loader2 className="w-3 h-3 mr-1 animate-spin" />
@@ -81,7 +81,7 @@ export function SuggestionCard({ suggestion }: SuggestionCardProps) {
               variant="ghost"
               onClick={() => dismissMutation.mutate(suggestion.id)}
               disabled={dismissMutation.isPending || isApplying}
-              className="text-[#707070] hover:text-[#e0e0e0]"
+              className="text-muted-foreground hover:text-sidebar-foreground"
             >
               {dismissMutation.isPending ? (
                 <Loader2 className="w-3 h-3 mr-1 animate-spin" />

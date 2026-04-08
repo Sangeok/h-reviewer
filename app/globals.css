@@ -32,12 +32,14 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
+  --color-muted-foreground-alt: var(--muted-foreground-alt);
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
+  --color-primary-muted: var(--primary-muted);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -75,6 +77,10 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
+  --muted-foreground-alt: oklch(0.45 0 0);
+  --primary-muted: oklch(0.35 0.04 145);
+  --gradient-accent: rgba(180, 180, 180, 0.4);
+  --gradient-bg: rgba(200, 200, 200, 0.3);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -143,6 +149,11 @@
   --chart-3: #2d3e2d;
   --chart-4: #606060;
   --chart-5: #707070;
+
+  --muted-foreground-alt: #606060;
+  --primary-muted: #3d523d;
+  --gradient-accent: rgba(45, 62, 45, 0.4);
+  --gradient-bg: rgba(30, 30, 40, 0.3);
 
   /* Sidebar - Matching component styles */
   --sidebar: #0a0a0a;

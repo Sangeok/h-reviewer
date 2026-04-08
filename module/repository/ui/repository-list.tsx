@@ -75,7 +75,7 @@ export default function RepositoryList() {
       <div ref={observerTarget} className="py-8">
         {isFetchingNextPage && <RepositoryListSkeleton />}
         {!hasNextPage && repositories.length > 0 && (
-          <p className="text-center text-[#606060] font-light text-sm">
+          <p className="text-center text-muted-foreground-alt font-light text-sm">
             No more repositories
           </p>
         )}
