@@ -23,6 +23,18 @@ export interface UserLimits {
 
 type UserUsageClient = Pick<typeof prisma, "userUsage">;
 
+function parseReviewCounts(raw: unknown): Record<string, number> {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as Record<string, number>;
+  }
+  console.error("Invalid reviewCounts format:", raw);
+  return {};
+}
+
+function isSubscriptionTier(value: string | null | undefined): value is SubscriptionTier {
+  return value === "FREE" || value === "PRO";
+}
+
 const TIER_LIMITS = {
   FREE: {
     repositories: 5,
@@ -44,7 +56,7 @@ export async function getUserTier(userId: string): Promise<SubscriptionTier> {
     },
   });
 
-  return (user?.subscriptionTier as SubscriptionTier) ?? "FREE";
+  return isSubscriptionTier(user?.subscriptionTier) ? user.subscriptionTier : "FREE";
 }
 
 async function getUserUsage(userId: string) {
@@ -88,7 +100,7 @@ export async function canCreateReview(userId: string, repositoryId: string): Pro
   }
 
   const usage = await getUserUsage(userId);
-  const reviewCounts = usage.reviewCounts as Record<string, number>;
+  const reviewCounts = parseReviewCounts(usage.reviewCounts);
   const currentCount = reviewCounts[repositoryId] ?? 0;
   const limit = TIER_LIMITS.FREE.reviewsPerRepo;
 
@@ -131,7 +143,7 @@ export async function decrementRepositoryCount(userId: string): Promise<void> {
 
 export async function incrementReviewCount(userId: string, repositoryId: string): Promise<void> {
   const usage = await getUserUsage(userId);
-  const reviewCounts = usage.reviewCounts as Record<string, number>;
+  const reviewCounts = parseReviewCounts(usage.reviewCounts);
 
   reviewCounts[repositoryId] = (reviewCounts[repositoryId] || 0) + 1;
 
@@ -148,7 +160,7 @@ export async function incrementReviewCount(userId: string, repositoryId: string)
 export async function getRemainingLimits(userId: string): Promise<UserLimits> {
   const tier = await getUserTier(userId);
   const usage = await getUserUsage(userId);
-  const reviewCounts = usage.reviewCounts as Record<string, number>;
+  const reviewCounts = parseReviewCounts(usage.reviewCounts);
 
   const limits: UserLimits = {
     tier,
@@ -187,8 +199,6 @@ export async function updateUserTier(
   userId: string,
   tier: SubscriptionTier,
   status: SubscriptionStatus,
-  _polarSubscriptionId?: string,
-  _polarCustomerId?: string,
 ): Promise<void> {
   await prisma.user.update({
     where: {

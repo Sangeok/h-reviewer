@@ -23,7 +23,6 @@ export function useConnectedRepositories() {
       toast.success("Repository disconnected successfully");
     },
     onError: (error) => {
-      console.error(error);
       toast.error(getErrorMessage(error, "Failed to disconnect repository"));
     },
   });
@@ -35,7 +34,6 @@ export function useConnectedRepositories() {
       toast.success("All repositories disconnected successfully");
     },
     onError: (error) => {
-      console.error(error);
       toast.error(getErrorMessage(error, "Failed to disconnect all repositories"));
     },
   });

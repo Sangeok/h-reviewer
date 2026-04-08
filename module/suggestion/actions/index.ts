@@ -75,10 +75,13 @@ export async function applySuggestion(suggestionId: string): Promise<ApplySugges
     const targetOwner = prInfo.headRepoOwner;
     const targetRepo = prInfo.headRepoName;
 
-    const fileData = await getFileContent(
-      account.accessToken, targetOwner, targetRepo,
-      suggestion.filePath, prInfo.branch
-    );
+    const fileData = await getFileContent({
+      token: account.accessToken,
+      owner: targetOwner,
+      repo: targetRepo,
+      path: suggestion.filePath,
+      ref: prInfo.branch,
+    });
 
     if (!fileData) {
       return { success: false, error: "File not found on PR branch", reason: "not_found" };
@@ -104,11 +107,16 @@ export async function applySuggestion(suggestionId: string): Promise<ApplySugges
     );
 
     const commitMessage = `refactor: ${truncate(suggestion.explanation, 72)}\n\nApplied via HReviewer one-click fix`;
-    const { commitSha } = await commitFileUpdate(
-      account.accessToken, targetOwner, targetRepo,
-      suggestion.filePath, updatedContent, fileData.sha,
-      commitMessage, prInfo.branch
-    );
+    const { commitSha } = await commitFileUpdate({
+      token: account.accessToken,
+      owner: targetOwner,
+      repo: targetRepo,
+      path: suggestion.filePath,
+      content: updatedContent,
+      fileSha: fileData.sha,
+      message: commitMessage,
+      branch: prInfo.branch,
+    });
 
     // Optimistic lock: PENDING인 경우에만 갱신
     const { count } = await prisma.suggestion.updateMany({

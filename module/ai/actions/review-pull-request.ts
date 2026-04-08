@@ -24,7 +24,7 @@ export async function reviewPullRequest(
       };
     }
 
-    await getPullRequestDiff(accessToken, owner, repo, prNumber);
+    await getPullRequestDiff({ token: accessToken, owner, repo, prNumber });
 
     const preferredLanguage = await getUserLanguageByUserId(repository.user.id);
 

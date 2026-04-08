@@ -3,8 +3,8 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "./db";
 
 import { polar, checkout, portal, usage, webhooks } from "@polar-sh/better-auth";
-import { PRO_UPGRADE_ENABLED } from "@/module/payment/config/flags";
-import { polarClient } from "@/module/payment/config/polar";
+import { PRO_UPGRADE_ENABLED } from "@/module/payment/constants/flags";
+import { polarClient } from "@/module/payment/constants/polar";
 import { SubscriptionTier, updatePolarCustomerId, updateUserTier } from "@/module/payment/lib/subscription";
 
 const trustedOrigins = [
@@ -64,7 +64,7 @@ export const auth = betterAuth({
             });
 
             if (user) {
-              await updateUserTier(user.id, "PRO", "ACTIVE", payload.data.id);
+              await updateUserTier(user.id, "PRO", "ACTIVE");
             }
           },
           onSubscriptionCanceled: async (payload) => {

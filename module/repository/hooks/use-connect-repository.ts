@@ -42,7 +42,6 @@ export const useConnectRepository = () => {
     },
     onError: (error) => {
       toast.error(getErrorMessage(error, "Failed to connect repository"));
-      console.error(error);
     },
   });
 };

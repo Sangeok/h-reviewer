@@ -56,7 +56,7 @@ export function ReviewCard({ review }: ReviewCardProps) {
 
       <CardContent className="relative z-10">
         <div className="space-y-4">
-          <div className="text-xs text-[#606060] font-light">
+          <div className="text-xs text-muted-foreground-alt font-light">
             {formatDistanceToNow(new Date(review.createdAt), { addSuffix: true })}
           </div>
 
@@ -68,7 +68,7 @@ export function ReviewCard({ review }: ReviewCardProps) {
                 <div className="w-2.5 h-2.5 rounded-full bg-warning" />
                 <div className="w-2.5 h-2.5 rounded-full bg-ring" />
               </div>
-              <span className="text-xs text-[#606060] font-mono">AI Review</span>
+              <span className="text-xs text-muted-foreground-alt font-mono">AI Review</span>
             </div>
 
             <pre className="text-xs text-secondary-foreground font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto">

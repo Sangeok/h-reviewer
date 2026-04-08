@@ -10,7 +10,7 @@ export function ReviewEmptyState() {
             <FileCode className="h-8 w-8 text-primary" />
           </div>
           <p className="text-sm text-muted-foreground font-light">No reviews found</p>
-          <p className="text-xs text-[#606060] font-light mt-2">
+          <p className="text-xs text-muted-foreground-alt font-light mt-2">
             Connect a repository and create a pull request to get started
           </p>
         </div>

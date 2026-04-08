@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils";
 import { applySuggestion } from "../actions";
 import { SUGGESTION_QUERY_KEYS } from "../constants";
-import { REVIEW_QUERY_KEYS } from "@/module/review/constants";
+import { REVIEW_QUERY_KEYS } from "@/module/review";
 
 export function useApplySuggestion() {
   const queryClient = useQueryClient();
@@ -24,7 +24,6 @@ export function useApplySuggestion() {
     },
     onError: (error) => {
       toast.error(getErrorMessage(error, "Failed to apply suggestion"));
-      console.error(error);
     },
   });
 }

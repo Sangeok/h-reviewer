@@ -22,7 +22,6 @@ export function useDismissSuggestion() {
     },
     onError: (error) => {
       toast.error(getErrorMessage(error, "Failed to dismiss suggestion"));
-      console.error(error);
     },
   });
 }

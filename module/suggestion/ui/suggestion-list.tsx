@@ -27,8 +27,8 @@ export function SuggestionList({ reviewId, initialData }: SuggestionListProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <h2 className="text-xl font-medium text-[#e0e0e0]">Suggestions</h2>
-        <span className="text-sm text-[#707070]">
+        <h2 className="text-xl font-medium text-sidebar-foreground">Suggestions</h2>
+        <span className="text-sm text-muted-foreground">
           {pending} pending, {applied} applied
         </span>
       </div>

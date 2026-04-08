@@ -39,14 +39,14 @@ export default function AppSidebar({
         <div
           className="absolute top-[10%] right-[-20%] w-[250px] h-[250px] rounded-full blur-[100px] animate-pulse-slow"
           style={{
-            background: "radial-gradient(circle, rgba(45, 62, 45, 0.4) 0%, transparent 70%)",
+            background: "radial-gradient(circle, var(--gradient-accent) 0%, transparent 70%)",
             animationDuration: "8s",
           }}
         />
         <div
           className="absolute bottom-[20%] left-[-20%] w-[200px] h-[200px] rounded-full blur-[90px] animate-pulse-slow"
           style={{
-            background: "radial-gradient(circle, rgba(30, 30, 40, 0.3) 0%, transparent 70%)",
+            background: "radial-gradient(circle, var(--gradient-bg) 0%, transparent 70%)",
             animationDuration: "10s",
             animationDelay: "2s",
           }}
@@ -65,7 +65,7 @@ export default function AppSidebar({
 
         <Navigation isCollapsed={isCollapsed} />
 
-        <div className="pt-4 border-t border-[#1a1a1a] space-y-2">
+        <div className="pt-4 border-t border-border space-y-2">
           <ThemeToggle isCollapsed={isCollapsed} onToggle={toggleTheme} />
           <LogoutButton isCollapsed={isCollapsed} onLogout={handleLogout} />
         </div>
@@ -74,7 +74,7 @@ export default function AppSidebar({
       </div>
 
       {/* Right Edge Subtle Glow */}
-      <div className="absolute top-0 right-0 h-full w-[1px] bg-gradient-to-b from-transparent via-[#2d3e2d]/10 to-transparent" />
+      <div className="absolute top-0 right-0 h-full w-[1px] bg-gradient-to-b from-transparent via-ring/10 to-transparent" />
 
       <style jsx>{`
         @keyframes pulse-slow {

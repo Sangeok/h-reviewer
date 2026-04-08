@@ -36,7 +36,7 @@ export const generateReview = inngest.createFunction(
           throw new Error("Github access token not found");
         }
 
-        const data = await getPullRequestDiff(account.accessToken, owner, repo, prNumber);
+        const data = await getPullRequestDiff({ token: account.accessToken, owner, repo, prNumber });
 
         return { ...data, token: account.accessToken };
       });
