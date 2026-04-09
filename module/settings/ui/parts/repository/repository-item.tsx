@@ -38,6 +38,7 @@ export function RepositoryItem({ repository, onDisconnect, isDisconnecting }: Re
             href={repository.url}
             target="_blank"
             rel="noopener noreferrer"
+            aria-label={`Open ${repository.fullName} on GitHub`}
             className="text-primary transition-colors duration-300 hover:text-primary-hover"
           >
             <ExternalLink className="h-4 w-4" />
@@ -49,6 +50,7 @@ export function RepositoryItem({ repository, onDisconnect, isDisconnecting }: Re
             <Button
               variant="ghost"
               size="icon"
+              aria-label={`Disconnect ${repository.fullName}`}
               className="ml-4 text-destructive transition-all duration-300 hover:bg-destructive-bg/30 hover:text-destructive"
             >
               <Trash2 className="h-4 w-4" />

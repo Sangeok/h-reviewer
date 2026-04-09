@@ -28,6 +28,8 @@ export default function ProfileForm() {
 
   const currentFormState = formState ?? getInitialFormState();
 
+  const isDirty = formState !== null;
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     updateMutation.mutate(
@@ -116,7 +118,7 @@ export default function ProfileForm() {
 
           <Button
             type="submit"
-            disabled={updateMutation.isPending}
+            disabled={updateMutation.isPending || !isDirty}
             className="bg-gradient-to-r from-primary to-chart-2 font-medium text-primary-foreground shadow-lg shadow-ring/10 transition-all duration-300 hover:from-primary-hover hover:to-primary/80 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {updateMutation.isPending ? (

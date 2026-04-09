@@ -17,6 +17,8 @@ export function useUserProfile() {
 
   const updateMutation = useMutation({
     mutationFn: updateUserProfile,
+    // updateUserProfile은 검증 실패 시 throw 대신 { success: false, message } 반환.
+    // React Query는 이를 성공으로 처리하므로 onSuccess에서 result.success를 확인한다.
     onSuccess: async (result) => {
       if (result.success) {
         await queryClient.invalidateQueries({ queryKey: SETTINGS_QUERY_KEYS.USER_PROFILE });
