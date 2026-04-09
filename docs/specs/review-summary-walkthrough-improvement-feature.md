@@ -35,6 +35,10 @@ z.string() 스키마 → 분석 관점 프롬프트 지시 부재 → AI가 diff
 
 ## Phase 1: 스키마 구조화
 
+> **⚠️ 배포 제약**: Phase 1(스키마)과 Phase 3(포맷터)는 **반드시 같은 배포 단위**로 나가야 한다.
+> Phase 1만 적용하면 `review-formatter.ts`에서 `output.summary`가 object가 되어 `[object Object]`가 마크다운에 출력된다.
+> TypeScript 컴파일 에러 없이 런타임에서만 발생하므로 CI에서 잡히지 않는다.
+
 ### 코드 변경: `module/ai/lib/review-schema.ts`
 
 ```typescript
@@ -48,6 +52,11 @@ export const structuredReviewSchema = z.object({
 });
 
 // ── 변경 ──
+/** reviewData JSON의 스키마 버전. 스키마 구조가 변경될 때마다 증가시킨다.
+ *  page.tsx에서 safeParse 실패 시 마크다운 fallback으로 전환되므로,
+ *  버전별 마이그레이션 로직 대신 버전 불일치를 로깅하여 모니터링한다. */
+export const REVIEW_SCHEMA_VERSION = 1;
+
 const walkthroughEntrySchema = z.object({
   file: z.string().describe("Exact relative file path from the diff"),
   changeType: z.enum(["added", "modified", "deleted", "renamed"])
@@ -67,9 +76,10 @@ const summarySchema = z.object({
     "low: cosmetic/docs/config. medium: logic changes with existing tests. " +
     "high: breaking changes, security-sensitive, no tests, or wide blast radius."
   ),
-  keyPoints: z.array(z.string()).describe(
+  keyPoints: z.array(z.string()).default([]).describe(
     "Top 2-3 things the reviewer must pay attention to. " +
-    "Examples: missing error handling, Suspense boundary requirements, API contract changes."
+    "Examples: missing error handling, Suspense boundary requirements, API contract changes. " +
+    "Empty array is acceptable for tiny/trivial PRs."
   ),
 });
 
@@ -82,11 +92,21 @@ export const structuredReviewSchema = z.object({
 });
 ```
 
+### Barrel Export 추가: `module/ai/index.ts`
+
+```typescript
+// Types 섹션에 추가
+export type { StructuredReviewOutput } from "./lib/review-schema";
+export { REVIEW_SCHEMA_VERSION } from "./lib/review-schema";
+```
+
+> **설계 근거**: `review-detail.tsx`(클라이언트 컴포넌트)에서 `import type`으로 사용한다. 내부 경로(`module/ai/lib/review-schema`)를 직접 import하면 barrel export 패턴을 위반하므로, barrel을 통해 노출한다.
+
 ### 타입 영향
 
 `StructuredReviewOutput`은 `z.infer`로 파생되므로 자동 반영. 다만 아래 파일에서 `output.summary` (string → object), `output.walkthrough` (string → array) 접근 방식 변경 필요:
 
-- `review-formatter.ts` (Phase 3에서 처리)
+- `review-formatter.ts` (Phase 3에서 처리 — **Phase 1과 같은 배포 단위 필수**)
 - `inngest/functions/review.ts` (Step 7 — summary 텍스트 접근 없음, 영향 없음)
 
 ---
@@ -95,23 +115,68 @@ export const structuredReviewSchema = z.object({
 
 ### 코드 변경: `module/ai/lib/review-prompt.ts`
 
+#### 2-1. diff 메타데이터 사전 추출 (AI 신뢰성 개선)
+
+walkthrough의 `file`과 `changeType`을 AI가 추론하게 하면 enum 위반·파일 경로 할루시네이션 위험이 있다. diff 헤더에서 미리 파싱하여 프롬프트에 주입하면 AI는 `summary` 작성에만 집중할 수 있다.
+
+```typescript
+// review-prompt.ts 내부에 private 함수로 추가
+function extractFileMeta(diff: string): { file: string; changeType: string }[] {
+  return diff
+    .split(/^diff --git /m)
+    .filter(Boolean)
+    .map((block) => {
+      // quoted paths 처리: git은 공백·특수문자 포함 경로를 "a/path" "b/path" 형태로 출력
+      const quotedMatch = block.match(/^"?a\/.+"?\s+"?b\/(.+?)"?\s*$/m);
+      const simpleMatch = block.match(/^a\/.+ b\/(.+)/);
+      const fileMatch = quotedMatch ?? simpleMatch;
+      if (!fileMatch) return null;
+      const file = fileMatch[1];
+      const changeType = block.includes("new file mode")
+        ? "added"
+        : block.includes("deleted file mode")
+          ? "deleted"
+          : block.includes("rename from")
+            ? "renamed"
+            : "modified";
+      return { file, changeType };
+    })
+    .filter(Boolean) as { file: string; changeType: string }[];
+}
+```
+
+> **엣지 케이스**: 공백 포함 경로(`"a/path with space/file.ts" "b/path with space/file.ts"`)를 quoted match로 우선 처리한다. binary 파일은 diff 헤더가 동일하므로 파싱은 되지만, changeType이 항상 "modified"로 분류될 수 있다 (프롬프트 보조 데이터이므로 허용).
+
+#### 2-2. `buildStructuredPrompt()` Review Instructions 확장
+
 `buildStructuredPrompt()`의 Review Instructions 끝에 summary/walkthrough 지시 추가:
 
 ```typescript
 // 현재 (line 86-105): suggestions/issues 지시만 존재
 
 // 추가할 블록 (line 105 이후):
+
+// diff 메타데이터를 프롬프트에 주입 — AI가 file/changeType을 추론할 필요 없음
+const fileMeta = extractFileMeta(diff);
+const fileContext = fileMeta
+  .map((f) => `- ${f.file} (${f.changeType})`)
+  .join("\n");
+
+// Review Instructions 끝에 추가:
 - For summary:
   - overview: Describe the PR's purpose and approach. Do NOT restate the PR title.
   - riskLevel: "low" for cosmetic/docs/config changes, "medium" for logic changes with test coverage, "high" for breaking changes, security-sensitive code, missing tests, or changes affecting >5 files
   - keyPoints: What should the reviewer verify? What could break? What assumptions does this PR make?
 - For walkthrough:
-  - Each entry must explain WHY this file was changed, not WHAT was changed (the diff shows what)
-  - Focus on intent, side effects, and relationships between files
+  - The following files were changed in this PR:
+${fileContext}
+  - Use EXACTLY these file paths and changeType values in your walkthrough entries
+  - Only write the "summary" field: explain WHY this file was changed, its intent, side effects, and relationships to other files
+  - Do NOT describe WHAT changed (the diff already shows that)
   - If a file's change depends on another file's change, mention the dependency
 ```
 
-### `buildSectionInstruction()` 개선
+#### 2-3. `buildSectionInstruction()` 개선
 
 ```typescript
 // 현재 (line 20-23)
@@ -123,8 +188,10 @@ if (policy.summary) {
 // 변경
 if (policy.summary) {
   const extra = mode === "tiny"
-    ? " (overview only, 2-3 sentences)"
-    : " (overview + risk level + key review points)";
+    ? " (overview + risk level only, 2-3 sentences, skip keyPoints)"
+    : mode === "large"
+      ? " (overview + risk level + key review points, focus on key changed files)"
+      : " (overview + risk level + key review points)";
   sections.push(`${idx++}. **${headers.summary}**${extra}`);
 }
 ```
@@ -213,10 +280,15 @@ export const SECTION_HEADERS = {
 model Review {
   // ...기존 필드 동일
   review        String    @db.Text
-  reviewData    Json?     // 구조화 출력 JSON (웹 UI 렌더링용)
+  reviewData    Json?     // 구조화 출력 JSON (웹 UI 렌더링용) — AI 출력 + schemaVersion만 저장
+  langCode      String    @default("en")  // 리뷰 생성 시점의 언어 코드 — 별도 컬럼으로 분리
   // ...
 }
 ```
+
+> **설계 근거**: `langCode`는 AI 출력이 아닌 리뷰 메타데이터다. `reviewData` JSON에 섞으면 (1) `safeParse` 시 Zod가 unknown key를 strip하여 별도 추출 로직이 필요하고 (2) DB에서 언어별 쿼리가 불가능하다. 별도 컬럼으로 분리하면 `reviewData`는 순수 AI 출력만 담고, `langCode`는 Prisma 타입으로 직접 접근 가능하다.
+
+> **스키마 버전 관리**: `reviewData`에 `schemaVersion` 필드를 포함하여 저장한다 (Phase 4-2 참조). 향후 스키마 구조가 변경되면 `REVIEW_SCHEMA_VERSION`을 증가시키고, `page.tsx`에서 `safeParse` 실패 시 마크다운 fallback으로 전환된다. 버전 불일치는 로그로 추적하여, 필요 시 마이그레이션 스크립트를 작성할 수 있다.
 
 ### 4-2. Inngest Step 7 변경: `inngest/functions/review.ts`
 
@@ -230,15 +302,19 @@ const createdReview = await tx.review.create({
   },
 });
 
-// 변경: reviewData 추가 (langCode 포함 — 웹 UI 렌더링 시 섹션 헤더 다국어 지원용)
-// Prisma Json 필드는 plain object를 자동 직렬화하므로 이중 변환 불필요
+// 변경: reviewData + langCode 추가
+// reviewData: AI 구조화 출력 + schemaVersion 저장 (langCode 미포함)
+// langCode: 별도 컬럼으로 분리 — DB 쿼리 가능, safeParse 간섭 없음
+import { REVIEW_SCHEMA_VERSION } from "@/module/ai";
+
 const createdReview = await tx.review.create({
   data: {
     // ...
     review,
     reviewData: validatedStructuredOutput
-      ? { ...validatedStructuredOutput, langCode }
+      ? { ...validatedStructuredOutput, schemaVersion: REVIEW_SCHEMA_VERSION }
       : null,
+    langCode,
     // ...
   },
 });
@@ -252,7 +328,8 @@ const createdReview = await tx.review.create({
 
 ```tsx
 import { getUserReviewById, ReviewDetail } from "@/module/review";
-import { structuredReviewSchema } from "@/module/ai/lib/review-schema";
+import { structuredReviewSchema, REVIEW_SCHEMA_VERSION } from "@/module/ai";
+import { isValidLanguageCode } from "@/module/settings";
 import type { LanguageCode } from "@/shared/types/language";
 import { notFound } from "next/navigation";
 
@@ -267,17 +344,24 @@ export default async function ReviewDetailPage({ params }: Props) {
   if (!review) notFound();
 
   // 서버 컴포넌트에서 Zod 파싱 — 클라이언트 번들에 Zod 미포함
-  const parsed = review.reviewData
-    ? structuredReviewSchema.safeParse(review.reviewData)
-    : null;
+  let structuredData = null;
+  if (review.reviewData && typeof review.reviewData === "object") {
+    const raw = review.reviewData as Record<string, unknown>;
 
-  const structuredData = parsed?.success ? parsed.data : null;
+    // 스키마 버전 불일치 시 로그 + 마크다운 fallback
+    if (raw.schemaVersion !== REVIEW_SCHEMA_VERSION) {
+      console.warn(
+        `Review ${review.id}: schemaVersion ${raw.schemaVersion} !== ${REVIEW_SCHEMA_VERSION}, falling back to markdown`
+      );
+    } else {
+      const parsed = structuredReviewSchema.safeParse(raw);
+      structuredData = parsed.success ? parsed.data : null;
+    }
+  }
 
-  // reviewData JSON에 포함된 langCode 추출 (리뷰 생성 시점의 언어)
-  const langCode = review.reviewData &&
-    typeof review.reviewData === "object" &&
-    "langCode" in review.reviewData
-    ? (review.reviewData.langCode as LanguageCode)
+  // langCode 검증 — String 컬럼이므로 잘못된 값이 저장될 수 있음
+  const langCode: LanguageCode = isValidLanguageCode(review.langCode)
+    ? review.langCode
     : "en";
 
   return <ReviewDetail review={review} structuredData={structuredData} langCode={langCode} />;
@@ -295,14 +379,16 @@ export default async function ReviewDetailPage({ params }: Props) {
 </CardContent>
 
 // 변경: structuredData + langCode를 서버에서 props로 수신
-// Zod import 없음 — 타입만 사용
-import type { StructuredReviewOutput } from "@/module/ai/lib/review-schema";
+// Zod import 없음 — 타입만 사용 (barrel export 경유)
+import type { StructuredReviewOutput } from "@/module/ai";
 import type { LanguageCode } from "@/shared/types/language";
 
+// ⚠️ 모든 props는 required — optional로 만들면 page.tsx 수정 누락 시 컴파일 에러가 발생하지 않아 버그가 숨는다.
+// structuredData가 null인 경우(기존 리뷰, 파싱 실패)는 타입으로 표현.
 interface Props {
   review: ReviewDetailData;
-  structuredData: StructuredReviewOutput | null;
-  langCode: LanguageCode;
+  structuredData: StructuredReviewOutput | null;  // required, null 허용
+  langCode: LanguageCode;                          // required
 }
 
 <CardContent>
@@ -326,7 +412,7 @@ interface Props {
 // Strengths/Issues: 기존 마크다운 유지
 // 나머지 섹션: ReactMarkdown fallback
 
-import type { StructuredReviewOutput } from "@/module/ai/lib/review-schema";
+import type { StructuredReviewOutput } from "@/module/ai";
 import type { LanguageCode } from "@/shared/types/language";
 import { SECTION_HEADERS } from "@/shared/constants";
 import ReactMarkdown from "react-markdown";
@@ -344,7 +430,9 @@ export function StructuredReviewBody({ data, langCode }: Props) {
       {data.walkthrough && <WalkthroughSection entries={data.walkthrough} />}
       {/* strengths, issues, suggestions 등 나머지 섹션:
           reviewData에 포함된 구조화 데이터를 마크다운으로 재구성하여 렌더링.
-          review.review(포맷터가 생성한 전체 마크다운)에서 파싱하지 않는다. */}
+          review.review(포맷터가 생성한 전체 마크다운)에서 파싱하지 않는다.
+          issues: line-specific issues는 GitHub inline comment로만 게시되므로,
+          웹 UI에서도 동일하게 project/file-level issues만 표시한다. */}
       <RemainingMarkdownSections data={data} langCode={langCode} />
     </div>
   );
@@ -355,6 +443,7 @@ export function StructuredReviewBody({ data, langCode }: Props) {
  * 아직 구조화 렌더링이 불필요한 섹션은 reviewData의 원시 값을 마크다운으로 변환하여 렌더링.
  *
  * NOTE: SECTION_HEADERS[langCode]를 사용하여 다국어 헤더 지원.
+ * langCode는 Review 모델의 별도 컬럼에서 가져오며, page.tsx에서 props로 전달된다.
  * 하드코딩된 한국어 헤더를 사용하면 영어 사용자에게도 한국어가 표시되는 문제가 발생한다.
  */
 function RemainingMarkdownSections({ data, langCode }: { data: StructuredReviewOutput; langCode: LanguageCode }) {
@@ -365,15 +454,21 @@ function RemainingMarkdownSections({ data, langCode }: { data: StructuredReviewO
     const items = data.strengths.map((s) => `- ${s}`).join("\n");
     sections.push(`## ${headers.strengths}\n\n${items}`);
   }
-  if (data.issues && data.issues.length > 0) {
-    const issueLines = data.issues.map(
-      (issue) => `- **[${issue.severity}]** ${issue.description}`
+  // ⚠️ line-specific issues는 GitHub inline comment로만 게시되므로 웹 UI에서도 제외.
+  // review-formatter.ts와 동일한 필터링 로직을 적용한다.
+  const bodyIssues = (data.issues ?? []).filter((i) => i.line === null);
+  if (bodyIssues.length > 0) {
+    const issueLines = bodyIssues.map(
+      (issue) => {
+        const fileTag = issue.file ? ` · \`${issue.file}\`` : "";
+        return `- **[${issue.severity}]** ${issue.category}${fileTag}  \n  ${issue.description}`;
+      }
     );
-    sections.push(`## ${headers.issues}\n\n${issueLines.join("\n")}`);
+    sections.push(`## ${headers.issues}\n\n${issueLines.join("\n\n")}`);
   }
   if (data.suggestions && data.suggestions.length > 0) {
     const sugLines = data.suggestions.map(
-      (s) => `- ${s.description}`
+      (s) => `- **${s.file}:${s.line}** [${s.severity}]: ${s.explanation}`
     );
     sections.push(`## ${headers.suggestions}\n\n${sugLines.join("\n")}`);
   }
@@ -408,10 +503,21 @@ function RemainingMarkdownSections({ data, langCode }: { data: StructuredReviewO
 
 | 순서 | Phase | 변경 범위 | 비고 |
 |------|-------|----------|------|
-| 1 | Phase 1 | `review-schema.ts` | 스키마 변경 → 타입 자동 반영 |
-| 2 | Phase 2 | `review-prompt.ts` | 스키마와 독립적으로 적용 가능 |
+| 1 | Phase 1 | `review-schema.ts`, `module/ai/index.ts` | 스키마 변경 + barrel export 추가 + `REVIEW_SCHEMA_VERSION` 도입. **Phase 3과 같은 배포 단위 필수** |
+| 2 | Phase 2 | `review-prompt.ts` | `extractFileMeta()` 추가 + 프롬프트 지시 확장. 스키마와 독립적으로 적용 가능 |
 | 3 | Phase 3 | `shared/constants/index.ts` → `review-formatter.ts` | Phase 1 필수 선행. **상수 추가 먼저** (`as const` 타입 추론으로 인해 `headers.reviewFocus` 컴파일 에러 방지) |
-| 4 | Phase 4 | `schema.prisma`, `review.ts`, `review-detail.tsx`, 새 컴포넌트 | Phase 1-3 완료 후 |
+| 4 | Phase 4 | `schema.prisma`, `review.ts`, `review-detail.tsx`, `page.tsx`, 새 컴포넌트 | Phase 1-3 완료 후. `review-detail.tsx`와 `page.tsx`는 **반드시 같은 커밋**에서 수정 (required props이므로 한쪽만 변경하면 컴파일 에러) |
+
+### 배포 제약
+
+```
+⚠️ Phase 1 + Phase 3 = 같은 배포 단위 (필수)
+   Phase 1만 배포 시: output.summary가 object가 되어 포맷터에서 [object Object] 출력.
+   TypeScript 컴파일 에러 없이 런타임에서만 발생 → CI에서 미검출.
+
+⚠️ Phase 4의 review-detail.tsx + page.tsx = 같은 커밋 (필수)
+   required props이므로 한쪽만 변경하면 컴파일 에러.
+```
 
 Phase 1-3은 **마크다운 품질 개선** (GitHub + 웹 UI 모두 즉시 반영).
 Phase 4는 **웹 UI 전용 구조화 렌더링** (선택적, 가독성 극대화).

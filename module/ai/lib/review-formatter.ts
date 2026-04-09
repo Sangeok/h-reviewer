@@ -3,6 +3,19 @@ import type { LanguageCode } from "@/shared/types/language";
 import { SECTION_HEADERS } from "@/shared/constants";
 import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "../constants/review-emoji";
 
+const RISK_BADGE: Record<string, string> = {
+  low: "🟢 Low Risk",
+  medium: "🟡 Medium Risk",
+  high: "🔴 High Risk",
+};
+
+const CHANGE_EMOJI: Record<string, string> = {
+  added: "🆕",
+  modified: "✏️",
+  deleted: "🗑️",
+  renamed: "📝",
+};
+
 export function formatStructuredReviewToMarkdown(
   output: StructuredReviewOutput,
   langCode: LanguageCode
@@ -10,10 +23,36 @@ export function formatStructuredReviewToMarkdown(
   const headers = SECTION_HEADERS[langCode];
   const sections: string[] = [];
 
-  sections.push(`## ${headers.summary}\n\n${output.summary}`);
+  // Summary: 리스크 배지 + 개요 + 핵심 포인트
+  const summaryLines = [
+    `## ${headers.summary}`,
+    "",
+    `> **${RISK_BADGE[output.summary.riskLevel]}**`,
+    "",
+    output.summary.overview,
+  ];
+  if (output.summary.keyPoints.length > 0) {
+    summaryLines.push(
+      "",
+      `**${headers.reviewFocus}**`,
+      "",
+      ...output.summary.keyPoints.map(p => `- ${p}`),
+    );
+  }
+  sections.push(summaryLines.join("\n"));
 
-  if (output.walkthrough) {
-    sections.push(`## ${headers.walkthrough}\n\n${output.walkthrough}`);
+  // Walkthrough: 파일별 구조화 목록
+  if (output.walkthrough && output.walkthrough.length > 0) {
+    const walkthroughLines = [`## ${headers.walkthrough}`, ""];
+    for (const entry of output.walkthrough) {
+      const emoji = CHANGE_EMOJI[entry.changeType] ?? "📄";
+      walkthroughLines.push(
+        `${emoji} **\`${entry.file}\`**`,
+        `> ${entry.summary}`,
+        "",
+      );
+    }
+    sections.push(walkthroughLines.join("\n"));
   }
 
   if (output.sequenceDiagram) {

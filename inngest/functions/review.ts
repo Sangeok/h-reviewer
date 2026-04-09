@@ -5,7 +5,7 @@ import { postPRReviewWithSuggestions } from "@/module/github/lib/pr-review";
 import {
   retrieveContext, classifyPRSize, getTopKForSizeMode,
   structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt,
-  getIssueLimit, formatStructuredReviewToMarkdown,
+  getIssueLimit, formatStructuredReviewToMarkdown, REVIEW_SCHEMA_VERSION,
 } from "@/module/ai";
 import type { ReviewSizeMode } from "@/module/ai";
 import { generateText, Output } from "ai";
@@ -209,6 +209,10 @@ export const generateReview = inngest.createFunction(
             prTitle: title,
             prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
             review,
+            reviewData: validatedStructuredOutput
+              ? { ...validatedStructuredOutput, schemaVersion: REVIEW_SCHEMA_VERSION }
+              : null,
+            langCode,
             reviewType: "FULL_REVIEW",
             status: "completed",
             headSha,

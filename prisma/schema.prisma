@@ -116,6 +116,8 @@ model Review {
   prTitle   String
   prUrl     String
   review    String  @db.Text
+  reviewData Json?     // 구조화 출력 JSON (웹 UI 렌더링용) — AI 출력 + schemaVersion만 저장
+  langCode  String  @default("en")  // 리뷰 생성 시점의 언어 코드
   reviewType ReviewType @default(FULL_REVIEW)
   status    String  @default("completed") // completed, failed, pending
   headSha   String?

@@ -9,12 +9,17 @@ import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ReviewDetailData } from "../types";
+import type { StructuredReviewOutput } from "@/module/ai";
+import type { LanguageCode } from "@/shared/types/language";
+import { StructuredReviewBody } from "./parts/structured-review-body";
 
 interface Props {
   review: ReviewDetailData;
+  structuredData: StructuredReviewOutput | null;
+  langCode: LanguageCode;
 }
 
-export default function ReviewDetail({ review }: Props) {
+export default function ReviewDetail({ review, structuredData, langCode }: Props) {
   return (
     <div className="space-y-6">
       {/* Back + Header */}
@@ -48,10 +53,16 @@ export default function ReviewDetail({ review }: Props) {
         <CardHeader>
           <CardTitle className="text-lg font-medium text-foreground">Review</CardTitle>
         </CardHeader>
-        <CardContent className="prose prose-invert prose-sm max-w-none">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {review.review}
-          </ReactMarkdown>
+        <CardContent>
+          {structuredData ? (
+            <StructuredReviewBody data={structuredData} langCode={langCode} />
+          ) : (
+            <div className="prose prose-invert prose-sm max-w-none">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {review.review}
+              </ReactMarkdown>
+            </div>
+          )}
         </CardContent>
       </Card>
 

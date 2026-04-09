@@ -11,6 +11,7 @@ export const SECTION_HEADERS = {
     issues: "Issues",
     suggestions: "Suggestions",
     poem: "Poem",
+    reviewFocus: "Review Focus",
   },
   ko: {
     walkthrough: "변경 사항 상세",
@@ -20,6 +21,7 @@ export const SECTION_HEADERS = {
     issues: "발견된 문제점",
     suggestions: "개선 제안",
     poem: "마무리 시",
+    reviewFocus: "리뷰 포인트",
   },
 } as const;
 

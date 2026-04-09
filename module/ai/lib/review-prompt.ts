@@ -5,6 +5,29 @@ import { getSectionPolicy } from "./review-size-policy";
 import { MAX_SUGGESTION_CAP } from "@/shared/constants";
 import { getLanguageName } from "@/module/settings";
 
+function extractFileMeta(diff: string): { file: string; changeType: string }[] {
+  return diff
+    .split(/^diff --git /m)
+    .filter(Boolean)
+    .map((block) => {
+      // quoted paths 처리: git은 공백·특수문자 포함 경로를 "a/path" "b/path" 형태로 출력
+      const quotedMatch = block.match(/^"?a\/.+"?\s+"?b\/(.+?)"?\s*$/m);
+      const simpleMatch = block.match(/^a\/.+ b\/(.+)/);
+      const fileMatch = quotedMatch ?? simpleMatch;
+      if (!fileMatch) return null;
+      const file = fileMatch[1];
+      const changeType = block.includes("new file mode")
+        ? "added"
+        : block.includes("deleted file mode")
+          ? "deleted"
+          : block.includes("rename from")
+            ? "renamed"
+            : "modified";
+      return { file, changeType };
+    })
+    .filter(Boolean) as { file: string; changeType: string }[];
+}
+
 /**
  * 기존 review.ts에서 이동한 함수.
  * size 모드별 프롬프트 섹션 지시문을 생성한다.
@@ -18,7 +41,11 @@ export function buildSectionInstruction(
   let idx = 1;
 
   if (policy.summary) {
-    const extra = mode === "tiny" ? " (2-3 sentences only)" : mode === "large" ? " (focus on key changed files)" : "";
+    const extra = mode === "tiny"
+      ? " (overview + risk level only, 2-3 sentences, skip keyPoints)"
+      : mode === "large"
+        ? " (overview + risk level + key review points, focus on key changed files)"
+        : " (overview + risk level + key review points)";
     sections.push(`${idx++}. **${headers.summary}**${extra}`);
   }
   if (policy.walkthrough) {
@@ -67,6 +94,9 @@ export function buildStructuredPrompt(params: PromptParams): string {
   const suggestionLimit = getSuggestionLimit(sizeMode, maxSuggestions);
   const issueLimit = getIssueLimit(sizeMode);
 
+  const fileMeta = extractFileMeta(diff);
+  const fileContext = fileMeta.map((f) => `- ${f.file} (${f.changeType})`).join("\n");
+
   return `You are an expert code reviewer. Analyze this PR and provide structured feedback.${languageInstruction}
 
 ## PR Information
@@ -102,7 +132,18 @@ ${diff}
   - category: bug, design, security, performance, testing, or general
   - severity: CRITICAL for blocking issues, WARNING for important concerns, SUGGESTION for improvements, INFO for observations
 - Provide up to ${issueLimit.inline} code-level issues (with file and line) and up to ${issueLimit.general} project-level issues (without line), prioritized by severity
-- Do not generate an issue for a file+line that already has a suggestion — the suggestion's explanation already communicates the problem`;
+- Do not generate an issue for a file+line that already has a suggestion — the suggestion's explanation already communicates the problem
+- For summary:
+  - overview: Describe the PR's purpose and approach. Do NOT restate the PR title.
+  - riskLevel: "low" for cosmetic/docs/config changes, "medium" for logic changes with test coverage, "high" for breaking changes, security-sensitive code, missing tests, or changes affecting >5 files
+  - keyPoints: What should the reviewer verify? What could break? What assumptions does this PR make?
+- For walkthrough:
+  - The following files were changed in this PR:
+${fileContext}
+  - Use EXACTLY these file paths and changeType values in your walkthrough entries
+  - Only write the "summary" field: explain WHY this file was changed, its intent, side effects, and relationships to other files
+  - Do NOT describe WHAT changed (the diff already shows that)
+  - If a file's change depends on another file's change, mention the dependency`;
 }
 
 // ⚠️ userPreference는 상한(cap)으로 적용, PR 크기 기본값을 초과하지 않음
