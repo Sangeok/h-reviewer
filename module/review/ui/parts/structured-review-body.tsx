@@ -17,6 +17,9 @@ export function StructuredReviewBody({ data, langCode }: Props) {
       {data.walkthrough && data.walkthrough.length > 0 && (
         <WalkthroughSection entries={data.walkthrough} langCode={langCode} />
       )}
+      {data.strengths && data.strengths.length > 0 && (
+        <StrengthsSection strengths={data.strengths} langCode={langCode} />
+      )}
       <RemainingMarkdownSections data={data} langCode={langCode} />
     </div>
   );
@@ -81,29 +84,73 @@ const CHANGE_EMOJI: Record<string, string> = {
 function WalkthroughSection({ entries, langCode }: { entries: WalkthroughEntry[]; langCode: LanguageCode }) {
   const headers = SECTION_HEADERS[langCode];
   return (
-    <div className="space-y-3">
-      <h2 className="text-base font-semibold text-foreground">{headers.walkthrough}</h2>
-      <div className="space-y-2">
-        {entries.map((entry, i) => (
-          <div key={i} className="flex items-start gap-3 py-2 border-b border-border/50 last:border-0">
-            <span
-              className={`shrink-0 mt-0.5 inline-block px-1.5 py-0.5 rounded text-xs font-medium ${CHANGE_TYPE_STYLE[entry.changeType] ?? ""}`}
-            >
-              {CHANGE_EMOJI[entry.changeType] ?? "📄"} {entry.changeType}
-            </span>
-            <div className="min-w-0 space-y-1">
-              <code className="text-xs font-mono text-foreground/90 break-all">{entry.file}</code>
-              <p className="text-sm text-foreground/70 leading-relaxed">{entry.summary}</p>
-            </div>
-          </div>
-        ))}
+    <details className="group" open>
+      <summary className="cursor-pointer list-none">
+        <h2 className="text-base font-semibold text-foreground inline-flex items-center gap-2">
+          {headers.walkthrough}
+          <span className="text-xs text-foreground/50 group-open:rotate-90 transition-transform">▶</span>
+        </h2>
+      </summary>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="border-b border-border/50 text-left text-foreground/60">
+              <th className="py-2 pr-3 font-medium">File</th>
+              <th className="py-2 pr-3 font-medium">Change</th>
+              <th className="py-2 font-medium">Summary</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((entry, i) => (
+              <tr key={i} className="border-b border-border/30 last:border-0">
+                <td className="py-2 pr-3 align-top">
+                  <code className="text-xs font-mono text-foreground/90 break-all">
+                    {CHANGE_EMOJI[entry.changeType] ?? "📄"} {entry.file}
+                  </code>
+                </td>
+                <td className="py-2 pr-3 align-top">
+                  <span
+                    className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${CHANGE_TYPE_STYLE[entry.changeType] ?? ""}`}
+                  >
+                    {entry.changeType}
+                  </span>
+                </td>
+                <td className="py-2 align-top text-foreground/70 leading-relaxed">
+                  {entry.summary}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-    </div>
+    </details>
+  );
+}
+
+function StrengthsSection({ strengths, langCode }: { strengths: string[]; langCode: LanguageCode }) {
+  const headers = SECTION_HEADERS[langCode];
+  return (
+    <details className="group">
+      <summary className="cursor-pointer list-none">
+        <h2 className="text-base font-semibold text-foreground inline-flex items-center gap-2">
+          {headers.strengths}
+          <span className="text-xs text-foreground/50 group-open:rotate-90 transition-transform">▶</span>
+        </h2>
+      </summary>
+      <ul className="mt-3 space-y-1.5">
+        {strengths.map((s, i) => (
+          <li key={i} className="flex items-start gap-2 text-sm text-foreground/80">
+            <span className="mt-0.5 shrink-0">✅</span>
+            <span>{s}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
 /**
- * strengths, issues, suggestions, sequenceDiagram 등
+ * issues, suggestions, sequenceDiagram 등
  * 아직 구조화 렌더링이 불필요한 섹션은 reviewData의 원시 값을 마크다운으로 변환하여 렌더링.
  *
  * NOTE: SECTION_HEADERS[langCode]를 사용하여 다국어 헤더 지원.
@@ -115,11 +162,6 @@ function RemainingMarkdownSections({ data, langCode }: { data: StructuredReviewO
 
   if (data.sequenceDiagram) {
     sections.push(`## ${headers.sequenceDiagram}\n\n\`\`\`mermaid\n${data.sequenceDiagram}\n\`\`\``);
-  }
-
-  if (data.strengths && data.strengths.length > 0) {
-    const items = data.strengths.map((s) => `- ${s}`).join("\n");
-    sections.push(`## ${headers.strengths}\n\n${items}`);
   }
 
   // ⚠️ line-specific issues는 GitHub inline comment로만 게시되므로 웹 UI에서도 제외.
