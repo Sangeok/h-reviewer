@@ -1,4 +1,5 @@
 import prisma from "@/lib/db";
+import { Prisma } from "@/lib/generated/prisma/client";
 import { inngest } from "../client";
 import { getPullRequestDiff, postReviewComment } from "@/module/github/lib/github";
 import { postPRReviewWithSuggestions } from "@/module/github/lib/pr-review";
@@ -211,7 +212,7 @@ export const generateReview = inngest.createFunction(
             review,
             reviewData: validatedStructuredOutput
               ? { ...validatedStructuredOutput, schemaVersion: REVIEW_SCHEMA_VERSION }
-              : null,
+              : Prisma.DbNull,
             langCode,
             reviewType: "FULL_REVIEW",
             status: "completed",
