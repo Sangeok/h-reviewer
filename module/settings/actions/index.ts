@@ -10,6 +10,7 @@ import { z } from "zod";
 import { DEFAULT_LANGUAGE, LANGUAGE_BY_CODE, type LanguageCode } from "../constants";
 import { MAX_SUGGESTION_CAP } from "@/shared/constants";
 import { isValidLanguageCode } from "../lib/language";
+import type { UserProfile, UpdateProfileResult, ConnectedRepository, ActionSuccess } from "../types";
 
 const LANGUAGE_CODES = Object.keys(LANGUAGE_BY_CODE) as [LanguageCode, ...LanguageCode[]];
 
@@ -28,7 +29,7 @@ const profileUpdateSchema = z
 
 type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
 
-export async function getUserProfile() {
+export async function getUserProfile(): Promise<UserProfile | null> {
   try {
     const session = await requireAuthSession();
 
@@ -56,12 +57,11 @@ export async function getUserProfile() {
       preferredLanguage: isValidLanguageCode(user.preferredLanguage) ? user.preferredLanguage : DEFAULT_LANGUAGE,
     };
   } catch (error) {
-    console.error("Error fetching user profile:", error);
-    return null;
+    throw error instanceof Error ? error : new Error("Failed to fetch user profile");
   }
 }
 
-export async function updateUserProfile(data: ProfileUpdateInput) {
+export async function updateUserProfile(data: ProfileUpdateInput): Promise<UpdateProfileResult> {
   try {
     const session = await requireAuthSession();
 
@@ -95,7 +95,7 @@ export async function updateUserProfile(data: ProfileUpdateInput) {
   }
 }
 
-export async function getConnectedRepositories() {
+export async function getConnectedRepositories(): Promise<ConnectedRepository[]> {
   try {
     const session = await requireAuthSession();
 
@@ -122,7 +122,7 @@ export async function getConnectedRepositories() {
   }
 }
 
-export async function disconnectRepository(repositoryId: string) {
+export async function disconnectRepository(repositoryId: string): Promise<ActionSuccess> {
   const session = await requireAuthSession();
   try {
     await disconnectRepositoryInternal(repositoryId, session.user.id);
@@ -133,7 +133,7 @@ export async function disconnectRepository(repositoryId: string) {
   }
 }
 
-export async function disconnectAllRepositories() {
+export async function disconnectAllRepositories(): Promise<ActionSuccess> {
   const session = await requireAuthSession();
   try {
     await disconnectAllRepositoriesInternal(session.user.id);

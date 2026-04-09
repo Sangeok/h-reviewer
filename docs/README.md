@@ -35,6 +35,8 @@
 | `specs/adaptive-learning-feedback.md` | `TODO` | 사용자 피드백 기반 적응형 학습 |
 | `specs/pr-risk-scoring.md` | `TODO` | PR 리스크 점수 및 리뷰 깊이 자동 조절 |
 | `specs/merge-adjacent-suggestions.md` | `TODO` | Review output 개선 (프롬프트 수정 + issues 구조화 + suggestion 개수 설정) |
+| `specs/suggestion-ui-improvement-feature.md` | `TODO` | Suggestion 카드 UI 개선 (시각적 계층, 코드 하이라이팅, 파일 그룹핑) |
+| `specs/review-summary-walkthrough-improvement-feature.md` | `TODO` | 요약/변경 사항 상세 구조화 (리스크 배지, 파일별 walkthrough, 가독성 개선) |
 
 ---
 

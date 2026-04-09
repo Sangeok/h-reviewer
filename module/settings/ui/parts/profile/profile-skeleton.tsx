@@ -11,6 +11,7 @@ export function ProfileSkeleton() {
         <div className="space-y-4">
           <div className="h-10 animate-pulse rounded-lg bg-secondary" />
           <div className="h-10 animate-pulse rounded-lg bg-secondary" />
+          <div className="h-10 animate-pulse rounded-lg bg-secondary" />
         </div>
       </CardContent>
     </Card>

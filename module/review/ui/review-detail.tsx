@@ -1,8 +1,9 @@
 "use client";
 
+import { QueryBoundary } from "@/components/error-boundary/query-error-boundary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { SuggestionList } from "@/module/suggestion";
+import { SuggestionList, SuggestionListSkeleton } from "@/module/suggestion";
 import { ExternalLink, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
@@ -56,7 +57,13 @@ export default function ReviewDetail({ review }: Props) {
 
       {/* Suggestions */}
       {review.suggestions.length > 0 && (
-        <SuggestionList reviewId={review.id} initialData={review.suggestions} />
+        <QueryBoundary
+          fallback={<SuggestionListSkeleton />}
+          title="Suggestions"
+          description="Failed to load suggestions"
+        >
+          <SuggestionList reviewId={review.id} initialData={review.suggestions} />
+        </QueryBoundary>
       )}
     </div>
   );
