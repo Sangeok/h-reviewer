@@ -1,6 +1,7 @@
 import type { StructuredReviewOutput } from "@/module/ai";
 import type { LanguageCode } from "@/shared/types/language";
 import { SECTION_HEADERS } from "@/shared/constants";
+import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "@/module/ai/constants/review-emoji";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -112,6 +113,10 @@ function RemainingMarkdownSections({ data, langCode }: { data: StructuredReviewO
   const headers = SECTION_HEADERS[langCode];
   const sections: string[] = [];
 
+  if (data.sequenceDiagram) {
+    sections.push(`## ${headers.sequenceDiagram}\n\n\`\`\`mermaid\n${data.sequenceDiagram}\n\`\`\``);
+  }
+
   if (data.strengths && data.strengths.length > 0) {
     const items = data.strengths.map((s) => `- ${s}`).join("\n");
     sections.push(`## ${headers.strengths}\n\n${items}`);
@@ -121,8 +126,11 @@ function RemainingMarkdownSections({ data, langCode }: { data: StructuredReviewO
   const bodyIssues = (data.issues ?? []).filter((i) => i.line === null);
   if (bodyIssues.length > 0) {
     const issueLines = bodyIssues.map((issue) => {
+      const sev = `${SEVERITY_EMOJI[issue.severity]} **${issue.severity}**`;
+      const cat = `${CATEGORY_EMOJI[issue.category]} ${issue.category}`;
       const fileTag = issue.file ? ` · \`${issue.file}\`` : "";
-      return `- **[${issue.severity}]** ${issue.category}${fileTag}  \n  ${issue.description}`;
+      const desc = issue.description.replace(/[\r\n]+/g, " ").trim();
+      return `- ${sev} · ${cat}${fileTag}  \n  ${desc}`;
     });
     sections.push(`## ${headers.issues}\n\n${issueLines.join("\n\n")}`);
   }
@@ -132,10 +140,6 @@ function RemainingMarkdownSections({ data, langCode }: { data: StructuredReviewO
       (s) => `- **${s.file}:${s.line}** [${s.severity}]: ${s.explanation}`
     );
     sections.push(`## ${headers.suggestions}\n\n${sugLines.join("\n")}`);
-  }
-
-  if (data.sequenceDiagram) {
-    sections.push(`## ${headers.sequenceDiagram}\n\n\`\`\`mermaid\n${data.sequenceDiagram}\n\`\`\``);
   }
 
   if (sections.length === 0) return null;
