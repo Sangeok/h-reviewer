@@ -109,5 +109,5 @@ ${suggestion.after}
 }
 
 function formatIssueComment(issue: StructuredIssue): string {
-  return `${CATEGORY_EMOJI[issue.category]} ${SEVERITY_EMOJI[issue.severity]} **${issue.severity}** | ${issue.category}\n\n${issue.description}`;
+  return `### ${SEVERITY_EMOJI[issue.severity]} ${issue.severity} · ${CATEGORY_EMOJI[issue.category]} ${issue.category}\n\n${issue.description}`;
 }

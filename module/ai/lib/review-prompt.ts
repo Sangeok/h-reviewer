@@ -133,6 +133,14 @@ ${diff}
   - severity: CRITICAL for blocking issues, WARNING for important concerns, SUGGESTION for improvements, INFO for observations
 - Provide up to ${issueLimit.inline} code-level issues (with file and line) and up to ${issueLimit.general} project-level issues (without line), prioritized by severity
 - Do not generate an issue for a file+line that already has a suggestion — the suggestion's explanation already communicates the problem
+- Each issue description MUST use structured markdown:
+  - First line: one-sentence summary of the problem
+  - If relevant, use bullet lists or bold labels to separate:
+    - **Affected:** list of affected items
+    - **Impact:** why this matters
+    - **Recommendation:** what to do
+  - Keep the total under 150 words per issue
+  - Do NOT write everything in a single paragraph
 - For summary:
   - overview: Describe the PR's purpose and approach. Do NOT restate the PR title.
   - riskLevel: "low" for cosmetic/docs/config changes, "medium" for logic changes with test coverage, "high" for breaking changes, security-sensitive code, missing tests, or changes affecting >5 files

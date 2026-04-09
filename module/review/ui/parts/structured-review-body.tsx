@@ -126,20 +126,26 @@ function RemainingMarkdownSections({ data, langCode }: { data: StructuredReviewO
   const bodyIssues = (data.issues ?? []).filter((i) => i.line === null);
   if (bodyIssues.length > 0) {
     const issueLines = bodyIssues.map((issue) => {
-      const sev = `${SEVERITY_EMOJI[issue.severity]} **${issue.severity}**`;
+      const sev = `${SEVERITY_EMOJI[issue.severity]} ${issue.severity}`;
       const cat = `${CATEGORY_EMOJI[issue.category]} ${issue.category}`;
       const fileTag = issue.file ? ` · \`${issue.file}\`` : "";
-      const desc = issue.description.replace(/[\r\n]+/g, " ").trim();
-      return `- ${sev} · ${cat}${fileTag}  \n  ${desc}`;
+      const desc = issue.description.trim();
+      return `### ${sev} · ${cat}${fileTag}\n\n${desc}`;
     });
     sections.push(`## ${headers.issues}\n\n${issueLines.join("\n\n")}`);
   }
 
   if (data.suggestions && data.suggestions.length > 0) {
-    const sugLines = data.suggestions.map(
-      (s) => `- **${s.file}:${s.line}** [${s.severity}]: ${s.explanation}`
-    );
-    sections.push(`## ${headers.suggestions}\n\n${sugLines.join("\n")}`);
+    const rows = data.suggestions.map((s) => {
+      const safeExplanation = s.explanation.replace(/\|/g, "\\|").replace(/[\r\n]+/g, " ");
+      return `| ${SEVERITY_EMOJI[s.severity]} ${s.severity} | \`${s.file}\` | ${s.line} | ${safeExplanation} |`;
+    });
+    const table = [
+      `| Severity | File | Line | Description |`,
+      `|----------|------|------|-------------|`,
+      ...rows,
+    ].join("\n");
+    sections.push(`## ${headers.suggestions}\n\n${table}`);
   }
 
   if (sections.length === 0) return null;
