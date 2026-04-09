@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { getSuggestionsByReviewId } from "../actions";
 import { SUGGESTION_QUERY_KEYS, SUGGESTIONS_STALE_TIME_MS } from "../constants";
 import { SuggestionCard } from "./suggestion-card";
@@ -11,15 +11,14 @@ interface SuggestionListProps {
 }
 
 export function SuggestionList({ reviewId, initialData }: SuggestionListProps) {
-  const { data: suggestions, isLoading } = useQuery({
+  const { data: suggestions } = useSuspenseQuery({
     queryKey: SUGGESTION_QUERY_KEYS.DETAIL(reviewId),
     queryFn: () => getSuggestionsByReviewId(reviewId),
     initialData,
     staleTime: SUGGESTIONS_STALE_TIME_MS,
   });
 
-  if (isLoading) return <div>Loading suggestions...</div>;
-  if (!suggestions?.length) return null;
+  if (!suggestions.length) return null;
 
   const pending = suggestions.filter(s => s.status === "PENDING").length;
   const applied = suggestions.filter(s => s.status === "APPLIED").length;

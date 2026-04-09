@@ -9,6 +9,7 @@ export { SEVERITY_CONFIG, STATUS_CONFIG, SUGGESTION_QUERY_KEYS, SUGGESTIONS_STAL
 
 // ===== UI Components =====
 export { SuggestionCard } from "./ui/suggestion-card";
+export { SuggestionCardSkeleton, SuggestionListSkeleton } from "./ui/suggestion-card-skeleton";
 export { SuggestionList } from "./ui/suggestion-list";
 
 // ===== Hooks =====
