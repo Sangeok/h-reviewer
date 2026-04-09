@@ -41,18 +41,22 @@ export function formatStructuredReviewToMarkdown(
   }
   sections.push(summaryLines.join("\n"));
 
-  // Walkthrough: 파일별 구조화 목록
+  // Walkthrough: collapsible 테이블
   if (output.walkthrough && output.walkthrough.length > 0) {
-    const walkthroughLines = [`## ${headers.walkthrough}`, ""];
-    for (const entry of output.walkthrough) {
+    const tableRows = output.walkthrough.map((entry) => {
       const emoji = CHANGE_EMOJI[entry.changeType] ?? "📄";
-      walkthroughLines.push(
-        `${emoji} **\`${entry.file}\`**`,
-        `> ${entry.summary}`,
-        "",
-      );
-    }
-    sections.push(walkthroughLines.join("\n"));
+      const safeSummary = entry.summary.replace(/\|/g, "\\|").replace(/[\r\n]+/g, " ");
+      return `| ${emoji} \`${entry.file}\` | ${entry.changeType} | ${safeSummary} |`;
+    });
+    const table = [
+      `| File | Change | Summary |`,
+      `|------|--------|---------|`,
+      ...tableRows,
+    ].join("\n");
+
+    sections.push(
+      `<details>\n<summary>\n\n## ${headers.walkthrough}\n\n</summary>\n\n${table}\n\n</details>`
+    );
   }
 
   if (output.sequenceDiagram) {
@@ -61,7 +65,9 @@ export function formatStructuredReviewToMarkdown(
 
   if (output.strengths.length > 0) {
     const items = output.strengths.map(s => `- ${s}`).join("\n");
-    sections.push(`## ${headers.strengths}\n\n${items}`);
+    sections.push(
+      `<details>\n<summary>\n\n## ${headers.strengths}\n\n</summary>\n\n${items}\n\n</details>`
+    );
   }
 
   // line이 null인 issues(project-level + file-level)만 review body에 포함
@@ -70,20 +76,26 @@ export function formatStructuredReviewToMarkdown(
 
   if (bodyIssues.length > 0) {
     const items = bodyIssues.map(i => {
-      const sev = `${SEVERITY_EMOJI[i.severity]} **${i.severity}**`;
+      const sev = `${SEVERITY_EMOJI[i.severity]} ${i.severity}`;
       const cat = `${CATEGORY_EMOJI[i.category]} ${i.category}`;
       const fileTag = i.file ? ` · \`${i.file}\`` : "";
-      const desc = i.description.replace(/[\r\n]+/g, " ").trim();
-      return `- ${sev} · ${cat}${fileTag}  \n  ${desc}`;
+      const desc = i.description.trim();
+      return `### ${sev} · ${cat}${fileTag}\n\n${desc}`;
     }).join("\n\n");
     sections.push(`## ${headers.issues}\n\n${items}`);
   }
 
   if (output.suggestions.length > 0) {
-    const items = output.suggestions.map(s =>
-      `- **${s.file}:${s.line}** [${s.severity}]: ${s.explanation}`
-    ).join("\n");
-    sections.push(`## ${headers.suggestions}\n\n${items}`);
+    const rows = output.suggestions.map(s => {
+      const safeExplanation = s.explanation.replace(/\|/g, "\\|").replace(/[\r\n]+/g, " ");
+      return `| ${SEVERITY_EMOJI[s.severity]} ${s.severity} | \`${s.file}\` | ${s.line} | ${safeExplanation} |`;
+    });
+    const table = [
+      `| Severity | File | Line | Description |`,
+      `|----------|------|------|-------------|`,
+      ...rows,
+    ].join("\n");
+    sections.push(`## ${headers.suggestions}\n\n${table}`);
   }
 
   return sections.join("\n\n");
