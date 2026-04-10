@@ -37,6 +37,7 @@
 | `specs/merge-adjacent-suggestions.md` | `TODO` | Review output 개선 (프롬프트 수정 + issues 구조화 + suggestion 개수 설정) |
 | `specs/suggestion-ui-improvement-feature.md` | `TODO` | Suggestion 카드 UI 개선 (시각적 계층, 코드 하이라이팅, 파일 그룹핑) |
 | `specs/review-summary-walkthrough-improvement-feature.md` | `TODO` | 요약/변경 사항 상세 구조화 (리스크 배지, 파일별 walkthrough, 가독성 개선) |
+| `specs/walkthrough-table-encoding-fix.md` | `TODO` | 변경 사항 상세 테이블 컬럼 폭 붕괴 + 한글 파일명 mojibake 수정 |
 
 ---
 

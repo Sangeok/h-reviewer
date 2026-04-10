@@ -14,8 +14,56 @@ import { google } from "@ai-sdk/google";
 import { sanitizeMermaidSequenceDiagrams } from "@/module/github/lib/github-markdown";
 import { isValidLanguageCode } from "@/module/settings";
 import { SECTION_HEADERS, DIAGRAM_FALLBACK_TEXT } from "@/shared/constants";
-import { parseDiffToChangedFiles, extractDiffFileSet } from "@/module/github/lib/diff-parser";
+import { parseDiffToChangedFiles, extractDiffFileSet, unescapeGitPath } from "@/module/github/lib/diff-parser";
 import type { LanguageCode } from "@/module/settings";
+
+/**
+ * AI가 echo한 파일 경로를 diffFiles의 정규화된 경로로 해결한다.
+ * 1. 완전 매치
+ * 2. AI가 raw diff escape 경로를 그대로 copy한 경우 → unescape 후 재시도
+ * 3. basename fallback (충돌 시 drop)
+ */
+function resolveToDiffPath(
+  file: string,
+  diffFiles: Set<string>,
+  diffArray: string[],
+  scope: "walkthrough" | "issues" | "suggestions",
+): string | null {
+  if (diffFiles.has(file)) return file;
+
+  const unescaped = unescapeGitPath(file);
+  if (unescaped !== file && diffFiles.has(unescaped)) return unescaped;
+
+  const basename = file.split("/").pop() ?? file;
+  const matches = diffArray.filter(
+    (f) => f.endsWith("/" + basename) || f === basename,
+  );
+
+  if (matches.length === 0) {
+    console.warn(`[${scope}] dropped entry (no match)`, { file });
+    return null;
+  }
+  if (matches.length > 1) {
+    console.warn(`[${scope}] dropped entry (basename collision)`, {
+      file,
+      basename,
+      candidates: matches,
+    });
+    return null;
+  }
+  return matches[0];
+}
+
+function resolveEntryFile<T extends { file: string }>(
+  entry: T,
+  diffFiles: Set<string>,
+  diffArray: string[],
+  scope: "walkthrough" | "issues" | "suggestions",
+): T | null {
+  const resolved = resolveToDiffPath(entry.file, diffFiles, diffArray, scope);
+  if (!resolved) return null;
+  return resolved === entry.file ? entry : { ...entry, file: resolved };
+}
 
 export const generateReview = inngest.createFunction(
   { id: "generate-review" },
@@ -93,11 +141,9 @@ export const generateReview = inngest.createFunction(
       return { rawReview: text, structuredOutput: null };
     });
 
-    // ── Step 5: 검증 게이트 (sanitize → validate → fallback) ──
+    // ── Step 5: 검증 게이트 (validate → markdown 재생성 → sanitize) ──
     const { review, validatedStructuredOutput } = await step.run("validate-review", async () => {
-      const sanitized = sanitizeMermaidSequenceDiagrams(rawReview, langCode);
-
-      // 구조화 출력의 sequenceDiagram도 검증
+      // ── 1. sequenceDiagram 검증 ──
       let validatedOutput = structuredOutput;
       if (structuredOutput?.sequenceDiagram) {
         const wrappedDiagram = `\`\`\`mermaid\n${structuredOutput.sequenceDiagram}\n\`\`\``;
@@ -111,25 +157,65 @@ export const generateReview = inngest.createFunction(
         }
       }
 
-      // issues 검증: diff 파일 목록으로 사전 필터링 + count-trimming
+      // ── 2. diffFiles / diffArray 한 번만 계산 ──
+      const diffFiles = extractDiffFileSet(diff);
+      const diffArray = Array.from(diffFiles);
+
+      // ── 3. walkthrough 검증: diff 파일 목록으로 필터링 + basename fallback ──
+      if (validatedOutput?.walkthrough) {
+        validatedOutput = {
+          ...validatedOutput,
+          walkthrough: validatedOutput.walkthrough
+            .map((entry) => resolveEntryFile(entry, diffFiles, diffArray, "walkthrough"))
+            .filter((e): e is NonNullable<typeof e> => e !== null),
+        };
+      }
+
+      // ── 4. issues 경로 해결 ──
       if (validatedOutput?.issues) {
-        const diffFiles = extractDiffFileSet(diff);
+        validatedOutput = {
+          ...validatedOutput,
+          issues: validatedOutput.issues
+            .map((issue) => {
+              if (issue.file === null) return issue; // project-level
+              if (issue.line !== null && issue.line < 1) return null;
+              const resolved = resolveToDiffPath(issue.file, diffFiles, diffArray, "issues");
+              if (!resolved) return null;
+              return resolved === issue.file ? issue : { ...issue, file: resolved };
+            })
+            .filter((e): e is NonNullable<typeof e> => e !== null),
+        };
+      }
+
+      // ── 5. suggestions 경로 해결 ──
+      if (validatedOutput?.suggestions) {
+        validatedOutput = {
+          ...validatedOutput,
+          suggestions: validatedOutput.suggestions
+            .map((s) => resolveEntryFile(s, diffFiles, diffArray, "suggestions"))
+            .filter((s): s is NonNullable<typeof s> => s !== null),
+        };
+      }
+
+      // ── 6. suggestion-line 중복 issue 제거 (중복 인라인 댓글 방지) ──
+      if (validatedOutput?.issues && validatedOutput.suggestions && validatedOutput.suggestions.length > 0) {
+        const suggestionLineSet = new Set(
+          validatedOutput.suggestions.map(s => `${s.file}:${s.line}`)
+        );
         validatedOutput = {
           ...validatedOutput,
           issues: validatedOutput.issues.filter(issue => {
-            // project-level issues (file: null)는 항상 유효
-            if (issue.file === null) return true;
-            // file이 diff에 존재하는지 검증
-            if (!diffFiles.has(issue.file)) return false;
-            // line-specific issue의 line이 양수인지만 기본 검증
-            // (정확한 diff hunk 범위 검증은 비용 대비 효과가 낮음)
-            if (issue.line !== null && issue.line < 1) return false;
+            if (issue.file !== null && issue.line !== null) {
+              return !suggestionLineSet.has(`${issue.file}:${issue.line}`);
+            }
             return true;
           }),
         };
+      }
 
-        // ⚠️ AI가 prompt limit을 초과할 수 있으므로 count-trimming 적용
-        // (Zod schema에는 동적 .max() 불가 — sizeMode 기반이므로 런타임 필터링)
+      // ── 7. count-trimming (dedup 이후) ──
+      // ⚠️ AI가 prompt limit을 초과할 수 있으므로 count-trimming 적용
+      if (validatedOutput?.issues) {
         const { inline: maxInline, general: maxGeneral } = getIssueLimit(sizeMode);
         let inlineCount = 0, generalCount = 0;
         validatedOutput = {
@@ -139,24 +225,13 @@ export const generateReview = inngest.createFunction(
             return ++generalCount <= maxGeneral;
           }),
         };
-
-        // suggestion이 있는 file+line과 동일한 issue 제거 (중복 인라인 댓글 방지)
-        // 업계 표준: 한 위치에 하나의 인라인 댓글 — suggestion의 explanation이 이미 문제를 설명함
-        if (validatedOutput.suggestions && validatedOutput.suggestions.length > 0) {
-          const suggestionLineSet = new Set(
-            validatedOutput.suggestions.map(s => `${s.file}:${s.line}`)
-          );
-          validatedOutput = {
-            ...validatedOutput,
-            issues: validatedOutput.issues.filter(issue => {
-              if (issue.file !== null && issue.line !== null) {
-                return !suggestionLineSet.has(`${issue.file}:${issue.line}`);
-              }
-              return true;
-            }),
-          };
-        }
       }
+
+      // ── 8. validation 완료 후 마크다운 재생성 + sanitize ──
+      const finalMarkdown = validatedOutput
+        ? formatStructuredReviewToMarkdown(validatedOutput, langCode)
+        : rawReview;
+      const sanitized = sanitizeMermaidSequenceDiagrams(finalMarkdown, langCode);
 
       return {
         review: sanitized,

@@ -64,7 +64,9 @@
       "Bash(echo \"EXIT:$?\")",
       "Bash(sed 's/=.*//')",
       "Bash(xargs -0 grep -h \"#707070\\\\|#1a1a1a\\\\|#4a6a4a\")",
-      "Bash(echo \"exit code: $?\")"
+      "Bash(echo \"exit code: $?\")",
+      "Bash(cmd:*)",
+      "Bash(echo \"Exit: $?\")"
     ]
   }
 }
