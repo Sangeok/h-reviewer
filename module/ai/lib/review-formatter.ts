@@ -41,21 +41,18 @@ export function formatStructuredReviewToMarkdown(
   }
   sections.push(summaryLines.join("\n"));
 
-  // Walkthrough: collapsible 테이블
+  // Walkthrough: collapsible bullet list
   if (output.walkthrough && output.walkthrough.length > 0) {
-    const tableRows = output.walkthrough.map((entry) => {
-      const emoji = CHANGE_EMOJI[entry.changeType] ?? "📄";
-      const safeSummary = entry.summary.replace(/\|/g, "\\|").replace(/[\r\n]+/g, " ");
-      return `| ${emoji} \`${entry.file}\` | ${entry.changeType} | ${safeSummary} |`;
-    });
-    const table = [
-      `| File | Change | Summary |`,
-      `|------|--------|---------|`,
-      ...tableRows,
-    ].join("\n");
+    const items = output.walkthrough
+      .map((entry) => {
+        const emoji = CHANGE_EMOJI[entry.changeType] ?? "📄";
+        const summaryOneLine = entry.summary.replace(/[\r\n]+/g, " ");
+        return `- ${emoji} \`${entry.file}\` **(${entry.changeType})** — ${summaryOneLine}`;
+      })
+      .join("\n");
 
     sections.push(
-      `<details>\n<summary>\n\n## ${headers.walkthrough}\n\n</summary>\n\n${table}\n\n</details>`
+      `<details>\n<summary>\n\n## ${headers.walkthrough}\n\n</summary>\n\n${items}\n\n</details>`
     );
   }
 

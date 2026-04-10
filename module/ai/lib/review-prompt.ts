@@ -4,6 +4,7 @@ import { SECTION_HEADERS } from "@/shared/constants";
 import { getSectionPolicy } from "./review-size-policy";
 import { MAX_SUGGESTION_CAP } from "@/shared/constants";
 import { getLanguageName } from "@/module/settings";
+import { unescapeGitPath } from "@/module/github/lib/diff-parser";
 
 function extractFileMeta(diff: string): { file: string; changeType: string }[] {
   return diff
@@ -15,7 +16,7 @@ function extractFileMeta(diff: string): { file: string; changeType: string }[] {
       const simpleMatch = block.match(/^a\/.+ b\/(.+)/);
       const fileMatch = quotedMatch ?? simpleMatch;
       if (!fileMatch) return null;
-      const file = fileMatch[1];
+      const file = unescapeGitPath(fileMatch[1]);
       const changeType = block.includes("new file mode")
         ? "added"
         : block.includes("deleted file mode")
