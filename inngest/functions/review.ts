@@ -40,14 +40,12 @@ function resolveToDiffPath(
   );
 
   if (matches.length === 0) {
-    console.warn(`[${scope}] dropped entry (no match)`, { file });
+    console.warn(`[${scope}] dropped entry`, { file, reason: "no_match" });
     return null;
   }
   if (matches.length > 1) {
-    console.warn(`[${scope}] dropped entry (basename collision)`, {
-      file,
-      basename,
-      candidates: matches,
+    console.warn(`[${scope}] dropped entry`, {
+      file, reason: "basename_collision", basename, candidates: matches,
     });
     return null;
   }
@@ -250,7 +248,7 @@ export const generateReview = inngest.createFunction(
       if (hasInlineContent) {
         try {
           await postPRReviewWithSuggestions({
-            token, owner, repo, prNumber, reviewBody: review, suggestions, issues, headSha,
+            token, owner, repo, prNumber, reviewBody: review, suggestions, issues, headSha, langCode,
           });
           return true;
         } catch (error) {
@@ -286,7 +284,16 @@ export const generateReview = inngest.createFunction(
             prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
             review,
             reviewData: validatedStructuredOutput
-              ? { ...validatedStructuredOutput, schemaVersion: REVIEW_SCHEMA_VERSION }
+              ? (() => {
+                  // shape guard: 배포 경쟁 상태에서 구 shape(description-only)이
+                  // memoize되어 resume될 때 schemaVersion이 실제 shape과 불일치하는 것을 방지.
+                  // issues가 빈 배열이면 .every()는 true → 정상적으로 v2 저장.
+                  const hasNewIssueShape = (validatedStructuredOutput.issues ?? []).every(
+                    (i) => typeof (i as { title?: unknown }).title === "string",
+                  );
+                  const storedSchemaVersion = hasNewIssueShape ? REVIEW_SCHEMA_VERSION : 1;
+                  return { ...validatedStructuredOutput, schemaVersion: storedSchemaVersion };
+                })()
               : Prisma.DbNull,
             langCode,
             reviewType: "FULL_REVIEW",

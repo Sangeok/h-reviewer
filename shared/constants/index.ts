@@ -25,6 +25,12 @@ export const SECTION_HEADERS = {
   },
 } as const;
 
+/** 이슈 필드 라벨. LanguageCode 추가 시 여기도 추가 필수. */
+export const ISSUE_FIELD_LABELS = {
+  en: { impact: "Impact", recommendation: "Recommendation" },
+  ko: { impact: "영향", recommendation: "권장 조치" },
+} as const satisfies Record<LanguageCode, { impact: string; recommendation: string }>;
+
 /** Mermaid 검증 실패 시 현지화된 fallback 텍스트. LanguageCode 추가 시 여기도 추가 필수. */
 export const DIAGRAM_FALLBACK_TEXT: Record<LanguageCode, string> = {
   en: "Sequence diagram omitted due to Mermaid safety validation.",

@@ -1,6 +1,8 @@
 import { createOctokitClient } from "./github";
 import type { CodeSuggestion, StructuredIssue } from "@/module/ai";
 import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "@/module/ai";
+import type { LanguageCode } from "@/shared/types/language";
+import { ISSUE_FIELD_LABELS } from "@/shared/constants";
 
 interface ReviewComment {
   path: string;
@@ -18,6 +20,7 @@ interface PostPRReviewParams {
   suggestions: CodeSuggestion[];
   issues: StructuredIssue[];
   headSha: string;
+  langCode: LanguageCode;
 }
 
 /**
@@ -31,7 +34,8 @@ interface PostPRReviewParams {
  * 따라서 suggestions 먼저 포스팅 → issues 별도 포스팅(실패 허용) 전략을 사용한다.
  */
 export async function postPRReviewWithSuggestions(params: PostPRReviewParams): Promise<void> {
-  const { token, owner, repo, prNumber, reviewBody, suggestions, issues, headSha } = params;
+  const { token, owner, repo, prNumber, reviewBody, suggestions, issues, headSha, langCode } = params;
+  const labels = ISSUE_FIELD_LABELS[langCode];
   const octokit = createOctokitClient(token);
 
   // suggestion comments
@@ -58,7 +62,7 @@ export async function postPRReviewWithSuggestions(params: PostPRReviewParams): P
   const issueComments: ReviewComment[] = inlineIssues.map((i) => ({
     path: i.file,
     line: i.line,
-    body: formatIssueComment(i),
+    body: formatIssueComment(i, labels),
   }));
 
   // 1차 호출: suggestions + review body (summary + general issues 테이블)
@@ -108,6 +112,32 @@ ${suggestion.after}
 \`\`\``;
 }
 
-function formatIssueComment(issue: StructuredIssue): string {
-  return `### ${SEVERITY_EMOJI[issue.severity]} ${issue.severity} · ${CATEGORY_EMOJI[issue.category]} ${issue.category}\n\n${issue.description}`;
+function formatIssueComment(
+  issue: StructuredIssue,
+  labels: { impact: string; recommendation: string },
+): string {
+  const sev = `${SEVERITY_EMOJI[issue.severity]} ${issue.severity}`;
+  const cat = `${CATEGORY_EMOJI[issue.category]} ${issue.category}`;
+
+  // 방어적 기본값 — in-flight resume + 빈 값 대응
+  const title = (issue.title ?? "").trim();
+  const rawBody = (issue.body ?? (issue as { description?: string }).description ?? "").trim();
+  const impact = (issue.impact ?? "").trim();
+  const recommendation = (issue.recommendation ?? "").trim();
+
+  // 문장 경계 검사 + body 빈값 skip guard
+  const titleSuffix = title && rawBody.startsWith(title) ? rawBody.slice(title.length) : null;
+  const body =
+    titleSuffix !== null && (titleSuffix === "" || /^[.,:;—\-]/.test(titleSuffix))
+      ? titleSuffix.replace(/^[\s.,:;—\-]+/, "")
+      : rawBody;
+
+  const lines: string[] = [
+    `### ${sev} · ${cat}${title ? ` — ${title}` : ""}`,
+  ];
+  if (body) lines.push("", body);
+  if (impact) lines.push("", `**${labels.impact}:** ${impact}`);
+  if (recommendation) lines.push("", `**${labels.recommendation}:** ${recommendation}`);
+  return lines.join("\n");
+  // SYNC:formatIssueBody — review-formatter.ts · structured-review-body.tsx 와 동일 로직 유지
 }

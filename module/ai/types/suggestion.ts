@@ -18,7 +18,10 @@ export type IssueCategory = z.infer<typeof issueCategorySchema>;
 export interface StructuredIssue {
   file: string | null;
   line: number | null;
-  description: string;
+  title: string;
+  body: string;
+  impact: string;
+  recommendation: string;
   severity: SuggestionSeverity;
   category: IssueCategory;
 }

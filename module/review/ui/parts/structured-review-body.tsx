@@ -1,6 +1,6 @@
 import type { StructuredReviewOutput } from "@/module/ai";
 import type { LanguageCode } from "@/shared/types/language";
-import { SECTION_HEADERS } from "@/shared/constants";
+import { SECTION_HEADERS, ISSUE_FIELD_LABELS } from "@/shared/constants";
 import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "@/module/ai/constants/review-emoji";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -167,12 +167,33 @@ function RemainingMarkdownSections({ data, langCode }: { data: StructuredReviewO
   // ⚠️ line-specific issues는 GitHub inline comment로만 게시되므로 웹 UI에서도 제외.
   const bodyIssues = (data.issues ?? []).filter((i) => i.line === null);
   if (bodyIssues.length > 0) {
+    const labels = ISSUE_FIELD_LABELS[langCode];
     const issueLines = bodyIssues.map((issue) => {
       const sev = `${SEVERITY_EMOJI[issue.severity]} ${issue.severity}`;
       const cat = `${CATEGORY_EMOJI[issue.category]} ${issue.category}`;
       const fileTag = issue.file ? ` · \`${issue.file}\`` : "";
-      const desc = issue.description.trim();
-      return `### ${sev} · ${cat}${fileTag}\n\n${desc}`;
+
+      // 방어적 기본값: 레거시 description-only 데이터 + 빈 값 허용 필드 대비
+      const title = (issue.title ?? "").trim();
+      const rawBody = (issue.body ?? (issue as { description?: string }).description ?? "").trim();
+      const impact = (issue.impact ?? "").trim();
+      const recommendation = (issue.recommendation ?? "").trim();
+
+      // 문장 경계 검사 + body 빈값 skip guard
+      const titleSuffix = title && rawBody.startsWith(title) ? rawBody.slice(title.length) : null;
+      const body =
+        titleSuffix !== null && (titleSuffix === "" || /^[.,:;—\-]/.test(titleSuffix))
+          ? titleSuffix.replace(/^[\s.,:;—\-]+/, "")
+          : rawBody;
+
+      const lines: string[] = [
+        `### ${sev} · ${cat}${fileTag}${title ? ` — ${title}` : ""}`,
+      ];
+      if (body) lines.push("", body);
+      if (impact) lines.push("", `**${labels.impact}:** ${impact}`);
+      if (recommendation) lines.push("", `**${labels.recommendation}:** ${recommendation}`);
+      return lines.join("\n");
+      // SYNC:formatIssueBody — review-formatter.ts · pr-review.ts 와 동일 로직 유지
     });
     sections.push(`## ${headers.issues}\n\n${issueLines.join("\n\n")}`);
   }

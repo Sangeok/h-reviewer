@@ -141,7 +141,7 @@ export async function applySuggestion(suggestionId: string): Promise<ApplySugges
 }
 
 /**
- * suggestion을 무시(dismiss) 처리한다.
+ * dismiss suggestion
  */
 export async function dismissSuggestion(suggestionId: string): Promise<{ success: boolean; error?: string }> {
   const session = await requireAuthSession();

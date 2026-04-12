@@ -15,7 +15,7 @@ import { z } from "zod";
 /** reviewData JSON의 스키마 버전. 스키마 구조가 변경될 때마다 증가시킨다.
  *  page.tsx에서 safeParse 실패 시 마크다운 fallback으로 전환되므로,
  *  버전별 마이그레이션 로직 대신 버전 불일치를 로깅하여 모니터링한다. */
-export const REVIEW_SCHEMA_VERSION = 1;
+export const REVIEW_SCHEMA_VERSION = 2;
 
 export const severitySchema = z.enum(["CRITICAL", "WARNING", "SUGGESTION", "INFO"]);
 
@@ -68,9 +68,33 @@ export const structuredReviewSchema = z.object({
     "List of positive aspects found. Empty array if review mode is tiny."
   ),
   issues: z.array(z.object({
-    file: z.string().nullable().describe("File path from diff, or null for project-level issues"),
-    line: z.number().nullable().describe("Line number in new file, or null for file/project-level issues"),
-    description: z.string().describe("Clear description of the issue"),
+    file: z.string().nullable().describe(
+      "File path from diff. Use null ONLY when the issue spans 2+ files " +
+      "or concerns cross-cutting architecture. Default to attaching the " +
+      "most relevant single file."
+    ),
+    line: z.number().nullable().describe(
+      "Line number in new file, or null for file/project-level issues"
+    ),
+    title: z.string().min(1).describe(
+      "One-sentence headline (<=15 words, no trailing period). " +
+      "Will be rendered as the issue's visual title. Do NOT duplicate this in body."
+    ),
+    body: z.string().min(1).describe(
+      "Supporting explanation of the issue (2-4 sentences, <=80 words). " +
+      "Describes WHAT the problem is. Do NOT include impact or recommendation here. " +
+      "Do NOT pack multiple paragraphs into a single run-on sentence."
+    ),
+    impact: z.string().default("").describe(
+      "Concrete consequence if unaddressed (1-2 sentences). " +
+      "Who/what breaks, what regressions occur. " +
+      "Empty string allowed for INFO-level observations where impact is self-evident."
+    ),
+    recommendation: z.string().default("").describe(
+      "Actionable next step (1-2 sentences). " +
+      "Start with an imperative verb (Add, Remove, Refactor, ...). " +
+      "Empty string allowed when no concrete action applies (pure observation)."
+    ),
     severity: severitySchema,
     category: issueCategorySchema,
   })).describe(
