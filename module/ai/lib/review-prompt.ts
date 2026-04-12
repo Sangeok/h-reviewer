@@ -127,21 +127,27 @@ ${diff}
 - Only suggest changes for added/modified lines (+ lines in the diff)
 - The before field must be an exact substring of the current file content
 - If adjacent lines need the same type of change, combine them into a SINGLE suggestion with multi-line before/after fields
-- For each issue:
-  - file: exact file path from the diff, or null for project-level issues (architecture, testing strategy)
-  - line: line number in new file, or null for file-level or project-level issues
-  - category: bug, design, security, performance, testing, or general
-  - severity: CRITICAL for blocking issues, WARNING for important concerns, SUGGESTION for improvements, INFO for observations
+- For each issue, populate these FOUR separate string fields:
+  - title: ONE sentence headline, max 15 words, NO trailing period.
+           This becomes the issue's visible title, so make it specific.
+           Bad: "Error handling issue". Good: "getUserProfile throws while peers return Result objects".
+  - body: 2-4 sentences (<=80 words) describing WHAT the problem is.
+          Do NOT include "Impact" or "Recommendation" text here — those go in their own fields.
+          Do NOT pack multiple paragraphs into a single run-on sentence.
+  - impact: 1-2 sentences describing the concrete consequence if unfixed.
+            MAY be empty string ("") for INFO-level observations where impact is self-evident.
+  - recommendation: 1-2 sentences starting with an imperative verb
+                    (Add, Remove, Refactor, Extract, Guard, ...).
+                    MAY be empty string ("") when no concrete action applies.
+- For file attribution:
+  - file: exact file path from the diff whenever the issue references a
+          specific source file by name or symbol, even if it spans the whole file.
+  - file: null ONLY when the issue concerns 2+ files or cross-cutting architecture.
+  - line: line number in the new file for code-level issues, null for file/project-level.
+- category: bug, design, security, performance, testing, or general
+- severity: CRITICAL for blocking, WARNING for important, SUGGESTION for improvements, INFO for observations
 - Provide up to ${issueLimit.inline} code-level issues (with file and line) and up to ${issueLimit.general} project-level issues (without line), prioritized by severity
 - Do not generate an issue for a file+line that already has a suggestion — the suggestion's explanation already communicates the problem
-- Each issue description MUST use structured markdown:
-  - First line: one-sentence summary of the problem
-  - If relevant, use bullet lists or bold labels to separate:
-    - **Affected:** list of affected items
-    - **Impact:** why this matters
-    - **Recommendation:** what to do
-  - Keep the total under 150 words per issue
-  - Do NOT write everything in a single paragraph
 - For summary:
   - overview: Describe the PR's purpose and approach. Do NOT restate the PR title.
   - riskLevel: "low" for cosmetic/docs/config changes, "medium" for logic changes with test coverage, "high" for breaking changes, security-sensitive code, missing tests, or changes affecting >5 files
