@@ -111,7 +111,7 @@ export function formatStructuredReviewToMarkdown(
   if (output.suggestions.length > 0) {
     const rows = output.suggestions.map(s => {
       const safeExplanation = s.explanation.replace(/\|/g, "\\|").replace(/[\r\n]+/g, " ");
-      return `| ${SEVERITY_EMOJI[s.severity]} ${s.severity} | \`${s.file}\` | ${s.line} | ${safeExplanation} |`;
+      return `| ${SEVERITY_EMOJI[s.severity]}\u00A0${s.severity} | \`${s.file}\` | ${s.line} | ${safeExplanation} |`;
     });
     const table = [
       `| Severity | File | Line | Description |`,
