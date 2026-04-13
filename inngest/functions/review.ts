@@ -14,7 +14,7 @@ import { google } from "@ai-sdk/google";
 import { sanitizeMermaidSequenceDiagrams } from "@/module/github/lib/github-markdown";
 import { isValidLanguageCode } from "@/module/settings";
 import { SECTION_HEADERS, DIAGRAM_FALLBACK_TEXT } from "@/shared/constants";
-import { parseDiffToChangedFiles, extractDiffFileSet, unescapeGitPath } from "@/module/github/lib/diff-parser";
+import { parseDiffToChangedFiles, extractDiffFileSet, extractDiffAddedLinesMap, unescapeGitPath } from "@/module/github/lib/diff-parser";
 import type { LanguageCode } from "@/module/settings";
 
 /**
@@ -120,8 +120,15 @@ export const generateReview = inngest.createFunction(
         });
 
         if (experimental_output) {
-          const markdown = formatStructuredReviewToMarkdown(experimental_output, langCode);
-          return { rawReview: markdown, structuredOutput: experimental_output };
+          // SDK 레벨 검증을 신뢰하지 않고 Zod로 재검증 — 비정상 line 값 등 방어
+          const parsed = structuredReviewSchema.safeParse(experimental_output);
+          if (!parsed.success) {
+            console.warn("Structured output re-validation failed:", parsed.error.message);
+            // fallback으로 진행
+          } else {
+            const markdown = formatStructuredReviewToMarkdown(parsed.data, langCode);
+            return { rawReview: markdown, structuredOutput: parsed.data };
+          }
         }
       } catch (error) {
         console.warn("Structured output failed, falling back to markdown:", error);
@@ -192,6 +199,37 @@ export const generateReview = inngest.createFunction(
           suggestions: validatedOutput.suggestions
             .map((s) => resolveEntryFile(s, diffFiles, diffArray, "suggestions"))
             .filter((s): s is NonNullable<typeof s> => s !== null),
+        };
+      }
+
+      // ── 5-1. suggestions line 검증: diff added lines 범위 체크 ──
+      if (validatedOutput?.suggestions && validatedOutput.suggestions.length > 0) {
+        const addedLinesMap = extractDiffAddedLinesMap(diff);
+        validatedOutput = {
+          ...validatedOutput,
+          suggestions: validatedOutput.suggestions.filter((s) => {
+            // 타입 가드: line이 유효한 양의 정수인지 확인
+            if (typeof s.line !== "number" || !Number.isFinite(s.line) || s.line < 1) {
+              console.warn("[suggestions] dropped entry", {
+                file: s.file, line: s.line, reason: "invalid_line_type",
+              });
+              return false;
+            }
+
+            const fileAddedLines = addedLinesMap.get(s.file);
+            if (!fileAddedLines || fileAddedLines.size === 0) return true; // 삭제 파일 등 예외
+
+            // range-based 검증: before 필드의 라인 수만큼 범위 확장
+            const beforeLineCount = s.before.split("\n").length;
+            for (let i = 0; i < beforeLineCount; i++) {
+              if (fileAddedLines.has(s.line + i)) return true;
+            }
+
+            console.warn("[suggestions] dropped entry", {
+              file: s.file, line: s.line, reason: "line_not_in_diff_added_lines",
+            });
+            return false;
+          }),
         };
       }
 
