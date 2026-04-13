@@ -2,6 +2,7 @@ import type { StructuredReviewOutput } from "@/module/ai";
 import type { LanguageCode } from "@/shared/types/language";
 import { SECTION_HEADERS, ISSUE_FIELD_LABELS } from "@/shared/constants";
 import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "@/module/ai/constants/review-emoji";
+import { shortenFilePath } from "@/module/ai/lib/review-formatter";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -201,7 +202,9 @@ function RemainingMarkdownSections({ data, langCode }: { data: StructuredReviewO
   if (data.suggestions && data.suggestions.length > 0) {
     const rows = data.suggestions.map((s) => {
       const safeExplanation = s.explanation.replace(/\|/g, "\\|").replace(/[\r\n]+/g, " ");
-      return `| ${SEVERITY_EMOJI[s.severity]}\u00A0${s.severity} | \`${s.file}\` | ${s.line} | ${safeExplanation} |`;
+      const displayPath = shortenFilePath(s.file);
+      const safeLine = typeof s.line === "number" && Number.isFinite(s.line) ? s.line : "–";
+      return `| ${SEVERITY_EMOJI[s.severity]}\u00A0${s.severity} | \`${displayPath}\` | ${safeLine} | ${safeExplanation} |`;
     });
     const table = [
       `| Severity | File | Line | Description |`,

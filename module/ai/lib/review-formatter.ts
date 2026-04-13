@@ -3,6 +3,25 @@ import type { LanguageCode } from "@/shared/types/language";
 import { SECTION_HEADERS, ISSUE_FIELD_LABELS } from "@/shared/constants";
 import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "../constants/review-emoji";
 
+/**
+ * 긴 파일 경로를 maxLength 이내로 축약한다.
+ * 마지막 2개 세그먼트를 유지하고 앞을 '…/'로 대체한다.
+ * 축약 후에도 초과하면 마지막 세그먼트만 유지한다.
+ */
+export function shortenFilePath(
+  filePath: string,
+  maxLength: number = 45,
+): string {
+  if (filePath.length <= maxLength) return filePath;
+  const segments = filePath.split("/");
+  if (segments.length <= 2) return filePath;
+
+  const twoSegments = `…/${segments.slice(-2).join("/")}`;
+  if (twoSegments.length <= maxLength) return twoSegments;
+
+  return `…/${segments[segments.length - 1]}`;
+}
+
 const RISK_BADGE: Record<string, string> = {
   low: "🟢 Low Risk",
   medium: "🟡 Medium Risk",
@@ -111,7 +130,9 @@ export function formatStructuredReviewToMarkdown(
   if (output.suggestions.length > 0) {
     const rows = output.suggestions.map(s => {
       const safeExplanation = s.explanation.replace(/\|/g, "\\|").replace(/[\r\n]+/g, " ");
-      return `| ${SEVERITY_EMOJI[s.severity]}\u00A0${s.severity} | \`${s.file}\` | ${s.line} | ${safeExplanation} |`;
+      const displayPath = shortenFilePath(s.file);
+      const safeLine = typeof s.line === "number" && Number.isFinite(s.line) ? s.line : "–";
+      return `| ${SEVERITY_EMOJI[s.severity]}\u00A0${s.severity} | \`${displayPath}\` | ${safeLine} | ${safeExplanation} |`;
     });
     const table = [
       `| Severity | File | Line | Description |`,

@@ -99,6 +99,22 @@ export function parseDiffToChangedFiles(diffText: string): string {
 }
 
 /**
+ * diff에 포함된 파일별 added line 번호 Set을 반환한다.
+ * suggestion line 검증에 사용. rename의 old/new 경로 둘 다 매핑한다.
+ */
+export function extractDiffAddedLinesMap(
+  diffText: string,
+): Map<string, Set<number>> {
+  const map = new Map<string, Set<number>>();
+  for (const f of parseDiffFiles(diffText)) {
+    const lineSet = new Set(f.addedLines);
+    map.set(f.filePath, lineSet);
+    if (f.originalPath) map.set(f.originalPath, lineSet);
+  }
+  return map;
+}
+
+/**
  * diff에 포함된 파일 경로 Set을 반환한다.
  * rename의 old/new 경로 둘 다 포함하여 AI가 어느 쪽을 써도 매치된다.
  */

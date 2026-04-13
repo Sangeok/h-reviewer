@@ -119,11 +119,23 @@ ${diff}
 - Provide up to ${suggestionLimit} code suggestions, prioritized by severity
 - For each suggestion:
   - file: must be an exact file path from the diff
-  - line: must be a valid added line number from that file
+  - line: MUST be one of the added line numbers listed in the "Changed Files" section above. Do NOT guess or infer line numbers. If you cannot identify the exact added line number, do NOT generate the suggestion.
   - before: must exactly match the current code at that location (copy from diff)
   - after: the improved version of that code
   - explanation: why this change is an improvement
-  - severity: CRITICAL for bugs/security, WARNING for potential issues, SUGGESTION for improvements, INFO for style/convention
+  - Severity classification (apply strictly):
+    - CRITICAL: Bugs that break functionality, security vulnerabilities, data loss risks.
+      Examples: SQL injection, null pointer crash in production path, race condition causing data corruption.
+      NOT CRITICAL: missing loading state, suboptimal variable naming, missing aria-label.
+    - WARNING: Issues that could cause incorrect behavior under specific conditions.
+      Examples: unhandled edge case affecting user data, missing null check on external input, potential memory leak under load.
+      NOT WARNING: code style preferences, minor UX polish items, accessibility enhancements, variable renaming.
+    - SUGGESTION: Code improvements that enhance quality, readability, or maintainability.
+      Examples: extracting duplicate logic, better variable naming, adding error handling, improving accessibility.
+    - INFO: Style/convention observations with no functional impact.
+      Examples: inconsistent naming convention, unused import, formatting preference.
+    - When uncertain between two severity levels, ALWAYS choose the lower one.
+    - Expected distribution: most suggestions should be SUGGESTION or INFO. Use CRITICAL at most once per review. Use WARNING at most twice per review.
 - Only suggest changes for added/modified lines (+ lines in the diff)
 - The before field must be an exact substring of the current file content
 - If adjacent lines need the same type of change, combine them into a SINGLE suggestion with multi-line before/after fields
@@ -145,7 +157,7 @@ ${diff}
   - file: null ONLY when the issue concerns 2+ files or cross-cutting architecture.
   - line: line number in the new file for code-level issues, null for file/project-level.
 - category: bug, design, security, performance, testing, or general
-- severity: CRITICAL for blocking, WARNING for important, SUGGESTION for improvements, INFO for observations
+- severity: CRITICAL (bugs/security only), WARNING (behavior-affecting under conditions), SUGGESTION (improvements), INFO (style/convention). When uncertain, choose the lower level.
 - Provide up to ${issueLimit.inline} code-level issues (with file and line) and up to ${issueLimit.general} project-level issues (without line), prioritized by severity
 - Do not generate an issue for a file+line that already has a suggestion — the suggestion's explanation already communicates the problem
 - For summary:
