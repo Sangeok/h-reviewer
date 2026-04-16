@@ -2,10 +2,11 @@
 
 import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
-import { getFileContent, commitFileUpdate, getPullRequestBranch } from "@/module/github/lib/github";
+import { getFileContent, commitFileUpdate, getPullRequestHeadInfo } from "@/module/github/lib/github";
 import type { ApplySuggestionResult } from "../types";
 
 /**
+ * look up suggestion by review id
  * 특정 리뷰의 모든 suggestion을 조회한다.
  */
 export async function getSuggestionsByReviewId(reviewId: string) {
@@ -26,6 +27,7 @@ export async function getSuggestionsByReviewId(reviewId: string) {
 }
 
 /**
+ * apply suggestion
  * suggestion을 PR 브랜치에 적용한다.
  */
 export async function applySuggestion(suggestionId: string): Promise<ApplySuggestionResult> {
@@ -67,10 +69,15 @@ export async function applySuggestion(suggestionId: string): Promise<ApplySugges
   const { prNumber } = suggestion.review;
 
   try {
-    const prInfo = await getPullRequestBranch(account.accessToken, owner, repo, prNumber);
+    const prInfo = await getPullRequestHeadInfo(account.accessToken, owner, repo, prNumber);
 
-    const prStatusError = validatePrStatus(prInfo);
-    if (prStatusError) return prStatusError;
+    const prStatusError = checkPrStatus(prInfo);
+    if (prStatusError === "ALREADY_MERGED") {
+      return { success: false, error: "PR is already merged", reason: "pr_merged" };
+    }
+    if (prStatusError === "CLOSED") {
+      return { success: false, error: "PR is closed", reason: "conflict" };
+    }
 
     const targetOwner = prInfo.headRepoOwner;
     const targetRepo = prInfo.headRepoName;
@@ -177,9 +184,11 @@ export async function dismissSuggestion(suggestionId: string): Promise<{ success
 
 // — Helpers —
 
-function validatePrStatus(prInfo: { merged: boolean; state: string }): ApplySuggestionResult | null {
-  if (prInfo.merged) return { success: false, error: "PR is already merged", reason: "pr_merged" };
-  if (prInfo.state !== "open") return { success: false, error: "PR is closed", reason: "conflict" };
+type PrStatusError = "ALREADY_MERGED" | "CLOSED" | null;
+
+function checkPrStatus(prInfo: { merged: boolean; state: string }): PrStatusError {
+  if (prInfo.merged) return "ALREADY_MERGED";
+  if (prInfo.state !== "open") return "CLOSED";
   return null;
 }
 
