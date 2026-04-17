@@ -55,6 +55,7 @@
 | `archive/2026-02-pr-summary-feature.md` | 2026-02 | PR 요약 기능 구현 기록 |
 | `archive/2026-02-review-language-feature.md` | 2026-02 | PR 리뷰 언어 설정 기능 구현 기록 |
 | `archive/2026-02-remove-rag-from-summary.md` | 2026-02 | Summary 경로 RAG 제거 구현 기록 |
+| `archive/2026-04-encoding-suggestion-false-positive-guard-feature.md` | 2026-04 | 텍스트 인코딩 오탐 억제 구현 기록: evidence guard + weak suggestion file-level issue 압축 |
 | `archive/2024-12-folder-structure-review.md` | 2024-12 | 폴더 구조 리뷰 |
 | `archive/2024-12-frontend-review.md` | 2024-12 | 프론트엔드 구조 리뷰 |
 | `archive/2024-12-refactoring-recommendations.md` | 2024-12 | 리팩토링 권장사항 |

@@ -4,6 +4,7 @@ export { indexCodebase } from "./index-codebase";
 export { retrieveContext } from "./retrieve-context";
 export { classifyPRSize, getTopKForSizeMode } from "./review-size-policy";
 export type { ReviewSizeMode, PRSizeInfo } from "./review-size-policy";
+export { guardTextFeedback } from "./guard-text-feedback";
 export { structuredReviewSchema } from "./review-schema";
 export { buildStructuredPrompt, buildFallbackPrompt, getIssueLimit } from "./review-prompt";
 export { formatStructuredReviewToMarkdown } from "./review-formatter";

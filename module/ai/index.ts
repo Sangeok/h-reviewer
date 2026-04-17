@@ -15,7 +15,7 @@ export {
 
 // ===== Library Functions =====
 export { generateEmbedding, getRepositoryWithToken, indexCodebase, retrieveContext, classifyPRSize, getTopKForSizeMode } from "./lib";
-export { structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt, getIssueLimit, formatStructuredReviewToMarkdown } from "./lib";
+export { guardTextFeedback, structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt, getIssueLimit, formatStructuredReviewToMarkdown } from "./lib";
 
 // ===== Types =====
 export type { EmbeddingTaskType, PRCommand, ReviewPullRequestResult, GeneratePRSummaryResult } from "./types";

@@ -6,7 +6,7 @@ import { postPRReviewWithSuggestions } from "@/module/github/lib/pr-review";
 import {
   retrieveContext, classifyPRSize, getTopKForSizeMode,
   structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt,
-  getIssueLimit, formatStructuredReviewToMarkdown, REVIEW_SCHEMA_VERSION,
+  getIssueLimit, formatStructuredReviewToMarkdown, REVIEW_SCHEMA_VERSION, guardTextFeedback,
 } from "@/module/ai";
 import type { ReviewSizeMode } from "@/module/ai";
 import { generateText, Output } from "ai";
@@ -233,7 +233,29 @@ export const generateReview = inngest.createFunction(
         };
       }
 
-      // ── 6. suggestion-line 중복 issue 제거 (중복 인라인 댓글 방지) ──
+      // ── 6. 텍스트 인코딩 오탐 guard ──
+      if (validatedOutput) {
+        const {
+          keptSuggestions,
+          keptIssues,
+          synthesizedIssues,
+        } = guardTextFeedback({
+          suggestions: validatedOutput.suggestions,
+          issues: validatedOutput.issues,
+          langCode,
+        });
+
+        const keptInlineIssues = keptIssues.filter((issue) => issue.line !== null);
+        const keptGeneralIssues = keptIssues.filter((issue) => issue.line === null);
+
+        validatedOutput = {
+          ...validatedOutput,
+          suggestions: keptSuggestions,
+          issues: [...keptInlineIssues, ...synthesizedIssues, ...keptGeneralIssues],
+        };
+      }
+
+      // ── 7. suggestion-line 중복 issue 제거 (중복 인라인 댓글 방지) ──
       if (validatedOutput?.issues && validatedOutput.suggestions && validatedOutput.suggestions.length > 0) {
         const suggestionLineSet = new Set(
           validatedOutput.suggestions.map(s => `${s.file}:${s.line}`)
@@ -249,7 +271,7 @@ export const generateReview = inngest.createFunction(
         };
       }
 
-      // ── 7. count-trimming (dedup 이후) ──
+      // ── 8. count-trimming (dedup 이후) ──
       // ⚠️ AI가 prompt limit을 초과할 수 있으므로 count-trimming 적용
       if (validatedOutput?.issues) {
         const { inline: maxInline, general: maxGeneral } = getIssueLimit(sizeMode);
@@ -263,7 +285,7 @@ export const generateReview = inngest.createFunction(
         };
       }
 
-      // ── 8. validation 완료 후 마크다운 재생성 + sanitize ──
+      // ── 9. validation 완료 후 마크다운 재생성 + sanitize ──
       const finalMarkdown = validatedOutput
         ? formatStructuredReviewToMarkdown(validatedOutput, langCode)
         : rawReview;
