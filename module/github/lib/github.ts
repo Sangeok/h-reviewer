@@ -311,7 +311,16 @@ export async function commitFileUpdate(params: CommitFileUpdateParams): Promise<
   return { commitSha: data.commit.sha ?? "" };
 }
 
-export async function getPullRequestBranch(
+/**
+ * get pull request head info
+ * PR Head : The branch that this PR is from
+ * PR Base : The branch that this PR is target to
+ * 
+ * PR의 head 정보를 가져온다.
+ * PR Head : PR을 생성한 브랜치
+ * PR Base : PR을 target으로 하는 브랜치
+ */
+export async function getPullRequestHeadInfo(
   token: string,
   owner: string,
   repo: string,
@@ -327,11 +336,14 @@ export async function getPullRequestBranch(
 }> {
   const octokit = createOctokitClient(token);
 
+  // Get a pull request information
   const { data: pr } = await octokit.rest.pulls.get({
     owner, repo, pull_number: prNumber,
   });
 
   const headRepo = pr.head.repo;
+
+  // Check if the PR is from a fork
   const isFork = headRepo ? headRepo.full_name !== `${owner}/${repo}` : false;
 
   return {
@@ -343,6 +355,38 @@ export async function getPullRequestBranch(
     headRepoName: headRepo?.name ?? repo,
     isFork,
   };
+}
+
+interface GetCompareFilesParams {
+  token: string;
+  owner: string;
+  repo: string;
+  base: string;
+  head: string;
+}
+
+export type CompareFile = {
+  path: string;
+  status: string;
+  patch?: string;
+};
+
+export async function getCompareFiles(params: GetCompareFilesParams): Promise<CompareFile[]> {
+  const { token, owner, repo, base, head } = params;
+  const octokit = createOctokitClient(token);
+
+  const { data } = await octokit.rest.repos.compareCommits({
+    owner,
+    repo,
+    base,
+    head,
+  });
+
+  return (data.files ?? []).map((file) => ({
+    path: file.filename,
+    status: file.status,
+    patch: file.patch,
+  }));
 }
 
 export async function postReviewComment(

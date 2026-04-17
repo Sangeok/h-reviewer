@@ -71,7 +71,11 @@
       "Bash(git:*)",
       "Bash(npx --yes tsc --noEmit --project tsconfig.json)",
       "Bash(./node_modules/.bin/tsc --noEmit)",
-      "Skill(dev-doc-review)"
+      "Skill(dev-doc-review)",
+      "Bash(curl -s \"https://www.google.com/search?q=CodeRabbit+AI+code+review+features+pricing+2025+2026\" -H \"User-Agent: Mozilla/5.0\")",
+      "Skill(idea-doc)",
+      "Bash(npm run *)",
+      "Bash(2>&1)"
     ]
   }
 }
