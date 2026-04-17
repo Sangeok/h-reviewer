@@ -6,6 +6,18 @@ import { MAX_SUGGESTION_CAP } from "@/shared/constants";
 import { getLanguageName } from "@/module/settings";
 import { unescapeGitPath } from "@/module/github/lib/diff-parser";
 
+const ENCODING_GUARD_PROMPT_RULES = `- Do NOT call valid Unicode punctuation an encoding bug.
+- Only report encoding issues when the visible source text itself is corrupted.
+- Valid examples that are NOT encoding bugs: ×, –, —, smart quotes, ellipsis.
+- If the concern is wording or typography consistency without corrupted source text, classify it as INFO and prefer a file-level or general note over an inline suggestion. Do not call it encoding.
+- When reporting a text issue, quote the exact token and the intended replacement in the explanation.
+- Distinguish display or text-notation issues from real encoding-processing bugs.
+- Do NOT downgrade or suppress issues about decoding, charset conversion, byte handling, parser or unescape logic, or data corruption risks.
+- Do not put unsupported encoding claims in summary, key points, or walkthrough text.
+- Bad example: "텍스트 인코딩 문제로 인해 40-60s가 잘못 표시됩니다"
+- Good example (real corruption): "문자열에 Ã—가 보여 mojibake로 보입니다. ×로 복구하세요"
+- Good example (weak notation issue): "This file mixes dash notation in user-facing copy. If the project requires ASCII hyphens, leave a file-level INFO note and review notation consistency."`;
+
 function extractFileMeta(diff: string): { file: string; changeType: string }[] {
   return diff
     .split(/^diff --git /m)
@@ -160,6 +172,8 @@ ${diff}
 - severity: CRITICAL (bugs/security only), WARNING (behavior-affecting under conditions), SUGGESTION (improvements), INFO (style/convention). When uncertain, choose the lower level.
 - Provide up to ${issueLimit.inline} code-level issues (with file and line) and up to ${issueLimit.general} project-level issues (without line), prioritized by severity
 - Do not generate an issue for a file+line that already has a suggestion — the suggestion's explanation already communicates the problem
+- For text and encoding claims:
+${ENCODING_GUARD_PROMPT_RULES}
 - For summary:
   - overview: Describe the PR's purpose and approach. Do NOT restate the PR title.
   - riskLevel: "low" for cosmetic/docs/config changes, "medium" for logic changes with test coverage, "high" for breaking changes, security-sensitive code, missing tests, or changes affecting >5 files
@@ -243,6 +257,9 @@ ${diff}
 Review Mode: ${sizeMode.toUpperCase()}
 ${sectionInstruction}
 ${mermaidInstruction}
+
+Additional review rules:
+${ENCODING_GUARD_PROMPT_RULES}
 
 Format your response in markdown.`;
 }
