@@ -2,6 +2,7 @@ import { generatePRSummary, parseCommand, reviewPullRequest } from "@/module/ai"
 import prisma from "@/lib/db";
 import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { reconcileNativeSuggestions } from "@/module/suggestion/lib/reconcile-native-suggestions";
 
 type RepoFullNameParts = {
   owner: string;
@@ -86,18 +87,88 @@ export async function POST(request: NextRequest) {
       }
 
       if (action === "opened" || action === "synchronize") {
-        // Apply Fix 커밋으로 인한 무한 루프 방지
         if (action === "synchronize") {
-          const afterSha = isRecord(body) ? (body as Record<string, unknown>)["after"] : undefined;
+          const afterSha = typeof body["after"] === "string" ? body["after"] : undefined;
+          const beforeSha = typeof body["before"] === "string" ? body["before"] : undefined;
+
+          const pullRequest = body["pull_request"];
+          const headRepoData =
+            isRecord(pullRequest) && isRecord(pullRequest["head"])
+              ? pullRequest["head"]["repo"]
+              : undefined;
+          const headOwner =
+            isRecord(headRepoData) && isRecord(headRepoData["owner"])
+              ? (typeof headRepoData["owner"]["login"] === "string"
+                  ? headRepoData["owner"]["login"]
+                  : undefined)
+              : undefined;
+          const headRepoName = isRecord(headRepoData)
+            ? (typeof headRepoData["name"] === "string" ? headRepoData["name"] : undefined)
+            : undefined;
 
           if (typeof afterSha === "string") {
-            const appliedSuggestion = await prisma.suggestion.findFirst({
-              where: { appliedCommitSha: afterSha },
+            const baseRepository = await prisma.repository.findFirst({
+              where: { owner: repoInfo.owner, name: repoInfo.repoName },
             });
 
-            if (appliedSuggestion) {
-              console.info(`Skipping review for ${repoInfo.fullName} #${prNumber}: commit ${afterSha} is from HReviewer apply fix`);
-              return NextResponse.json({ message: "Skipped: HReviewer commit" }, { status: 200 });
+            if (baseRepository) {
+              const appliedSuggestion = await prisma.suggestion.findFirst({
+                where: {
+                  appliedCommitSha: afterSha,
+                  review: { repositoryId: baseRepository.id, prNumber },
+                },
+              });
+
+              if (appliedSuggestion) {
+                console.info(
+                  `Skipping review for ${repoInfo.fullName} #${prNumber}: commit ${afterSha} is from HReviewer apply fix`,
+                );
+                return NextResponse.json({ message: "Skipped: HReviewer commit" }, { status: 200 });
+              }
+
+              if (beforeSha && headOwner && headRepoName) {
+                const account = await prisma.account.findFirst({
+                  where: { userId: baseRepository.userId, providerId: "github" },
+                  select: { accessToken: true },
+                });
+
+                if (account?.accessToken) {
+                  const reconcileResult = await reconcileNativeSuggestions({
+                    token: account.accessToken,
+                    headOwner,
+                    headRepoName,
+                    baseRepositoryId: baseRepository.id,
+                    prNumber,
+                    beforeSha,
+                    afterSha,
+                  });
+
+                  if (reconcileResult.matchedSuggestionIds.length > 0) {
+                    await prisma.suggestion.updateMany({
+                      where: {
+                        id: { in: reconcileResult.matchedSuggestionIds },
+                        status: "PENDING",
+                      },
+                      data: {
+                        status: "APPLIED",
+                        appliedAt: new Date(),
+                        appliedCommitSha: afterSha,
+                        appliedSource: "GITHUB_NATIVE",
+                      },
+                    });
+                  }
+
+                  if (reconcileResult.skipReview) {
+                    console.info(
+                      `Skipping review for ${repoInfo.fullName} #${prNumber}: native suggestion commit`,
+                    );
+                    return NextResponse.json(
+                      { message: "Skipped: native suggestion commit" },
+                      { status: 200 },
+                    );
+                  }
+                }
+              }
             }
           }
         }

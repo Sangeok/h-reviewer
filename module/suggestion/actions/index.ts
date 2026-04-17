@@ -3,6 +3,7 @@
 import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
 import { getFileContent, commitFileUpdate, getPullRequestHeadInfo } from "@/module/github/lib/github";
+import { applyCodeChange } from "@/module/suggestion/lib/apply-code-change";
 import type { ApplySuggestionResult } from "../types";
 
 /**
@@ -106,12 +107,13 @@ export async function applySuggestion(suggestionId: string): Promise<ApplySugges
       return { success: false, error: "Code has changed since review", reason: "conflict" };
     }
 
-    const updatedContent = applyCodeChange(
-      fileData.content,
-      suggestion.beforeCode,
-      suggestion.afterCode,
-      suggestion.lineNumber,
-    );
+    const { content: updatedContent } = applyCodeChange({
+      fileContent: fileData.content,
+      beforeCode: suggestion.beforeCode,
+      afterCode: suggestion.afterCode,
+      lineNumber: suggestion.lineNumber,
+      strict: false,
+    });
 
     const commitMessage = `refactor: ${truncate(suggestion.explanation, 72)}\n\nApplied via HReviewer one-click fix`;
     const { commitSha } = await commitFileUpdate({
@@ -132,6 +134,7 @@ export async function applySuggestion(suggestionId: string): Promise<ApplySugges
         status: "APPLIED",
         appliedAt: new Date(),
         appliedCommitSha: commitSha,
+        appliedSource: "INTERNAL_APPLY_FIX",
       },
     });
 
@@ -192,81 +195,7 @@ function checkPrStatus(prInfo: { merged: boolean; state: string }): PrStatusErro
   return null;
 }
 
-function applyCodeChange(
-  fileContent: string,
-  beforeCode: string,
-  afterCode: string,
-  lineNumber: number,
-): string {
-  const originalContent = fileContent.replace(/\r\n/g, "\n");
-  const originalBefore = beforeCode.replace(/\r\n/g, "\n");
-  const originalAfter = afterCode.replace(/\r\n/g, "\n");
-
-  if (originalContent.includes(originalBefore)) {
-    return replaceNearestOccurrence(originalContent, originalBefore, originalAfter, lineNumber);
-  }
-
-  // flex regex fallback: 후행 공백 정규화 후 패턴 매칭
-  const normalizedBefore = originalBefore.replace(/[ \t]+$/gm, "");
-  const escaped = normalizedBefore.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const flexPattern = escaped.split('\n').map(line => line + '[ \\t]*').join('\\n');
-  const regex = new RegExp(flexPattern, 'g');
-
-  const matches: { index: number; length: number }[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(originalContent)) !== null) {
-    matches.push({ index: match.index, length: match[0].length });
-    regex.lastIndex = match.index + 1;
-  }
-
-  if (matches.length === 0) return originalContent;
-
-  const lineOfIndex = (idx: number) => originalContent.slice(0, idx).split("\n").length;
-  let best = matches[0];
-  let bestDist = Math.abs(lineOfIndex(best.index) - lineNumber);
-  for (let i = 1; i < matches.length; i++) {
-    const dist = Math.abs(lineOfIndex(matches[i].index) - lineNumber);
-    if (dist < bestDist) { bestDist = dist; best = matches[i]; }
-  }
-  return originalContent.slice(0, best.index) + originalAfter + originalContent.slice(best.index + best.length);
-}
-
 function truncate(text: string, maxLength: number): string {
   const singleLine = text.replace(/\n/g, " ").trim();
   return singleLine.length <= maxLength ? singleLine : singleLine.slice(0, maxLength - 3) + "...";
-}
-
-function replaceNearestOccurrence(
-  content: string,
-  before: string,
-  after: string,
-  targetLine: number,
-): string {
-  const indices: number[] = [];
-  let searchFrom = 0;
-  while (true) {
-    const idx = content.indexOf(before, searchFrom);
-    if (idx === -1) break;
-    indices.push(idx);
-    searchFrom = idx + 1;
-  }
-
-  if (indices.length === 0) return content;
-  if (indices.length === 1) {
-    return content.slice(0, indices[0]) + after + content.slice(indices[0] + before.length);
-  }
-
-  const lineOfIndex = (idx: number) => content.slice(0, idx).split("\n").length;
-  let bestIdx = indices[0];
-  let bestDist = Math.abs(lineOfIndex(indices[0]) - targetLine);
-
-  for (let i = 1; i < indices.length; i++) {
-    const dist = Math.abs(lineOfIndex(indices[i]) - targetLine);
-    if (dist < bestDist) {
-      bestDist = dist;
-      bestIdx = indices[i];
-    }
-  }
-
-  return content.slice(0, bestIdx) + after + content.slice(bestIdx + before.length);
 }

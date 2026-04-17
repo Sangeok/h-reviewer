@@ -357,6 +357,38 @@ export async function getPullRequestHeadInfo(
   };
 }
 
+interface GetCompareFilesParams {
+  token: string;
+  owner: string;
+  repo: string;
+  base: string;
+  head: string;
+}
+
+export type CompareFile = {
+  path: string;
+  status: string;
+  patch?: string;
+};
+
+export async function getCompareFiles(params: GetCompareFilesParams): Promise<CompareFile[]> {
+  const { token, owner, repo, base, head } = params;
+  const octokit = createOctokitClient(token);
+
+  const { data } = await octokit.rest.repos.compareCommits({
+    owner,
+    repo,
+    base,
+    head,
+  });
+
+  return (data.files ?? []).map((file) => ({
+    path: file.filename,
+    status: file.status,
+    patch: file.patch,
+  }));
+}
+
 export async function postReviewComment(
   token: string,
   owner: string,

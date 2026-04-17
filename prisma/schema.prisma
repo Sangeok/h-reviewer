@@ -108,6 +108,11 @@ enum SuggestionSeverity {
   INFO
 }
 
+enum SuggestionApplySource {
+  INTERNAL_APPLY_FIX
+  GITHUB_NATIVE
+}
+
 model Review {
   id  String @id @default(cuid())
   repositoryId  String
@@ -144,6 +149,7 @@ model Suggestion {
   status        SuggestionStatus    @default(PENDING)
   appliedAt     DateTime?
   appliedCommitSha String?
+  appliedSource SuggestionApplySource?
   dismissedAt   DateTime?
 
   createdAt     DateTime            @default(now())
