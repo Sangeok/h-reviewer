@@ -20,6 +20,11 @@ interface Props {
 }
 
 export default function ReviewDetail({ review, structuredData, langCode }: Props) {
+  const structuredSuggestionCount = structuredData?.suggestions.length ?? 0;
+  const persistedSuggestionCount = review.suggestions.length;
+  const shouldRenderSuggestionSummary =
+    persistedSuggestionCount < structuredSuggestionCount;
+
   return (
     <div className="space-y-6">
       {/* Back + Header */}
@@ -55,7 +60,11 @@ export default function ReviewDetail({ review, structuredData, langCode }: Props
         </CardHeader>
         <CardContent>
           {structuredData ? (
-            <StructuredReviewBody data={structuredData} langCode={langCode} />
+            <StructuredReviewBody
+              data={structuredData}
+              langCode={langCode}
+              shouldRenderSuggestionSummary={shouldRenderSuggestionSummary}
+            />
           ) : (
             <div className="prose prose-invert prose-sm max-w-none">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>

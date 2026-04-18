@@ -136,7 +136,11 @@ ${diff}
   - line: MUST be one of the added line numbers listed in the "Changed Files" section above. Do NOT guess or infer line numbers. If you cannot identify the exact added line number, do NOT generate the suggestion.
   - before: must exactly match the current code at that location (copy from diff)
   - after: the improved version of that code
-  - explanation: why this change is an improvement
+  - explanation: 1-2 short sentences describing the issue and the intended fix
+  - Keep explanation concise and self-contained because it is rendered in the review-body summary list and the inline suggestion comment
+  - Do NOT use bullet lists, markdown tables, headings, or manual line breaks inside explanation
+  - Do NOT repeat file paths, line numbers, severity labels, or code fences inside explanation
+  - Prefer this shape: problem first, action second
   - Severity classification (apply strictly):
     - CRITICAL: Bugs that break functionality, security vulnerabilities, data loss risks.
       Examples: SQL injection, null pointer crash in production path, race condition causing data corruption.
@@ -262,6 +266,10 @@ ${mermaidInstruction}
 
 Additional review rules:
 ${ENCODING_GUARD_PROMPT_RULES}
+- In the "${headers.suggestions}" section, do NOT use markdown tables
+- If you mention suggestions, prefer short bullets or brief prose
+- Do NOT claim that fallback markdown items map 1:1 to inline suggestions
+- Do NOT emit the inline-mapping hint in fallback markdown
 
 Format your response in markdown.`;
 }
