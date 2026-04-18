@@ -11,10 +11,12 @@ const ENCODING_GUARD_PROMPT_RULES = `- Do NOT call valid Unicode punctuation an 
 - Valid examples that are NOT encoding bugs: ×, –, —, smart quotes, ellipsis.
 - If the concern is wording or typography consistency without corrupted source text, classify it as INFO and prefer a file-level or general note over an inline suggestion. Do not call it encoding.
 - When reporting a text issue, quote the exact token and the intended replacement in the explanation.
+- A replacement that removes a separator and merges both sides is NOT a valid restore.
 - Distinguish display or text-notation issues from real encoding-processing bugs.
 - Do NOT downgrade or suppress issues about decoding, charset conversion, byte handling, parser or unescape logic, or data corruption risks.
 - Do not put unsupported encoding claims in summary, key points, or walkthrough text.
 - Bad example: "텍스트 인코딩 문제로 인해 40-60s가 잘못 표시됩니다"
+- Bad example: "40–60s should be restored to 4060s"
 - Good example (real corruption): "문자열에 Ã—가 보여 mojibake로 보입니다. ×로 복구하세요"
 - Good example (weak notation issue): "This file mixes dash notation in user-facing copy. If the project requires ASCII hyphens, leave a file-level INFO note and review notation consistency."`;
 

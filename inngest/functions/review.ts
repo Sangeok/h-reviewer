@@ -243,15 +243,16 @@ export const generateReview = inngest.createFunction(
           suggestions: validatedOutput.suggestions,
           issues: validatedOutput.issues,
           langCode,
+          diffText: diff,
         });
 
         const keptInlineIssues = keptIssues.filter((issue) => issue.line !== null);
-        const keptGeneralIssues = keptIssues.filter((issue) => issue.line === null);
+        const keptLineNullIssues = keptIssues.filter((issue) => issue.line === null);
 
         validatedOutput = {
           ...validatedOutput,
           suggestions: keptSuggestions,
-          issues: [...keptInlineIssues, ...synthesizedIssues, ...keptGeneralIssues],
+          issues: [...keptInlineIssues, ...synthesizedIssues, ...keptLineNullIssues],
         };
       }
 
