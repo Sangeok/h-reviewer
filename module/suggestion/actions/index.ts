@@ -3,6 +3,7 @@
 import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
 import { getFileContent, commitFileUpdate, getPullRequestHeadInfo } from "@/module/github/lib/github";
+import { normalizeSuggestionExplanation } from "@/module/ai/lib/suggestion-format";
 import { applyCodeChange } from "@/module/suggestion/lib/apply-code-change";
 import type { ApplySuggestionResult } from "../types";
 
@@ -115,7 +116,8 @@ export async function applySuggestion(suggestionId: string): Promise<ApplySugges
       strict: false,
     });
 
-    const commitMessage = `refactor: ${truncate(suggestion.explanation, 72)}\n\nApplied via HReviewer one-click fix`;
+    const explanation = normalizeSuggestionExplanation(suggestion.explanation);
+    const commitMessage = `refactor: ${truncate(explanation, 72)}\n\nApplied via HReviewer one-click fix`;
     const { commitSha } = await commitFileUpdate({
       token: account.accessToken,
       owner: targetOwner,

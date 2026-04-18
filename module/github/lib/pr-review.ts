@@ -1,6 +1,7 @@
 import { createOctokitClient } from "./github";
 import type { CodeSuggestion, StructuredIssue } from "@/module/ai";
 import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "@/module/ai";
+import { normalizeSuggestionExplanation } from "@/module/ai/lib/suggestion-format";
 import type { LanguageCode } from "@/shared/types/language";
 import { ISSUE_FIELD_LABELS } from "@/shared/constants";
 
@@ -105,7 +106,9 @@ export async function postPRReviewWithSuggestions(params: PostPRReviewParams): P
 }
 
 function formatSuggestionComment(suggestion: CodeSuggestion): string {
-  return `${SEVERITY_EMOJI[suggestion.severity]} **${suggestion.severity}**: ${suggestion.explanation}
+  const explanation = normalizeSuggestionExplanation(suggestion.explanation);
+
+  return `${SEVERITY_EMOJI[suggestion.severity]} **${suggestion.severity}**: ${explanation}
 
 \`\`\`suggestion
 ${suggestion.after}

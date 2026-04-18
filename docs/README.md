@@ -37,7 +37,7 @@
 | `specs/competitive-feature-adoption.md` | `APPROVED` | 경쟁사 분석 기반 차별화 전략: Learning Engine (학습 피드백 루프 + 품질 벤치마킹 대시보드) |
 | `specs/merge-adjacent-suggestions.md` | `TODO` | Review output 개선 (프롬프트 수정 + issues 구조화 + suggestion 개수 설정) |
 | `specs/github-native-suggestion-reconciliation-feature.md` | `APPROVED` | GitHub native `Commit suggestion` 수락을 HReviewer `Apply Fix`와 같은 결과로 reconciliation |
-| `specs/suggestion-ui-improvement-feature.md` | `TODO` | Suggestion 카드 UI 개선 (시각적 계층, 코드 하이라이팅, 파일 그룹핑) |
+| `specs/suggestion-ui-improvement-feature.md` | `TODO` | GitHub review body 제안 섹션 재설계 (table → summary list, inline-first, dashboard 분리) |
 | `specs/review-summary-walkthrough-improvement-feature.md` | `TODO` | 요약/변경 사항 상세 구조화 (리스크 배지, 파일별 walkthrough, 가독성 개선) |
 | `specs/review-encoding-false-positive-hardening-feature.md` | `TODO` | validate-review encoding 오탐 하드닝 (evidence scoring + replacement sanity check + 반복 경고 압축) |
 | `specs/walkthrough-table-encoding-fix.md` | `TODO` | 변경 사항 상세 테이블 컬럼 폭 붕괴 + 한글 파일명 mojibake 수정 |
