@@ -1,13 +1,29 @@
+"use client";
+
 import { Github, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+import { signIn } from "@/lib/auth-client";
 import { LOGIN_STRINGS } from "../../constants";
 import LoginFeatures from "./login-features";
 
-interface LoginCardProps {
-  isLoading: boolean;
-  onGithubLogin: () => void;
-}
+export default function LoginCard() {
+  const [isLoading, setIsLoading] = useState(false);
 
-export default function LoginCard({ isLoading, onGithubLogin }: LoginCardProps) {
+  const handleGithubLogin = async () => {
+    setIsLoading(true);
+    try {
+      await signIn.social({
+        provider: "github",
+      });
+    } catch (error) {
+      console.error("Error logging in with GitHub:", error);
+      toast.error(LOGIN_STRINGS.loginError);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="group relative">
       <div className="absolute -inset-px rounded-xl bg-gradient-to-b from-ring/20 to-transparent opacity-0 blur-sm transition-opacity duration-700 group-hover:opacity-100" />
@@ -19,7 +35,7 @@ export default function LoginCard({ isLoading, onGithubLogin }: LoginCardProps) 
         </div>
 
         <button
-          onClick={onGithubLogin}
+          onClick={handleGithubLogin}
           disabled={isLoading}
           className="group/btn relative w-full overflow-hidden rounded-lg border border-ring/30 bg-gradient-to-b from-secondary to-card px-6 py-3.5 font-medium text-secondary-foreground transition-all duration-300 hover:border-chart-2/50 hover:shadow-lg hover:shadow-ring/10 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-ring/30"
         >

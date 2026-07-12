@@ -44,7 +44,6 @@ export interface LogoProps {
 
 export interface ThemeToggleProps {
   isCollapsed: boolean;
-  onToggle: () => void;
 }
 
 export interface LogoutButtonProps {

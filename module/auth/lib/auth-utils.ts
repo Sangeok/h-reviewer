@@ -10,10 +10,11 @@ export async function requireAuth() {
 }
 
 export async function requireUnAuth() {
+  let session = null;
   try {
-    await requireAuthSession();
-    redirect("/dashboard");
+    session = await requireAuthSession();
   } catch {
     return null;
   }
+  if (session) redirect("/dashboard");
 }

@@ -6,19 +6,18 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { useSession } from "@/lib/auth-client";
-import { DEFAULT_LANGUAGE, type LanguageCode } from "../../../constants";
+import { DEFAULT_LANGUAGE } from "../../../constants";
+import type { ProfileUpdateInput } from "../../../constants/profile-schema";
 import { useUserProfile } from "../../../hooks/use-user-profile";
 import LanguageSelector from "./language-selector";
+
+type ProfileFormState = Required<Pick<ProfileUpdateInput, "name" | "email" | "preferredLanguage">>;
 
 export default function ProfileForm() {
   const { profile, updateMutation } = useUserProfile();
   const { refetch: refetchSession } = useSession();
 
-  const [formState, setFormState] = useState<{
-    name: string;
-    email: string;
-    preferredLanguage: LanguageCode;
-  } | null>(null);
+  const [formState, setFormState] = useState<ProfileFormState | null>(null);
 
   const getInitialFormState = () => ({
     name: profile?.name || "",

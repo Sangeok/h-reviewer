@@ -2,12 +2,13 @@ import { Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import type { ThemeToggleProps } from "../../types";
 
-export function ThemeToggle({ isCollapsed, onToggle }: ThemeToggleProps) {
-  const { theme } = useTheme();
+export function ThemeToggle({ isCollapsed }: ThemeToggleProps) {
+  const { theme, setTheme } = useTheme();
+  const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
 
   return (
     <button
-      onClick={onToggle}
+      onClick={toggleTheme}
       className="group w-full flex items-center gap-3 rounded-lg px-3 py-3 text-muted-foreground hover:bg-secondary hover:text-primary transition-all duration-300 relative overflow-hidden"
       aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
     >

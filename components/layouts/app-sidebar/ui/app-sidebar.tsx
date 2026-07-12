@@ -19,7 +19,7 @@ export default function AppSidebar({
 }: SidebarProps) {
   const mounted = useHydration();
   const { isCollapsed, toggleCollapse } = useSidebarState(defaultCollapsed);
-  const { handleLogout, toggleTheme } = useSidebarActions();
+  const { handleLogout } = useSidebarActions();
   const { data: session } = useSession();
 
   if (!mounted) {
@@ -66,7 +66,7 @@ export default function AppSidebar({
         <Navigation isCollapsed={isCollapsed} />
 
         <div className="pt-4 border-t border-border space-y-2">
-          <ThemeToggle isCollapsed={isCollapsed} onToggle={toggleTheme} />
+          <ThemeToggle isCollapsed={isCollapsed} />
           <LogoutButton isCollapsed={isCollapsed} onLogout={handleLogout} />
         </div>
 

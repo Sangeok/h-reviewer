@@ -1,30 +1,9 @@
-"use client";
-
-import { signIn } from "@/lib/auth-client";
-import { useState } from "react";
-import { toast } from "sonner";
-import { LOGIN_ANIMATION, LOGIN_BACKGROUND, LOGIN_STRINGS } from "../constants";
+import { LOGIN_ANIMATION, LOGIN_BACKGROUND } from "../constants";
 import LoginCard from "./parts/login-card";
 import LoginFooter from "./parts/login-footer";
 import LoginHeader from "./parts/login-header";
 
 export default function LoginUI() {
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleGithubLogin = async () => {
-    setIsLoading(true);
-    try {
-      await signIn.social({
-        provider: "github",
-      });
-    } catch (error) {
-      console.error("Error logging in with GitHub:", error);
-      toast.error(LOGIN_STRINGS.loginError);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-background">
       <div
@@ -64,7 +43,7 @@ export default function LoginUI() {
       <div className="relative z-10 flex min-h-screen items-center justify-center px-4 py-16">
         <div className="w-full max-w-[420px]">
           <LoginHeader />
-          <LoginCard isLoading={isLoading} onGithubLogin={handleGithubLogin} />
+          <LoginCard />
           <LoginFooter />
         </div>
       </div>

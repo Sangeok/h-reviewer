@@ -6,18 +6,6 @@ import { resolveAuthenticatedGithubContext } from "../lib/get-dashboard-github-c
 import { parseContributionCalendar } from "../lib/parse-contribution-calendar";
 import type { ContributionStats, DashboardStats } from "../types";
 
-const EMPTY_DASHBOARD_STATS: DashboardStats = {
-  totalRepos: 0,
-  totalContributions: 0,
-  totalPRs: 0,
-  totalReviews: 0,
-};
-
-const EMPTY_CONTRIBUTION_STATS: ContributionStats = {
-  contributions: [],
-  totalContributions: 0,
-};
-
 const ContributionLevel = {
   NONE: 0,
   FIRST_QUARTILE: 1,
@@ -31,7 +19,11 @@ interface DashboardData {
   contributionStats: ContributionStats;
 }
 
-export async function getDashboardData(): Promise<DashboardData> {
+type DashboardDataResult =
+  | { ok: true; data: DashboardData }
+  | { ok: false; error: string };
+
+export async function getDashboardData(): Promise<DashboardDataResult> {
   try {
     const { userId, accessToken, username, octokit } =
       await resolveAuthenticatedGithubContext();
@@ -76,12 +68,12 @@ export async function getDashboardData(): Promise<DashboardData> {
       totalContributions,
     };
 
-    return { stats, contributionStats };
+    return { ok: true, data: { stats, contributionStats } };
   } catch (error) {
     console.error("Error fetching dashboard data:", error);
     return {
-      stats: EMPTY_DASHBOARD_STATS,
-      contributionStats: EMPTY_CONTRIBUTION_STATS,
+      ok: false,
+      error: error instanceof Error ? error.message : "Failed to load dashboard data",
     };
   }
 }

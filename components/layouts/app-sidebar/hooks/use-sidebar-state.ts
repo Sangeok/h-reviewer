@@ -7,7 +7,8 @@ function getInitialCollapsed(defaultCollapsed: boolean): boolean {
   if (typeof window === "undefined") return defaultCollapsed;
   const saved = localStorage.getItem(THEME_CONFIG.storageKey);
   if (saved !== null) {
-    return JSON.parse(saved);
+    const parsed = JSON.parse(saved);
+    return typeof parsed === "boolean" ? parsed : defaultCollapsed;
   }
   return defaultCollapsed;
 }

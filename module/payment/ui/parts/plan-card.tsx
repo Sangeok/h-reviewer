@@ -4,8 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Check, X } from "lucide-react";
+import type { ReactNode } from "react";
 import { PLAN_FEATURES, PLAN_PRICING } from "../../constants";
-import { PlanActionButton } from "./plan-action-button";
 
 interface FreePlanCardProps {
   isPro: boolean;
@@ -50,23 +50,10 @@ export function FreePlanCard({ isPro }: FreePlanCardProps) {
 
 interface ProPlanCardProps {
   isPro: boolean;
-  isActive: boolean;
-  canUpgrade: boolean;
-  checkoutLoading: boolean;
-  portalLoading: boolean;
-  onUpgrade: () => void;
-  onManageSubscription: () => void;
+  action: ReactNode;
 }
 
-export function ProPlanCard({
-  isPro,
-  isActive,
-  canUpgrade,
-  checkoutLoading,
-  portalLoading,
-  onUpgrade,
-  onManageSubscription,
-}: ProPlanCardProps) {
+export function ProPlanCard({ isPro, action }: ProPlanCardProps) {
   return (
     <Card className={isPro ? "ring-2 ring-primary" : ""}>
       <CardHeader>
@@ -95,15 +82,7 @@ export function ProPlanCard({
             </div>
           ))}
         </div>
-        <PlanActionButton
-          isPro={isPro}
-          isActive={isActive}
-          canUpgrade={canUpgrade}
-          checkoutLoading={checkoutLoading}
-          portalLoading={portalLoading}
-          onUpgrade={onUpgrade}
-          onManageSubscription={onManageSubscription}
-        />
+        {action}
       </CardContent>
     </Card>
   );

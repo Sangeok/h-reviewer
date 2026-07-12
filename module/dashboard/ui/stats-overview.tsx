@@ -13,7 +13,28 @@ interface StatCardConfig {
 }
 
 export default async function StatsOverview() {
-  const { stats, contributionStats } = await getDashboardData();
+  const result = await getDashboardData();
+
+  if (!result.ok) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-medium tracking-tight text-foreground">Dashboard</h1>
+          <p className="mt-1 font-light text-muted-foreground">Overview of your GitHub activity and AI reviews</p>
+        </div>
+        <Card className="border-border bg-gradient-to-b from-card to-background">
+          <CardHeader>
+            <CardTitle className="text-lg font-medium text-foreground">Failed to load dashboard data</CardTitle>
+            <CardDescription className="font-light text-muted-foreground">
+              We couldn&apos;t reach GitHub right now. Please refresh to try again.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
+  const { stats, contributionStats } = result.data;
 
   const statCards: StatCardConfig[] = [
     {

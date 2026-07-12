@@ -6,10 +6,10 @@ export const SEVERITY_CONFIG = {
 } as const;
 
 export const STATUS_CONFIG = {
-  PENDING:    { label: { en: "Pending",   ko: "대기 중" }, color: "text-muted-foreground" },
-  APPLIED:    { label: { en: "Applied",   ko: "적용됨"  }, color: "text-primary" },
-  DISMISSED:  { label: { en: "Dismissed", ko: "무시됨"  }, color: "text-muted-foreground-alt" },
-  CONFLICTED: { label: { en: "Conflict",  ko: "충돌"    }, color: "text-red-400" },
+  PENDING:    { label: "Pending",   color: "text-muted-foreground" },
+  APPLIED:    { label: "Applied",   color: "text-primary" },
+  DISMISSED:  { label: "Dismissed", color: "text-muted-foreground-alt" },
+  CONFLICTED: { label: "Conflict",  color: "text-red-400" },
 } as const;
 
 export const SUGGESTION_QUERY_KEYS = {

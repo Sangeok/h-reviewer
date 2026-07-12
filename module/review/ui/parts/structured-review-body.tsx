@@ -18,31 +18,31 @@ interface Props {
 type SummaryData = StructuredReviewOutput["summary"];
 type WalkthroughEntry = NonNullable<StructuredReviewOutput["walkthrough"]>[number];
 
-const RISK_BADGE_STYLE: Record<string, string> = {
+const RISK_BADGE_STYLE = {
   low: "bg-green-500/15 text-green-400 border border-green-500/30",
   medium: "bg-amber-500/15 text-amber-400 border border-amber-500/30",
   high: "bg-red-500/15 text-red-400 border border-red-500/30",
-};
+} satisfies Record<SummaryData["riskLevel"], string>;
 
-const RISK_LABEL: Record<string, string> = {
+const RISK_LABEL = {
   low: "\ud83d\udfe2 Low Risk",
   medium: "\ud83d\udfe1 Medium Risk",
   high: "\ud83d\udd34 High Risk",
-};
+} satisfies Record<SummaryData["riskLevel"], string>;
 
-const CHANGE_TYPE_STYLE: Record<string, string> = {
+const CHANGE_TYPE_STYLE = {
   added: "bg-green-500/15 text-green-400 border border-green-500/30",
   modified: "bg-blue-500/15 text-blue-400 border border-blue-500/30",
   deleted: "bg-red-500/15 text-red-400 border border-red-500/30",
   renamed: "bg-purple-500/15 text-purple-400 border border-purple-500/30",
-};
+} satisfies Record<WalkthroughEntry["changeType"], string>;
 
-const CHANGE_EMOJI: Record<string, string> = {
+const CHANGE_EMOJI = {
   added: "\u2795",
   modified: "\ud83d\udd27",
   deleted: "\u274c",
   renamed: "\ud83d\udd04",
-};
+} satisfies Record<WalkthroughEntry["changeType"], string>;
 
 export function StructuredReviewBody({
   data,
