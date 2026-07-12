@@ -3,7 +3,7 @@
 import prisma from "@/lib/db";
 import { requireAuthSession } from "@/lib/server-utils";
 import { PRO_UPGRADE_ENABLED } from "../constants/flags";
-import { getRemainingLimits, updateUserTier } from "../lib/subscription";
+import { getRemainingLimits, updateUserTier, type UserLimits, type SubscriptionStatus } from "../lib/subscription";
 import { polarClient } from "../constants/polar";
 
 export interface SubscriptionData {
@@ -17,21 +17,7 @@ export interface SubscriptionData {
     polarCustomerId: string | null;
     polarSubscriptionId: string | null;
   } | null;
-  limits: {
-    tier: "FREE" | "PRO";
-    repositories: {
-      current: number;
-      limit: number | null;
-      canAdd: boolean;
-    };
-    reviews: {
-      [repositoryId: string]: {
-        current: number;
-        limit: number | null;
-        canAdd: boolean;
-      };
-    };
-  } | null;
+  limits: UserLimits | null;
 }
 
 interface PolarSubscriptionLike {
@@ -80,7 +66,9 @@ export async function getSubscriptionData(): Promise<SubscriptionData> {
   };
 }
 
-export async function syncSubscriptionStatus() {
+export async function syncSubscriptionStatus(): Promise<
+  { success: true; status: SubscriptionStatus } | { success: false; message: string }
+> {
   const session = await requireAuthSession();
 
   const user = await prisma.user.findUnique({

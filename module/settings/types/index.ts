@@ -30,8 +30,3 @@ export interface ConnectedRepository {
   url: string;
   createdAt: Date;
 }
-
-export interface ActionSuccess {
-  success: true;
-  message: string;
-}

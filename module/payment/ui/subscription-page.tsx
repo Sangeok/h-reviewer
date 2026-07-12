@@ -5,13 +5,14 @@ import { Button } from "@/components/ui/button";
 import { checkout, customer } from "@/lib/auth-client";
 import { getSubscriptionData, syncSubscriptionStatus } from "../actions/config";
 import { SUBSCRIPTION_QUERY_KEYS } from "../constants";
-import { useQuery } from "@tanstack/react-query";
-import { Check, Loader2, RefreshCw, SplinePointer } from "lucide-react";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { Check, Loader2, RefreshCw } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { UsageCard } from "./parts/usage-card";
 import { FreePlanCard, ProPlanCard } from "./parts/plan-card";
+import { PlanActionButton } from "./parts/plan-action-button";
 
 export default function SubscriptionPage() {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -21,10 +22,10 @@ export default function SubscriptionPage() {
   const searchParams = useSearchParams();
   const success = searchParams.get("success");
 
-  const { data, refetch, isLoading } = useQuery({
+  const { data, refetch } = useSuspenseQuery({
     queryKey: SUBSCRIPTION_QUERY_KEYS.DATA,
     queryFn: () => getSubscriptionData(),
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
   });
 
   useEffect(() => {
@@ -34,21 +35,12 @@ export default function SubscriptionPage() {
           await syncSubscriptionStatus();
           refetch();
         } catch {
-          // handled by query boundary
+          toast.error("Failed to sync subscription status");
         }
       };
       sync();
     }
   }, [success, refetch]);
-
-  if (isLoading || !data) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px]">
-        <SplinePointer />
-        <p className="text-sm text-muted-foreground font-light">Loading subscription data...</p>
-      </div>
-    );
-  }
 
   if (!data.user) {
     return (
@@ -145,12 +137,17 @@ export default function SubscriptionPage() {
         <FreePlanCard isPro={isPro} />
         <ProPlanCard
           isPro={isPro}
-          isActive={isActive}
-          canUpgrade={canUpgrade}
-          checkoutLoading={checkoutLoading}
-          portalLoading={portalLoading}
-          onUpgrade={handleUpgrade}
-          onManageSubscription={handleManageSubscription}
+          action={
+            <PlanActionButton
+              isPro={isPro}
+              isActive={isActive}
+              canUpgrade={canUpgrade}
+              checkoutLoading={checkoutLoading}
+              portalLoading={portalLoading}
+              onUpgrade={handleUpgrade}
+              onManageSubscription={handleManageSubscription}
+            />
+          }
         />
       </div>
     </div>

@@ -5,29 +5,11 @@ import prisma from "@/lib/db";
 import {
   disconnectRepository as disconnectRepositoryInternal,
   disconnectAllRepositoriesInternal,
-} from "@/module/repository/actions";
-import { z } from "zod";
-import { DEFAULT_LANGUAGE, LANGUAGE_BY_CODE, type LanguageCode } from "../constants";
-import { MAX_SUGGESTION_CAP } from "@/shared/constants";
+} from "@/module/repository";
+import { DEFAULT_LANGUAGE, type LanguageCode } from "../constants";
 import { isValidLanguageCode } from "../lib/language";
-import type { UserProfile, UpdateProfileResult, ConnectedRepository, ActionSuccess } from "../types";
-
-const LANGUAGE_CODES = Object.keys(LANGUAGE_BY_CODE) as [LanguageCode, ...LanguageCode[]];
-
-const profileUpdateSchema = z
-  .object({
-    name: z.string().trim().max(100).optional(),
-    email: z.union([z.string().email(), z.literal("")]).optional(),
-    preferredLanguage: z.enum(LANGUAGE_CODES).optional(),
-    maxSuggestions: z
-      .union([z.number().int().min(1).max(MAX_SUGGESTION_CAP), z.null()])
-      .optional(),
-  })
-  .refine((data) => Object.values(data).some((v) => v !== undefined), {
-    message: "No profile fields were provided",
-  });
-
-type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
+import { profileUpdateSchema, type ProfileUpdateInput } from "../constants/profile-schema";
+import type { UserProfile, UpdateProfileResult, ConnectedRepository } from "../types";
 
 export async function getUserProfile(): Promise<UserProfile | null> {
   try {
@@ -122,22 +104,20 @@ export async function getConnectedRepositories(): Promise<ConnectedRepository[]>
   }
 }
 
-export async function disconnectRepository(repositoryId: string): Promise<ActionSuccess> {
+export async function disconnectRepository(repositoryId: string): Promise<void> {
   const session = await requireAuthSession();
   try {
     await disconnectRepositoryInternal(repositoryId, session.user.id);
-    return { success: true, message: "Repository disconnected successfully" };
   } catch (error) {
     console.error("Error disconnecting repository:", error);
     throw error instanceof Error ? error : new Error("Failed to disconnect repository");
   }
 }
 
-export async function disconnectAllRepositories(): Promise<ActionSuccess> {
+export async function disconnectAllRepositories(): Promise<void> {
   const session = await requireAuthSession();
   try {
     await disconnectAllRepositoriesInternal(session.user.id);
-    return { success: true, message: "All repositories disconnected successfully" };
   } catch (error) {
     console.error("Error disconnecting all repositories:", error);
     throw error instanceof Error ? error : new Error("Failed to disconnect all repositories");

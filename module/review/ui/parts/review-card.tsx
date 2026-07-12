@@ -72,7 +72,8 @@ export function ReviewCard({ review }: ReviewCardProps) {
             </div>
 
             <pre className="text-xs text-secondary-foreground font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto">
-              {(review.review ?? "").substring(0, REVIEW_PREVIEW_MAX_CHARS)}...
+              {(review.review ?? "").substring(0, REVIEW_PREVIEW_MAX_CHARS)}
+              {(review.review ?? "").length > REVIEW_PREVIEW_MAX_CHARS ? "..." : ""}
             </pre>
 
             <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-card to-transparent pointer-events-none" />

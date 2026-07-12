@@ -1,7 +1,7 @@
 import { LayoutDashboard, FolderGit2, FileCheck, Settings, CreditCard } from "lucide-react";
 import type { NavItem } from "../types";
 
-export { SIDEBAR_CONFIG, ANIMATION_CONFIG, THEME_CONFIG } from "./config";
+export { SIDEBAR_CONFIG, THEME_CONFIG } from "./config";
 export { SIDEBAR_STYLES } from "./styles";
 
 export const NAV_ITEMS: NavItem[] = [

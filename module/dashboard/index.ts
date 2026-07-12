@@ -6,6 +6,7 @@ export * from "./actions";
 
 // ===== UI Components =====
 export { default as StatsOverview } from "./ui/stats-overview";
+export { DashboardSkeleton } from "./ui/parts/dashboard-skeleton";
 
 // ===== Types =====
 export type { ContributionStats, DashboardStats } from "./types";

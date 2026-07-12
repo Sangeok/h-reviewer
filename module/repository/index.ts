@@ -1,5 +1,5 @@
 // ===== Server Actions =====
-export { getUserRepositories, connectRepository, disconnectRepository } from "./actions";
+export { getUserRepositories, connectRepository, disconnectRepository, disconnectAllRepositoriesInternal } from "./actions";
 
 // ===== Client Hooks =====
 export { useConnectRepository } from "./hooks/use-connect-repository";

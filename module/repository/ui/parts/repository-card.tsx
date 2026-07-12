@@ -12,7 +12,7 @@ interface RepositoryCardProps {
   onConnect: (repository: Repository) => void;
 }
 
-function getConnectButtonLabel(isConnecting: boolean, isConnected: boolean): string {
+function getConnectButtonLabel({ isConnecting, isConnected }: { isConnecting: boolean; isConnected: boolean }): string {
   if (isConnecting) return "Connecting...";
   if (isConnected) return "Connected";
   return "Connect";
@@ -69,7 +69,7 @@ export function RepositoryCard({ repository, isConnecting, onConnect }: Reposito
                   : "bg-gradient-to-r from-primary to-primary-muted hover:from-primary-hover hover:to-primary-muted text-black font-medium shadow-lg shadow-ring/10 transition-all duration-300"
               }
             >
-              {getConnectButtonLabel(isConnecting, repository.isConnected)}
+              {getConnectButtonLabel({ isConnecting, isConnected: repository.isConnected })}
             </Button>
           </div>
         </div>

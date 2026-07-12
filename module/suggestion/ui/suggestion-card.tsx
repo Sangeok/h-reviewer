@@ -43,7 +43,7 @@ export function SuggestionCard({ suggestion }: SuggestionCardProps) {
             </span>
           </div>
           <span className={`text-xs ${STATUS_CONFIG[suggestion.status].color}`}>
-            {STATUS_CONFIG[suggestion.status].label.en}
+            {STATUS_CONFIG[suggestion.status].label}
           </span>
         </div>
 
