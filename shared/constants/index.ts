@@ -31,6 +31,12 @@ export const ISSUE_FIELD_LABELS = {
   ko: { impact: "영향", recommendation: "권장 조치" },
 } as const satisfies Record<LanguageCode, { impact: string; recommendation: string }>;
 
+/** 반복 지적 배지 라벨. LanguageCode 추가 시 여기도 추가 필수. */
+export const REPEAT_BADGE_LABELS = {
+  en: { badge: "Repeat issue", context: "The same issue was raised in" },
+  ko: { badge: "반복 지적", context: "같은 지적을 받았던 PR:" },
+} as const satisfies Record<LanguageCode, { badge: string; context: string }>;
+
 /** Mermaid 검증 실패 시 현지화된 fallback 텍스트. LanguageCode 추가 시 여기도 추가 필수. */
 export const DIAGRAM_FALLBACK_TEXT: Record<LanguageCode, string> = {
   en: "Sequence diagram omitted due to Mermaid safety validation.",

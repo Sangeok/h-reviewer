@@ -127,11 +127,52 @@ model Review {
   status    String  @default("completed") // completed, failed, pending
   headSha   String?
   suggestions Suggestion[]
+  issues    ReviewIssue[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([repositoryId])
   @@map("review")
+}
+
+enum IssueResolutionStatus {
+  PENDING           // 관찰 중 (PR 미종료)
+  ADDRESSED_STRONG  // 라인 수정 + 시맨틱 판정 통과
+  ADDRESSED_WEAK    // 라인 수정만 (판정 불통과/실패)
+  IGNORED           // PR 머지까지 무변경
+}
+
+model ReviewIssue {
+  id       String @id @default(cuid())
+  reviewId String
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  userId   String // Review→Repository→userId 비정규화 — 90일 cross-repo 후보 조회용
+
+  filePath   String?
+  lineNumber Int?
+  title      String
+  body       String @db.Text
+  severity   SuggestionSeverity
+  category   String // source of truth: issueCategorySchema (module/ai/lib/review-schema.ts)
+
+  embedding Json? // gemini-embedding-001 768d float[], taskType: SEMANTIC_SIMILARITY
+
+  resolutionStatus IssueResolutionStatus @default(PENDING)
+  resolvedAt       DateTime?
+  resolvedBySha    String?
+
+  isRepeat         Boolean       @default(false)
+  repeatOfIssueId  String?
+  repeatOf         ReviewIssue?  @relation("IssueRepeatChain", fields: [repeatOfIssueId], references: [id], onDelete: SetNull)
+  repeats          ReviewIssue[] @relation("IssueRepeatChain")
+  repeatSimilarity Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([reviewId])
+  @@index([userId, category, createdAt])
+  @@map("review_issue")
 }
 
 model Suggestion {

@@ -134,3 +134,33 @@ function summarizeLineRanges(lines: number[]): string {
   const sorted = [...lines].sort((a, b) => a - b);
   return `${sorted[0]}-${sorted[sorted.length - 1]} (${sorted.length} lines)`;
 }
+
+/**
+ * compare API per-file patch에서 old side(변경 전 파일 좌표) 기준으로
+ * 삭제/수정된 라인 번호 집합을 추출한다.
+ * 순수 추가(+만 있는) patch는 빈 Set을 반환한다 — 삽입은 기존 라인을 건드리지 않으므로.
+ */
+export function extractPatchOldSideTouchedLines(patch: string): Set<number> {
+  const touched = new Set<number>();
+  let oldLine = 0;
+
+  for (const line of patch.split("\n")) {
+    const hunkMatch = line.match(/^@@ -(\d+)(?:,\d+)? \+\d+(?:,\d+)? @@/);
+    if (hunkMatch) {
+      oldLine = Number(hunkMatch[1]);
+      continue;
+    }
+    if (line.startsWith("-") && !line.startsWith("---")) {
+      touched.add(oldLine);
+      oldLine++;
+    } else if (line.startsWith("+") && !line.startsWith("+++")) {
+      // new side 전용 — old 좌표 증가 없음
+    } else if (line !== "" && !line.startsWith("\\")) {
+      // context 라인 (blank context는 " "이므로 여기 포함).
+      // "" (split의 trailing-newline 아티팩트)와 "\ No newline..."은 카운트 제외 — old 좌표 오증가 방지.
+      oldLine++;
+    }
+  }
+
+  return touched;
+}
