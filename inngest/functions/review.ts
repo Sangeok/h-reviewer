@@ -7,6 +7,7 @@ import {
   retrieveContext, classifyPRSize, getTopKForSizeMode,
   structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt,
   getIssueLimit, formatStructuredReviewToMarkdown, REVIEW_SCHEMA_VERSION, guardTextFeedback,
+  detectRepeatIssues,
 } from "@/module/ai";
 import type { ReviewSizeMode } from "@/module/ai";
 import { generateText, Output } from "ai";
@@ -298,18 +299,47 @@ export const generateReview = inngest.createFunction(
       };
     });
 
+    // ── Step 5.5: 반복 실수 감지 (wedge) ──
+    // 실패해도 리뷰 흐름을 막지 않는다 — 배지 없는 리뷰로 진행.
+    const repeatAnnotations = await step.run("detect-repeat-issues", async () => {
+      const issues = validatedStructuredOutput?.issues ?? [];
+      if (issues.length === 0) return [];
+
+      const repository = await prisma.repository.findFirst({
+        where: { owner, name: repo },
+      });
+      if (!repository) return [];
+
+      try {
+        return await detectRepeatIssues({
+          issues,
+          userId,
+          repositoryId: repository.id,
+          prNumber,
+        });
+      } catch (error) {
+        console.warn("Repeat detection failed, continuing without badges:", error);
+        return [];
+      }
+    });
+
     // ── Step 6: GitHub에 리뷰 게시 ──
     // IMPORTANT: postedAsReview는 반드시 step.run()의 반환값으로 캡처해야 한다.
     const postedAsReview = await step.run("post-review", async () => {
       const suggestions = validatedStructuredOutput?.suggestions ?? [];
       const issues = validatedStructuredOutput?.issues ?? [];
-      const inlineIssues = issues.filter(i => i.file !== null && i.line !== null);
+      const issuesWithRepeat = issues.map((issue, index) => {
+        const annotation = repeatAnnotations[index];
+        return annotation?.repeat ? { ...issue, repeat: annotation.repeat } : issue;
+      });
+      const inlineIssues = issuesWithRepeat.filter(i => i.file !== null && i.line !== null);
       const hasInlineContent = suggestions.length > 0 || inlineIssues.length > 0;
 
       if (hasInlineContent) {
         try {
           await postPRReviewWithSuggestions({
-            token, owner, repo, prNumber, reviewBody: review, suggestions, issues, headSha, langCode,
+            token, owner, repo, prNumber, reviewBody: review,
+            suggestions, issues: issuesWithRepeat, headSha, langCode,
           });
           return true;
         } catch (error) {
@@ -375,6 +405,28 @@ export const generateReview = inngest.createFunction(
               severity: s.severity,
               status: "PENDING",
             })),
+          });
+        }
+
+        if (validatedStructuredOutput?.issues?.length) {
+          await tx.reviewIssue.createMany({
+            data: validatedStructuredOutput.issues.map((issue, index) => {
+              const annotation = repeatAnnotations[index];
+              return {
+                reviewId: createdReview.id,
+                userId,
+                filePath: issue.file,
+                lineNumber: issue.line,
+                title: issue.title,
+                body: issue.body,
+                severity: issue.severity,
+                category: issue.category,
+                embedding: annotation?.embedding ?? Prisma.DbNull,
+                isRepeat: annotation?.isRepeat ?? false,
+                repeatOfIssueId: annotation?.repeatOfIssueId ?? null,
+                repeatSimilarity: annotation?.repeatSimilarity ?? null,
+              };
+            }),
           });
         }
       });

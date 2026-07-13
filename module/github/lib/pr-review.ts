@@ -1,9 +1,11 @@
 import { createOctokitClient } from "./github";
-import type { CodeSuggestion, StructuredIssue } from "@/module/ai";
+import type { CodeSuggestion, StructuredIssue, RepeatBadgeInfo } from "@/module/ai";
 import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "@/module/ai";
 import { normalizeSuggestionExplanation } from "@/module/ai/lib/suggestion-format";
 import type { LanguageCode } from "@/shared/types/language";
-import { ISSUE_FIELD_LABELS } from "@/shared/constants";
+import { ISSUE_FIELD_LABELS, REPEAT_BADGE_LABELS } from "@/shared/constants";
+
+type RepeatAnnotatedIssue = StructuredIssue & { repeat?: RepeatBadgeInfo | null };
 
 interface ReviewComment {
   path: string;
@@ -19,7 +21,7 @@ interface PostPRReviewParams {
   prNumber: number;
   reviewBody: string;
   suggestions: CodeSuggestion[];
-  issues: StructuredIssue[];
+  issues: RepeatAnnotatedIssue[];
   headSha: string;
   langCode: LanguageCode;
 }
@@ -57,13 +59,13 @@ export async function postPRReviewWithSuggestions(params: PostPRReviewParams): P
   // file-level issues (line: null)는 review body 테이블에 포함됨
   // ⚠️ type predicate 사용 — plain .filter()는 TypeScript narrowing 불가
   const inlineIssues = issues.filter(
-    (i): i is StructuredIssue & { file: string; line: number } =>
+    (i): i is RepeatAnnotatedIssue & { file: string; line: number } =>
       i.file !== null && i.line !== null
   );
   const issueComments: ReviewComment[] = inlineIssues.map((i) => ({
     path: i.file,
     line: i.line,
-    body: formatIssueComment(i, labels),
+    body: formatIssueComment(i, labels, REPEAT_BADGE_LABELS[langCode]),
   }));
 
   // 1차 호출: suggestions + review body (summary + general issues 테이블)
@@ -116,8 +118,9 @@ ${suggestion.after}
 }
 
 function formatIssueComment(
-  issue: StructuredIssue,
+  issue: RepeatAnnotatedIssue,
   labels: { impact: string; recommendation: string },
+  repeatLabels: { badge: string; context: string },
 ): string {
   const sev = `${SEVERITY_EMOJI[issue.severity]} ${issue.severity}`;
   const cat = `${CATEGORY_EMOJI[issue.category]} ${issue.category}`;
@@ -138,6 +141,9 @@ function formatIssueComment(
   const lines: string[] = [
     `### ${sev} · ${cat}${title ? ` — ${title}` : ""}`,
   ];
+  if (issue.repeat) {
+    lines.push("", `> ⚠️ **${repeatLabels.badge}** — ${repeatLabels.context} ${issue.repeat.prUrl} (${issue.repeat.date})`);
+  }
   if (body) lines.push("", body);
   if (impact) lines.push("", `**${labels.impact}:** ${impact}`);
   if (recommendation) lines.push("", `**${labels.recommendation}:** ${recommendation}`);

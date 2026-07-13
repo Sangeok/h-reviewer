@@ -3,6 +3,7 @@ import prisma from "@/lib/db";
 import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { reconcileNativeSuggestions } from "@/module/suggestion/lib/reconcile-native-suggestions";
+import { reconcileIssueResolutions } from "@/module/review/lib/reconcile-issue-resolutions";
 
 type RepoFullNameParts = {
   owner: string;
@@ -158,6 +159,24 @@ export async function POST(request: NextRequest) {
                     });
                   }
 
+                  // addressed 추적: 실패해도 리뷰 흐름을 막지 않는다
+                  try {
+                    await reconcileIssueResolutions({
+                      token: account.accessToken,
+                      headOwner,
+                      headRepoName,
+                      baseRepositoryId: baseRepository.id,
+                      prNumber,
+                      beforeSha,
+                      afterSha,
+                    });
+                  } catch (error) {
+                    console.warn(
+                      `reconcileIssueResolutions failed for ${repoInfo.fullName} #${prNumber}:`,
+                      error,
+                    );
+                  }
+
                   if (reconcileResult.skipReview) {
                     console.info(
                       `Skipping review for ${repoInfo.fullName} #${prNumber}: native suggestion commit`,
@@ -186,6 +205,39 @@ export async function POST(request: NextRequest) {
         }
 
         console.log(`Review queued for ${repoInfo.fullName} #${prNumber}`);
+      }
+
+      if (action === "closed") {
+        const pullRequest = body["pull_request"];
+        const merged = isRecord(pullRequest) && pullRequest["merged"] === true;
+
+        if (merged) {
+          const baseRepository = await prisma.repository.findFirst({
+            where: { owner: repoInfo.owner, name: repoInfo.repoName },
+          });
+
+          if (baseRepository) {
+            // 코드베이스 표준 패턴: review id 목록 조회 → reviewId in 으로 updateMany
+            // (기존 suggestion.updateMany({ where: { id: { in } } })와 정렬, updateMany 관계필터 의존 제거)
+            const reviews = await prisma.review.findMany({
+              where: { repositoryId: baseRepository.id, prNumber },
+              select: { id: true },
+            });
+
+            if (reviews.length > 0) {
+              const { count } = await prisma.reviewIssue.updateMany({
+                where: {
+                  reviewId: { in: reviews.map((r) => r.id) },
+                  resolutionStatus: "PENDING",
+                },
+                data: { resolutionStatus: "IGNORED", resolvedAt: new Date() },
+              });
+              console.info(
+                `Finalized ${count} pending issues as IGNORED for ${repoInfo.fullName} #${prNumber}`,
+              );
+            }
+          }
+        }
       }
 
       return NextResponse.json({ message: "Event Processed" }, { status: 200 });

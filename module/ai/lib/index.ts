@@ -8,3 +8,5 @@ export { guardTextFeedback } from "./guard-text-feedback";
 export { structuredReviewSchema } from "./review-schema";
 export { buildStructuredPrompt, buildFallbackPrompt, getIssueLimit } from "./review-prompt";
 export { formatStructuredReviewToMarkdown } from "./review-formatter";
+export { detectRepeatIssues } from "./repeat-detection";
+export type { RepeatAnnotation, RepeatBadgeInfo } from "./repeat-detection";
