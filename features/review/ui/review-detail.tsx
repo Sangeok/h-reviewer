@@ -9,13 +9,14 @@ import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ReviewDetailData } from "../types";
-import type { StructuredReviewOutput } from "@/features/ai";
+import type { StoredReviewData } from "@/features/ai";
 import type { LanguageCode } from "@/shared/types/language";
 import { StructuredReviewBody } from "./parts/structured-review-body";
+import { VerificationPanel } from "./parts/verification-panel";
 
 interface Props {
   review: ReviewDetailData;
-  structuredData: StructuredReviewOutput | null;
+  structuredData: StoredReviewData | null;
   langCode: LanguageCode;
 }
 
@@ -74,6 +75,15 @@ export default function ReviewDetail({ review, structuredData, langCode }: Props
           )}
         </CardContent>
       </Card>
+
+      {/* Second Reviewer Verification */}
+      {structuredData?.verification && (
+        <VerificationPanel
+          issues={structuredData.issues}
+          verification={structuredData.verification}
+          langCode={langCode}
+        />
+      )}
 
       {/* Suggestions */}
       {review.suggestions.length > 0 && (

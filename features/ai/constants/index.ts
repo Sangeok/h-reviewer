@@ -10,4 +10,7 @@ export const REPEAT_SIMILARITY_THRESHOLD = 0.9; // Track A: 0.90에서 FP 5.1%. 
 export const REPEAT_WINDOW_DAYS = 90;
 export const REPEAT_MIN_TEXT_LENGTH = 20; // 빈/짧은 텍스트 임베딩 방지 (sim=1.0 인공물)
 
+// 2차 리뷰어 검증 — 1차(gemini-2.5-flash)와 다른 모델로 상관 오류(공유 맹점) 회피
+export const VERIFIER_MODEL_ID = "gemini-2.5-pro";
+
 export { CATEGORY_EMOJI, SEVERITY_EMOJI } from "./review-emoji";

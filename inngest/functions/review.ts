@@ -2,14 +2,15 @@ import prisma from "@/lib/db";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { inngest } from "../client";
 import { getPullRequestDiff, postReviewComment } from "@/lib/github/github";
-import { postPRReviewWithSuggestions } from "@/features/review/lib/pr-review";
+import { postPRReviewWithSuggestions, postSecondReviewerReview } from "@/features/review/lib/pr-review";
 import {
   retrieveContext, classifyPRSize, getTopKForSizeMode,
   structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt,
   getIssueLimit, formatStructuredReviewToMarkdown, REVIEW_SCHEMA_VERSION, guardTextFeedback,
   detectRepeatIssues,
+  verifySecondReviewer, applyVerification, buildVerificationTrace, buildSecondReviewerReviewBody, VERIFIER_MODEL_ID,
 } from "@/features/ai";
-import type { ReviewSizeMode } from "@/features/ai";
+import type { ReviewSizeMode, VerificationResult } from "@/features/ai";
 import { generateText, Output } from "ai";
 import { google } from "@ai-sdk/google";
 import { sanitizeMermaidSequenceDiagrams } from "@/lib/github/github-markdown";
@@ -68,7 +69,7 @@ export const generateReview = inngest.createFunction(
   { id: "generate-review" },
   { event: "pr.review.requested" },
   async ({ event, step }) => {
-    const { owner, repo, prNumber, userId, preferredLanguage = "en", maxSuggestions = null } = event.data;
+    const { owner, repo, prNumber, userId, preferredLanguage = "en", maxSuggestions = null, reviewerCount = 1 } = event.data;
 
     // ── Step 1: PR 데이터 + 크기 정보 가져오기 ──
     const { diff, title, description, token, additions, deletions, changedFiles, headSha } =
@@ -299,10 +300,44 @@ export const generateReview = inngest.createFunction(
       };
     });
 
+    // ── Step 5.3: 2차 리뷰어 검증 (reviewerCount=2 && 구조화 출력 존재 시) ──
+    // 실패해도 리뷰 흐름을 막지 않는다 — status: "skipped"로 미검증 게시 (fail-open).
+    const verification = await step.run("second-reviewer-verify", async (): Promise<VerificationResult | null> => {
+      if (reviewerCount !== 2 || !validatedStructuredOutput) return null;
+
+      const { issues, suggestions } = validatedStructuredOutput;
+      if (issues.length === 0 && suggestions.length === 0) {
+        return { status: "verified", issueVerdicts: [], suggestionVerdicts: [] };
+      }
+
+      try {
+        return await verifySecondReviewer({ diff, issues, suggestions, langCode });
+      } catch (error) {
+        console.warn("Second reviewer verification failed, continuing unverified:", error);
+        return { status: "skipped", issueVerdicts: [], suggestionVerdicts: [] };
+      }
+    });
+
+    // ── Step 5.3 적용: 순수 함수 — 입력이 모두 step 반환값이므로 Inngest replay-safe ──
+    const verified = validatedStructuredOutput
+      ? applyVerification(validatedStructuredOutput, verification)
+      : null;
+    const finalOutput = verified ? verified.keptOutput : validatedStructuredOutput;
+
+    let finalReview = review;
+    if (verified) {
+      const reviewedCount =
+        (verification?.issueVerdicts.length ?? 0) + (verification?.suggestionVerdicts.length ?? 0);
+      const excludedCount = verified.rejectedIssues.length + verified.rejectedSuggestions.length;
+      const trace = buildVerificationTrace({ reviewedCount, excludedCount }, langCode);
+      const markdown = formatStructuredReviewToMarkdown(verified.keptOutput, langCode);
+      finalReview = sanitizeMermaidSequenceDiagrams(trace ? `${trace}\n\n${markdown}` : markdown, langCode);
+    }
+
     // ── Step 5.5: 반복 실수 감지 (wedge) ──
     // 실패해도 리뷰 흐름을 막지 않는다 — 배지 없는 리뷰로 진행.
     const repeatAnnotations = await step.run("detect-repeat-issues", async () => {
-      const issues = validatedStructuredOutput?.issues ?? [];
+      const issues = finalOutput?.issues ?? [];
       if (issues.length === 0) return [];
 
       const repository = await prisma.repository.findFirst({
@@ -326,11 +361,16 @@ export const generateReview = inngest.createFunction(
     // ── Step 6: GitHub에 리뷰 게시 ──
     // IMPORTANT: postedAsReview는 반드시 step.run()의 반환값으로 캡처해야 한다.
     const postedAsReview = await step.run("post-review", async () => {
-      const suggestions = validatedStructuredOutput?.suggestions ?? [];
-      const issues = validatedStructuredOutput?.issues ?? [];
+      const suggestions = finalOutput?.suggestions ?? [];
+      const issues = finalOutput?.issues ?? [];
       const issuesWithRepeat = issues.map((issue, index) => {
         const annotation = repeatAnnotations[index];
-        return annotation?.repeat ? { ...issue, repeat: annotation.repeat } : issue;
+        const confirmed = verified?.keptIssueVerdicts[index]?.verdict === "CONFIRMED";
+        return {
+          ...issue,
+          ...(annotation?.repeat ? { repeat: annotation.repeat } : {}),
+          ...(confirmed ? { secondReviewerConfirmed: true } : {}),
+        };
       });
       const inlineIssues = issuesWithRepeat.filter(i => i.file !== null && i.line !== null);
       const hasInlineContent = suggestions.length > 0 || inlineIssues.length > 0;
@@ -338,17 +378,45 @@ export const generateReview = inngest.createFunction(
       if (hasInlineContent) {
         try {
           await postPRReviewWithSuggestions({
-            token, owner, repo, prNumber, reviewBody: review,
+            token, owner, repo, prNumber, reviewBody: finalReview,
             suggestions, issues: issuesWithRepeat, headSha, langCode,
           });
           return true;
         } catch (error) {
           console.warn("PR Review API failed, falling back to comment:", error);
-          await postReviewComment(token, owner, repo, prNumber, review);
+          await postReviewComment(token, owner, repo, prNumber, finalReview);
           return false;
         }
       } else {
-        await postReviewComment(token, owner, repo, prNumber, review);
+        await postReviewComment(token, owner, repo, prNumber, finalReview);
+        return false;
+      }
+    });
+
+    // ── Step 6.5: 2차 리뷰어 별도 리뷰 엔트리 게시 (검증 수행 시에만) ──
+    // 1차 리뷰(Step 6)와 독립 — 실패해도 리뷰 흐름을 막지 않는다.
+    // reviewerCount=1이거나 검증 생략(skipped)·검토 대상 0개면 no-op.
+    await step.run("post-second-reviewer-review", async () => {
+      if (!verified || !verification) return false;
+
+      const reviewedCount =
+        verification.issueVerdicts.length + verification.suggestionVerdicts.length;
+      if (reviewedCount === 0) return false;
+
+      const body = buildSecondReviewerReviewBody({
+        keptIssues: finalOutput?.issues ?? [],
+        keptIssueVerdicts: verified.keptIssueVerdicts,
+        rejectedIssues: verified.rejectedIssues,
+        rejectedSuggestions: verified.rejectedSuggestions,
+        reviewedCount,
+        langCode,
+      });
+
+      try {
+        await postSecondReviewerReview({ token, owner, repo, prNumber, headSha, body });
+        return true;
+      } catch (error) {
+        console.warn("Second reviewer review entry failed (main review was already posted):", error);
         return false;
       }
     });
@@ -373,17 +441,34 @@ export const generateReview = inngest.createFunction(
             prNumber,
             prTitle: title,
             prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
-            review,
-            reviewData: validatedStructuredOutput
+            review: finalReview,
+            reviewData: finalOutput
               ? (() => {
                   // shape guard: 배포 경쟁 상태에서 구 shape(description-only)이
                   // memoize되어 resume될 때 schemaVersion이 실제 shape과 불일치하는 것을 방지.
                   // issues가 빈 배열이면 .every()는 true → 정상적으로 v2 저장.
-                  const hasNewIssueShape = (validatedStructuredOutput.issues ?? []).every(
+                  const hasNewIssueShape = (finalOutput.issues ?? []).every(
                     (i) => typeof (i as { title?: unknown }).title === "string",
                   );
                   const storedSchemaVersion = hasNewIssueShape ? REVIEW_SCHEMA_VERSION : 1;
-                  return { ...validatedStructuredOutput, schemaVersion: storedSchemaVersion };
+                  // verification 블록은 optional 추가 필드 — 버전 범프 불필요 (storedReviewDataSchema 참조)
+                  const verificationBlock = verification
+                    ? {
+                        status: verification.status,
+                        model: VERIFIER_MODEL_ID,
+                        issueVerdicts: verified?.keptIssueVerdicts ?? [],
+                        suggestionVerdicts: verified?.keptSuggestionVerdicts ?? [],
+                        rejectedIssues: verified?.rejectedIssues ?? [],
+                        rejectedSuggestions: verified?.rejectedSuggestions ?? [],
+                      }
+                    : null;
+                  // 인터페이스 타입 배열(VerdictEntry[] 등)은 인덱스 시그니처가 없어
+                  // Prisma InputJsonValue에 구조적으로 미할당 — 값은 순수 JSON이므로 캐스트.
+                  return {
+                    ...finalOutput,
+                    ...(verificationBlock ? { verification: verificationBlock } : {}),
+                    schemaVersion: storedSchemaVersion,
+                  } as unknown as Prisma.InputJsonValue;
                 })()
               : Prisma.DbNull,
             langCode,
@@ -393,9 +478,9 @@ export const generateReview = inngest.createFunction(
           },
         });
 
-        if (validatedStructuredOutput?.suggestions?.length) {
+        if (finalOutput?.suggestions?.length) {
           await tx.suggestion.createMany({
-            data: validatedStructuredOutput.suggestions.map((s) => ({
+            data: finalOutput.suggestions.map((s) => ({
               reviewId: createdReview.id,
               filePath: s.file,
               lineNumber: s.line,
@@ -408,9 +493,9 @@ export const generateReview = inngest.createFunction(
           });
         }
 
-        if (validatedStructuredOutput?.issues?.length) {
+        if (finalOutput?.issues?.length) {
           await tx.reviewIssue.createMany({
-            data: validatedStructuredOutput.issues.map((issue, index) => {
+            data: finalOutput.issues.map((issue, index) => {
               const annotation = repeatAnnotations[index];
               return {
                 reviewId: createdReview.id,

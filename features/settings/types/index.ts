@@ -8,6 +8,7 @@ export interface UserProfile {
   createdAt: Date;
   preferredLanguage: LanguageCode;
   maxSuggestions: number | null;
+  reviewerCount: number;
 }
 
 export type UpdateProfileResult =
@@ -19,6 +20,7 @@ export type UpdateProfileResult =
         email: string;
         preferredLanguage: string;
         maxSuggestions: number | null;
+        reviewerCount: number;
       };
     }
   | { success: false; message: string };

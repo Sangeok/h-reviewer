@@ -10,8 +10,11 @@ import { DEFAULT_LANGUAGE } from "../../../constants";
 import type { ProfileUpdateInput } from "../../../constants/profile-schema";
 import { useUserProfile } from "../../../hooks/use-user-profile";
 import LanguageSelector from "./language-selector";
+import ReviewerCountSelector from "./reviewer-count-selector";
 
-type ProfileFormState = Required<Pick<ProfileUpdateInput, "name" | "email" | "preferredLanguage">>;
+type ProfileFormState = Required<
+  Pick<ProfileUpdateInput, "name" | "email" | "preferredLanguage" | "reviewerCount">
+>;
 
 export default function ProfileForm() {
   const { profile, updateMutation } = useUserProfile();
@@ -19,10 +22,12 @@ export default function ProfileForm() {
 
   const [formState, setFormState] = useState<ProfileFormState | null>(null);
 
-  const getInitialFormState = () => ({
+  const getInitialFormState = (): ProfileFormState => ({
     name: profile?.name || "",
     email: profile?.email || "",
     preferredLanguage: profile?.preferredLanguage ?? DEFAULT_LANGUAGE,
+    // DB Int 컬럼 방어적 정규화 — 2가 아니면 전부 1로 취급
+    reviewerCount: profile?.reviewerCount === 2 ? 2 : 1,
   });
 
   const currentFormState = formState ?? getInitialFormState();
@@ -36,6 +41,7 @@ export default function ProfileForm() {
         name: currentFormState.name,
         email: currentFormState.email,
         preferredLanguage: currentFormState.preferredLanguage,
+        reviewerCount: currentFormState.reviewerCount,
       },
       {
         onSuccess: async (result) => {
@@ -109,6 +115,25 @@ export default function ProfileForm() {
                 setFormState((prev) => ({
                   ...(prev ?? getInitialFormState()),
                   preferredLanguage: value,
+                }))
+              }
+              disabled={updateMutation.isPending}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium text-secondary-foreground">
+              Reviewers
+            </label>
+            <p className="text-xs text-muted-foreground">
+              With 2 reviewers, a second reviewer verifies findings before they are posted.
+            </p>
+            <ReviewerCountSelector
+              value={currentFormState.reviewerCount}
+              onChange={(value) =>
+                setFormState((prev) => ({
+                  ...(prev ?? getInitialFormState()),
+                  reviewerCount: value,
                 }))
               }
               disabled={updateMutation.isPending}

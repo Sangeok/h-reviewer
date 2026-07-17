@@ -1,5 +1,6 @@
 import { getUserReviewById, ReviewDetail } from "@/features/review";
-import { structuredReviewSchema, REVIEW_SCHEMA_VERSION } from "@/features/ai";
+import { storedReviewDataSchema, REVIEW_SCHEMA_VERSION } from "@/features/ai";
+import type { StoredReviewData } from "@/features/ai";
 import { isValidLanguageCode } from "@/features/settings";
 import type { LanguageCode } from "@/shared/types/language";
 import { notFound } from "next/navigation";
@@ -15,7 +16,8 @@ export default async function ReviewDetailPage({ params }: Props) {
   if (!review) notFound();
 
   // 서버 컴포넌트에서 Zod 파싱 — 클라이언트 번들에 Zod 미포함
-  let structuredData = null;
+  // storedReviewDataSchema = structuredReviewSchema + optional verification (구 v2 데이터도 파싱됨)
+  let structuredData: StoredReviewData | null = null;
   if (review.reviewData && typeof review.reviewData === "object") {
     const raw = review.reviewData as Record<string, unknown>;
 
@@ -25,7 +27,7 @@ export default async function ReviewDetailPage({ params }: Props) {
         `Review ${review.id}: schemaVersion ${raw.schemaVersion} !== ${REVIEW_SCHEMA_VERSION}, falling back to markdown`
       );
     } else {
-      const parsed = structuredReviewSchema.safeParse(raw);
+      const parsed = storedReviewDataSchema.safeParse(raw);
       structuredData = parsed.success ? parsed.data : null;
     }
   }
