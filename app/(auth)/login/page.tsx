@@ -1,4 +1,4 @@
-import { LoginUI, requireUnAuth } from "@/module/auth";
+import { LoginUI, requireUnAuth } from "@/features/auth";
 
 export default async function LoginPage() {
   await requireUnAuth();

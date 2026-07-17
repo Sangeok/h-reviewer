@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { StatsOverview, DashboardSkeleton } from "@/module/dashboard";
+import { StatsOverview, DashboardSkeleton } from "@/features/dashboard";
 
 export default function DashboardPage() {
   return (

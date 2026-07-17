@@ -1,6 +1,6 @@
-import { getUserReviewById, ReviewDetail } from "@/module/review";
-import { structuredReviewSchema, REVIEW_SCHEMA_VERSION } from "@/module/ai";
-import { isValidLanguageCode } from "@/module/settings";
+import { getUserReviewById, ReviewDetail } from "@/features/review";
+import { structuredReviewSchema, REVIEW_SCHEMA_VERSION } from "@/features/ai";
+import { isValidLanguageCode } from "@/features/settings";
 import type { LanguageCode } from "@/shared/types/language";
 import { notFound } from "next/navigation";
 

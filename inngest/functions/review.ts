@@ -1,22 +1,22 @@
 import prisma from "@/lib/db";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { inngest } from "../client";
-import { getPullRequestDiff, postReviewComment } from "@/module/github/lib/github";
-import { postPRReviewWithSuggestions } from "@/module/github/lib/pr-review";
+import { getPullRequestDiff, postReviewComment } from "@/lib/github/github";
+import { postPRReviewWithSuggestions } from "@/features/review/lib/pr-review";
 import {
   retrieveContext, classifyPRSize, getTopKForSizeMode,
   structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt,
   getIssueLimit, formatStructuredReviewToMarkdown, REVIEW_SCHEMA_VERSION, guardTextFeedback,
   detectRepeatIssues,
-} from "@/module/ai";
-import type { ReviewSizeMode } from "@/module/ai";
+} from "@/features/ai";
+import type { ReviewSizeMode } from "@/features/ai";
 import { generateText, Output } from "ai";
 import { google } from "@ai-sdk/google";
-import { sanitizeMermaidSequenceDiagrams } from "@/module/github/lib/github-markdown";
-import { isValidLanguageCode } from "@/module/settings";
+import { sanitizeMermaidSequenceDiagrams } from "@/lib/github/github-markdown";
+import { isValidLanguageCode } from "@/features/settings";
 import { SECTION_HEADERS, DIAGRAM_FALLBACK_TEXT } from "@/shared/constants";
-import { parseDiffToChangedFiles, extractDiffFileSet, extractDiffAddedLinesMap, unescapeGitPath } from "@/module/github/lib/diff-parser";
-import type { LanguageCode } from "@/module/settings";
+import { parseDiffToChangedFiles, extractDiffFileSet, extractDiffAddedLinesMap, unescapeGitPath } from "@/lib/github/diff-parser";
+import type { LanguageCode } from "@/features/settings";
 
 /**
  * AI가 echo한 파일 경로를 diffFiles의 정규화된 경로로 해결한다.

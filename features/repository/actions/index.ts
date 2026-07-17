@@ -1,0 +1,177 @@
+"use server";
+
+import prisma from "@/lib/db";
+import { requireAuthSession } from "@/lib/server-utils";
+import { createWebhook, deleteWebhook, getRepositories } from "@/lib/github";
+import { inngest } from "@/inngest/client";
+import { canConnectRepository, incrementRepositoryCount, decrementRepositoryCount } from "@/features/payment/lib/subscription";
+import { isGitHubRepositoryDto, mapGitHubRepositoryDtoToRepository } from "../lib/map-github-repository";
+import type { ConnectRepositoryParams, ConnectRepositoryResult, Repository } from "../types";
+
+export async function getUserRepositories(page: number = 1, perPage: number = 10): Promise<Repository[]> {
+  const session = await requireAuthSession();
+
+  const githubRepos = await getRepositories(page, perPage);
+
+  const dbRepos = await prisma.repository.findMany({
+    where: {
+      userId: session.user.id,
+    },
+  });
+
+  const connectedRepoIds = new Set(dbRepos.map((repo) => repo.githubId));
+
+  return githubRepos
+    .filter(isGitHubRepositoryDto)
+    .map((repository) => mapGitHubRepositoryDtoToRepository(repository, connectedRepoIds));
+}
+
+export async function connectRepository({
+  owner,
+  repo,
+  githubId,
+}: ConnectRepositoryParams): Promise<ConnectRepositoryResult> {
+  const session = await requireAuthSession();
+  const repositoryGithubId = BigInt(githubId);
+
+  const existingRepository = await prisma.repository.findUnique({
+    where: {
+      githubId: repositoryGithubId,
+    },
+    select: {
+      id: true,
+      userId: true,
+    },
+  });
+
+  if (existingRepository && existingRepository.userId === session.user.id) {
+    return {
+      status: "already_connected",
+    };
+  }
+
+  if (existingRepository) {
+    return { status: "error", error: "ALREADY_CONNECTED_BY_OTHER" };
+  }
+
+  const canConnect = await canConnectRepository(session.user.id);
+
+  if (!canConnect) {
+    return { status: "error", error: "QUOTA_EXCEEDED" };
+  }
+
+  await createWebhook(owner, repo);
+
+  try {
+    await prisma.$transaction(async (transactionClient) => {
+      await transactionClient.repository.create({
+        data: {
+          githubId: repositoryGithubId,
+          name: repo,
+          owner,
+          fullName: `${owner}/${repo}`,
+          url: `https://github.com/${owner}/${repo}`,
+          userId: session.user.id,
+        },
+      });
+
+      await incrementRepositoryCount(session.user.id, transactionClient);
+    });
+  } catch (error) {
+    const repositoryAfterFailure = await prisma.repository.findUnique({
+      where: {
+        githubId: repositoryGithubId,
+      },
+      select: {
+        userId: true,
+      },
+    });
+
+    if (repositoryAfterFailure && repositoryAfterFailure.userId === session.user.id) {
+      return {
+        status: "already_connected",
+      };
+    }
+
+    // Best-effort compensation for partial failure: rollback only when repository was not persisted.
+    if (!repositoryAfterFailure) {
+      try {
+        await deleteWebhook(owner, repo);
+      } catch (rollbackError) {
+        console.error("Failed to rollback webhook after repository connection failure", rollbackError);
+      }
+    }
+
+    throw error;
+  }
+
+  // Non-critical side effect: indexing can retry later, so we don't fail connection on queue errors.
+  try {
+    await inngest.send({
+      name: "repository.connected",
+      data: {
+        owner,
+        repo,
+        userId: session.user.id,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to trigger repository indexing", error);
+  }
+
+  return {
+    status: "connected",
+  };
+}
+
+export async function disconnectRepository(repositoryId: string, userId: string): Promise<void> {
+  const repository = await prisma.repository.findUnique({
+    where: {
+      id: repositoryId,
+      userId,
+    },
+  });
+
+  if (!repository) {
+    throw new Error("Repository not found");
+  }
+
+  await deleteWebhook(repository.owner, repository.name);
+
+  await prisma.repository.delete({
+    where: {
+      id: repositoryId,
+      userId,
+    },
+  });
+
+  await decrementRepositoryCount(userId);
+}
+
+export async function disconnectAllRepositoriesInternal(userId: string): Promise<void> {
+  const repositories = await prisma.repository.findMany({
+    where: { userId },
+  });
+
+  await Promise.all(
+    repositories.map(async (repository) => {
+      await deleteWebhook(repository.owner, repository.name);
+    })
+  );
+
+  await prisma.repository.deleteMany({
+    where: { userId },
+  });
+
+  await prisma.userUsage.upsert({
+    where: { userId },
+    create: {
+      userId,
+      repositoryCount: 0,
+      reviewCounts: {},
+    },
+    update: {
+      repositoryCount: 0,
+    },
+  });
+}

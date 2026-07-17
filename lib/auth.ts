@@ -5,9 +5,9 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "./db";
 
 import { polar, checkout, portal, usage, webhooks } from "@polar-sh/better-auth";
-import { PRO_UPGRADE_ENABLED } from "@/module/payment/constants/flags";
-import { polarClient } from "@/module/payment/constants/polar";
-import { SubscriptionTier, updatePolarCustomerId, updateUserTier } from "@/module/payment/lib/subscription";
+import { PRO_UPGRADE_ENABLED } from "@/features/payment/constants/flags";
+import { polarClient } from "@/features/payment/constants/polar";
+import { SubscriptionTier, updatePolarCustomerId, updateUserTier } from "@/features/payment/lib/subscription";
 
 const trustedOrigins = [
   process.env.BETTER_AUTH_URL,
