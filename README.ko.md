@@ -228,7 +228,7 @@ hreviewer/
 │   ├── db.ts                     # Prisma 클라이언트 싱글톤
 │   ├── generated/prisma/         # 생성된 Prisma 클라이언트 (커스텀 위치)
 │   └── utils.ts                  # 유틸리티 함수
-├── module/                       # 도메인 주도 기능 모듈
+├── features/                       # 도메인 주도 기능 모듈
 │   ├── auth/                     # 인증 모듈
 │   ├── repository/               # GitHub 저장소 관리
 │   ├── review/                   # 코드 리뷰 기능
@@ -248,7 +248,7 @@ hreviewer/
 각 기능 모듈은 다음 구조를 따릅니다:
 
 ```
-module/[feature]/
+features/[feature]/
 ├── actions/          # 서버 액션
 ├── components/       # 기능별 컴포넌트
 ├── hooks/            # 커스텀 React 훅
@@ -290,7 +290,7 @@ module/[feature]/
 
 ### 새 기능 추가하기
 
-1. `module/[feature-name]/`에 기능 모듈 생성
+1. `features/[feature-name]/`에 기능 모듈 생성
 2. 도메인 주도 설계 패턴 따르기
 3. `actions/` 디렉토리에 서버 액션 추가
 4. `components/` 디렉토리에 컴포넌트 생성
@@ -302,7 +302,7 @@ module/[feature]/
 레이아웃 또는 서버 컴포넌트에서 `requireAuth()` 유틸리티 사용:
 
 ```typescript
-import { requireAuth } from "@/module/auth/utils/auth-utils";
+import { requireAuth } from "@/features/auth/utils/auth-utils";
 
 export default async function ProtectedLayout() {
   await requireAuth(); // 인증되지 않은 경우 /login으로 리다이렉트

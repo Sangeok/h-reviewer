@@ -1,4 +1,4 @@
-import { requireAuth } from "@/module/auth";
+import { requireAuth } from "@/features/auth";
 import { redirect } from "next/navigation";
 
 export default async function Home() {

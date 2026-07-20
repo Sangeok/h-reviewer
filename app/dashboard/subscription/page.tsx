@@ -1,6 +1,6 @@
 import { QueryBoundary } from "@/components/error-boundary/query-error-boundary";
-import SubscriptionPage from "@/module/payment/ui/subscription-page";
-import { SubscriptionSkeleton } from "@/module/payment/ui/parts/subscription-skeleton";
+import SubscriptionPage from "@/features/payment/ui/subscription-page";
+import { SubscriptionSkeleton } from "@/features/payment/ui/parts/subscription-skeleton";
 
 export default function Page() {
   return (

@@ -1,7 +1,7 @@
 import prisma from "@/lib/db";
 import { inngest } from "../client";
-import { getRepoFileContents } from "@/module/github/lib/github";
-import { indexCodebase } from "@/module/ai";
+import { getRepoFileContents } from "@/lib/github/github";
+import { indexCodebase } from "@/features/ai";
 
 export const indexRepository = inngest.createFunction(
   { id: "index-repository" },

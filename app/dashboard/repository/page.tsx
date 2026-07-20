@@ -1,5 +1,5 @@
 import { QueryBoundary } from "@/components/error-boundary/query-error-boundary";
-import { RepositoryList, RepositoryListSkeleton } from "@/module/repository";
+import { RepositoryList, RepositoryListSkeleton } from "@/features/repository";
 
 export default function RepositoryPage() {
   return (

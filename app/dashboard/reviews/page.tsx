@@ -1,5 +1,5 @@
 import { QueryBoundary } from "@/components/error-boundary/query-error-boundary";
-import { ReviewList, ReviewSkeleton, getUserReviews } from "@/module/review";
+import { ReviewList, ReviewSkeleton, getUserReviews } from "@/features/review";
 
 export default async function ReviewsPage() {
   const initialData = await getUserReviews();
