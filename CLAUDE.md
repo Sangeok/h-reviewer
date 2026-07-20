@@ -89,7 +89,7 @@ generator client {
 3. User data stored in Prisma database via adapter
 4. Sessions managed with token-based authentication
 
-**Auth Utilities** (`module/auth/utils/auth-utils.ts`):
+**Auth Utilities** (`features/auth/utils/auth-utils.ts`):
 
 - `requireAuth()` - Server-side session check, redirects to `/login` if unauthenticated
 - `requireUnAuth()` - Ensures user is NOT logged in, redirects to `/dashboard` if authenticated
@@ -98,17 +98,18 @@ generator client {
 
 ### Module System
 
-The codebase uses a `/module` directory for domain-driven feature organization:
+The codebase uses a `/features` directory for domain-driven feature organization:
 
-- `module/auth/` - Authentication (components, utilities, constants)
-- `module/repository/` - GitHub repository management (server actions, hooks)
-- `module/review/` - Code review functionality (server actions)
-- `module/settings/` - User settings
-- `module/dashboard/` - Dashboard utilities and components
-- `module/ai/lib/` - AI/RAG functionality (Pinecone embeddings, vector search)
-- `module/github/lib/` - GitHub API wrapper (Octokit client)
+- `features/auth/` - Authentication (components, utilities, constants)
+- `features/repository/` - GitHub repository management (server actions, hooks)
+- `features/review/` - Code review functionality (server actions)
+- `features/settings/` - User settings
+- `features/dashboard/` - Dashboard utilities and components
+- `features/ai/lib/` - AI/RAG functionality (Pinecone embeddings, vector search)
 
-**Server Actions Pattern**: Each module's server-side operations are in `actions/` directories (e.g., `module/repository/actions/index.ts` contains `getRepositoriesByUserId()`)
+Shared infrastructure (external service clients) lives in `lib/` instead: `lib/github/` (Octokit wrapper, diff parser), `lib/pinecone.ts`, `lib/db.ts`, `lib/auth.ts`.
+
+**Server Actions Pattern**: Each module's server-side operations are in `actions/` directories (e.g., `features/repository/actions/index.ts` contains `getRepositoriesByUserId()`)
 
 **Domain-Driven Design**: Features are grouped by business logic (auth, repository, review) rather than technical layers (components, utils, hooks)
 
@@ -117,7 +118,7 @@ The codebase uses a `/module` directory for domain-driven feature organization:
 Each module should manage its constants in a dedicated `constants/` directory:
 
 ```
-module/
+features/
   └── [feature]/
       ├── components/
       ├── constants/
@@ -125,7 +126,7 @@ module/
       └── ...
 ```
 
-**Example** (`module/auth/constants/index.ts`):
+**Example** (`features/auth/constants/index.ts`):
 
 ```typescript
 export interface LoginFeature {
@@ -143,7 +144,7 @@ export const LOGIN_FEATURES: LoginFeature[] = [
 **Usage in components**:
 
 ```typescript
-import { LOGIN_FEATURES } from "@/module/auth/constants";
+import { LOGIN_FEATURES } from "@/features/auth/constants";
 ```
 
 **Benefits**:
@@ -193,7 +194,7 @@ GOOGLE_GENERATIVE_AI_API_KEY="..."      # For embeddings
 ### Component Structure
 
 - UI components in `/components/ui/` (Radix-based)
-- Feature modules in `/module/[feature]/components/`
+- Feature modules in `/features/[feature]/components/`
 - Shared utilities in `/lib/utils.ts` (includes `cn()` for className merging)
 
 #### Component Hierarchy Pattern
@@ -275,19 +276,19 @@ import AppSidebar from "@/components/app-sidebar/ui/app-sidebar";
 
 - Provider setup: `components/provider/query-provider.tsx`
 - Used for server state caching and synchronization
-- Example hooks: `module/repository/hooks/use-repositories.ts` uses `useQuery` for fetching repositories
+- Example hooks: `features/repository/hooks/use-repositories.ts` uses `useQuery` for fetching repositories
 
 **Client Hooks Pattern**:
 
 - `useSession()` - From `lib/auth-client.ts` for auth state
-- Custom hooks in `module/*/hooks/` for feature-specific data fetching
-- Example: `useConnectRepository()` in `module/repository/hooks/use-connect-repository.ts`
+- Custom hooks in `features/*/hooks/` for feature-specific data fetching
+- Example: `useConnectRepository()` in `features/repository/hooks/use-connect-repository.ts`
 
 ### AI & RAG Architecture
 
 **Vector Database**: Pinecone (index: "hreviewer") for codebase embeddings
 
-**Embedding Pipeline** (`module/ai/lib/rag.ts`):
+**Embedding Pipeline** (`features/ai/lib/rag.ts`):
 
 - `generateEmbedding()` - Uses Google Generative AI to create vector embeddings
 - `storeCodeEmbedding()` - Stores code + metadata in Pinecone
@@ -300,7 +301,7 @@ import AppSidebar from "@/components/app-sidebar/ui/app-sidebar";
 
 ### GitHub Integration
 
-**API Client** (`module/github/lib/github.ts`):
+**API Client** (`lib/github/github.ts`):
 
 - Octokit wrapper for GitHub API operations
 - OAuth scope: `["repo"]` for read access to repository metadata

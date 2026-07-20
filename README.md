@@ -219,7 +219,7 @@ hreviewer/
 │   ├── db.ts                     # Prisma client singleton
 │   ├── generated/prisma/         # Generated Prisma client (custom location)
 │   └── utils.ts                  # Utility functions
-├── module/                       # Domain-driven feature modules
+├── features/                       # Domain-driven feature modules
 │   ├── auth/                     # Authentication module
 │   ├── repository/               # GitHub repository management
 │   ├── review/                   # Code review functionality
@@ -239,7 +239,7 @@ hreviewer/
 Each feature module follows this structure:
 
 ```
-module/[feature]/
+features/[feature]/
 ├── actions/          # Server actions
 ├── components/       # Feature-specific components
 ├── hooks/            # Custom React hooks
@@ -281,7 +281,7 @@ module/[feature]/
 
 ### Adding New Features
 
-1. Create feature module in `module/[feature-name]/`
+1. Create feature module in `features/[feature-name]/`
 2. Follow domain-driven design pattern
 3. Add server actions in `actions/` directory
 4. Create components in `components/` directory
@@ -293,7 +293,7 @@ module/[feature]/
 Use `requireAuth()` utility in layouts or server components:
 
 ```typescript
-import { requireAuth } from "@/module/auth/utils/auth-utils";
+import { requireAuth } from "@/features/auth/utils/auth-utils";
 
 export default async function ProtectedLayout() {
   await requireAuth(); // Redirects to /login if not authenticated

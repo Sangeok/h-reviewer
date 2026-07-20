@@ -33,16 +33,16 @@
 
 ### 1. Architecture & Folder Structure
 
-The project follows a **Feature-Based Module Architecture** in the `module/` directory, combined with a categorized `components/` directory.
+The project follows a **Feature-Based Module Architecture** in the `features/` directory, combined with a categorized `components/` directory.
 
-#### Feature Modules (`module/`)
+#### Feature Modules (`features/`)
 Each domain feature (e.g., `auth`, `repository`, `review`) has its own directory:
-- `module/[feature]/actions/`: Server Actions (`export async function`)
-- `module/[feature]/components/`: Feature-specific UI components
-- `module/[feature]/hooks/`: Custom React Hooks
-- `module/[feature]/constants/`: Feature constants
-- `module/[feature]/types/`: TypeScript type definitions
-- `module/[feature]/utils/`: Utility functions
+- `features/[feature]/actions/`: Server Actions (`export async function`)
+- `features/[feature]/components/`: Feature-specific UI components
+- `features/[feature]/hooks/`: Custom React Hooks
+- `features/[feature]/constants/`: Feature constants
+- `features/[feature]/types/`: TypeScript type definitions
+- `features/[feature]/utils/`: Utility functions
 
 #### Components (`components/`)
 - `components/ui/`: Pure UI primitives (shadcn/ui), no business logic.
@@ -53,7 +53,7 @@ Each domain feature (e.g., `auth`, `repository`, `review`) has its own directory
 ### 2. Critical Implementation Details
 
 - **Prisma Import**: ALWAYS import the Prisma client from `@/lib/generated/prisma/client`. NEVER import from `@prisma/client`.
-- **File Paths (Windows)**: When using tools like `Edit` or `MultiEdit`, **ALWAYS use backslashes (`\`)** in file paths (e.g., `module\auth\index.ts`).
+- **File Paths (Windows)**: When using tools like `Edit` or `MultiEdit`, **ALWAYS use backslashes (`\`)** in file paths (e.g., `features\auth\index.ts`).
 - **Server Actions**: Use `export async function name() { ... }` syntax. Prefixes: `get` (Read), `create` (Create), `update` (Update), `delete` (Delete).
 - **Authentication**:
   - Use `requireAuth()` in Server Components/Actions to enforce session.

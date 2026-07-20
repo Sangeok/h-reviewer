@@ -1,4 +1,4 @@
-import { SettingsPage } from "@/module/settings";
+import { SettingsPage } from "@/features/settings";
 
 export default function Settings() {
   return (

@@ -1,9 +1,9 @@
-import { generatePRSummary, parseCommand, reviewPullRequest } from "@/module/ai";
+import { generatePRSummary, parseCommand, reviewPullRequest } from "@/features/ai";
 import prisma from "@/lib/db";
 import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { reconcileNativeSuggestions } from "@/module/suggestion/lib/reconcile-native-suggestions";
-import { reconcileIssueResolutions } from "@/module/review/lib/reconcile-issue-resolutions";
+import { reconcileNativeSuggestions } from "@/features/suggestion/lib/reconcile-native-suggestions";
+import { reconcileIssueResolutions } from "@/features/review/lib/reconcile-issue-resolutions";
 
 type RepoFullNameParts = {
   owner: string;

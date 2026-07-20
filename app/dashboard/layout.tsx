@@ -1,5 +1,5 @@
 import AppSidebar from "@/components/layouts/app-sidebar/ui/app-sidebar";
-import { requireAuth } from "@/module/auth";
+import { requireAuth } from "@/features/auth";
 
 export const dynamic = "force-dynamic";
 

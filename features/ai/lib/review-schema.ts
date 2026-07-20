@@ -1,0 +1,148 @@
+import { z } from "zod";
+
+// MAINTENANCE NOTE: severity 값의 독립 동기화 지점은 3곳이다:
+// 1. prisma/schema.prisma — enum SuggestionSeverity (source of truth, Zod 파생 불가)
+// 2. 여기 — severitySchema (Zod single source)
+// 3. module/suggestion/constants/index.ts — SEVERITY_CONFIG 키
+//
+// 다음은 위 소스에서 파생되어 컴파일 타임에 검증된다:
+// - module/ai/types/suggestion.ts — z.infer<typeof severitySchema>
+// - module/ai/constants/review-emoji.ts — Record<SuggestionSeverity, string>
+//
+// 새 severity 추가 시 위 3곳 업데이트 + Prisma migrate 필요.
+// IssueCategory는 issueCategorySchema(Zod)에서 정의, suggestion.ts에서 z.infer로 derive.
+
+/** reviewData JSON의 스키마 버전. 스키마 구조가 변경될 때마다 증가시킨다.
+ *  page.tsx에서 safeParse 실패 시 마크다운 fallback으로 전환되므로,
+ *  버전별 마이그레이션 로직 대신 버전 불일치를 로깅하여 모니터링한다. */
+export const REVIEW_SCHEMA_VERSION = 2;
+
+export const severitySchema = z.enum(["CRITICAL", "WARNING", "SUGGESTION", "INFO"]);
+
+const codeSuggestionSchema = z.object({
+  file: z.string().describe("Exact relative file path from the diff"),
+  line: z.number().describe("Line number in the new file (added line from diff)"),
+  before: z.string().describe("Current code at that location (exact match required)"),
+  after: z.string().describe("Suggested replacement code"),
+  explanation: z.string().describe("Why this change improves the code"),
+  severity: severitySchema,
+});
+
+// issueCategorySchema를 export하여 suggestion.ts에서 z.infer로 derive 가능하게 함
+export const issueCategorySchema = z.enum(["bug", "design", "security", "performance", "testing", "general"]);
+
+const walkthroughEntrySchema = z.object({
+  file: z.string().describe("Exact relative file path from the diff"),
+  changeType: z.enum(["added", "modified", "deleted", "renamed"])
+    .describe("Type of change to this file"),
+  summary: z.string().describe(
+    "1-2 sentences explaining WHY this file was changed and its impact. " +
+    "Do NOT describe WHAT changed (the diff already shows that)."
+  ),
+});
+
+const summarySchema = z.object({
+  overview: z.string().describe(
+    "2-3 sentence overview of the PR's purpose and approach. " +
+    "Focus on intent and impact, not file-level details."
+  ),
+  riskLevel: z.enum(["low", "medium", "high"]).describe(
+    "low: cosmetic/docs/config. medium: logic changes with existing tests. " +
+    "high: breaking changes, security-sensitive, no tests, or wide blast radius."
+  ),
+  keyPoints: z.array(z.string()).default([]).describe(
+    "Top 2-3 things the reviewer must pay attention to. " +
+    "Examples: missing error handling, Suspense boundary requirements, API contract changes. " +
+    "Empty array is acceptable for tiny/trivial PRs."
+  ),
+});
+
+// 2차 리뷰어 검증에서 REJECTED 항목 저장 스키마로 재사용하기 위해 추출
+const structuredIssueSchema = z.object({
+  file: z.string().nullable().describe(
+    "File path from diff. Use null ONLY when the issue spans 2+ files " +
+    "or concerns cross-cutting architecture. Default to attaching the " +
+    "most relevant single file."
+  ),
+  line: z.number().nullable().describe(
+    "Line number in new file, or null for file/project-level issues"
+  ),
+  title: z.string().min(1).describe(
+    "One-sentence headline (<=15 words, no trailing period). " +
+    "Will be rendered as the issue's visual title. Do NOT duplicate this in body."
+  ),
+  body: z.string().min(1).describe(
+    "Supporting explanation of the issue (2-4 sentences, <=80 words). " +
+    "Describes WHAT the problem is. Do NOT include impact or recommendation here. " +
+    "Do NOT pack multiple paragraphs into a single run-on sentence."
+  ),
+  impact: z.string().default("").describe(
+    "Concrete consequence if unaddressed (1-2 sentences). " +
+    "Who/what breaks, what regressions occur. " +
+    "Empty string allowed for INFO-level observations where impact is self-evident."
+  ),
+  recommendation: z.string().default("").describe(
+    "Actionable next step (1-2 sentences). " +
+    "Start with an imperative verb (Add, Remove, Refactor, ...). " +
+    "Empty string allowed when no concrete action applies (pure observation)."
+  ),
+  severity: severitySchema,
+  category: issueCategorySchema,
+});
+
+// NOTE: 구조화 출력 스키마에는 poem 필드를 포함하지 않는다.
+// tiny 모드에서는 walkthrough, strengths, sequenceDiagram이 null/빈배열이다.
+export const structuredReviewSchema = z.object({
+  summary: summarySchema,
+  walkthrough: z.array(walkthroughEntrySchema).nullable().describe(
+    "File-by-file breakdown. null if review mode is tiny."
+  ),
+  strengths: z.array(z.string()).describe(
+    "List of positive aspects found. Empty array if review mode is tiny."
+  ),
+  issues: z.array(structuredIssueSchema).describe(
+    "List of issues found. Use file+line for specific code issues, " +
+    "file only for file-level issues, null for both for architectural/design issues."
+  ),
+  suggestions: z.array(codeSuggestionSchema).describe(
+    "Specific, actionable code fix suggestions. " +
+    "Only reference files and added lines from the diff. " +
+    "before field must exactly match the current code."
+  ),
+  sequenceDiagram: z.string().nullable().describe(
+    "Optional Mermaid sequenceDiagram block. null if not applicable or review mode is tiny."
+  ),
+});
+
+export type StructuredReviewOutput = z.infer<typeof structuredReviewSchema>;
+
+// ── 2차 리뷰어 검증 ──
+// verificationVerdictSchema는 여기(review-schema)가 source of truth.
+// verify-review.ts가 import하여 LLM 출력 스키마에 재사용한다 (순환 import 방지 방향: verify-review → review-schema).
+export const verificationVerdictSchema = z.enum(["CONFIRMED", "UNCERTAIN", "REJECTED"]);
+
+const verdictRecordSchema = z.object({
+  verdict: verificationVerdictSchema,
+  reason: z.string(),
+});
+
+/** reviewData에 저장되는 검증 블록. issueVerdicts/suggestionVerdicts는
+ *  저장된 (생존) issues/suggestions 배열과 index 정렬이다. */
+export const reviewVerificationSchema = z.object({
+  status: z.enum(["verified", "skipped"]),
+  model: z.string(),
+  issueVerdicts: z.array(verdictRecordSchema),
+  suggestionVerdicts: z.array(verdictRecordSchema),
+  rejectedIssues: z.array(structuredIssueSchema.extend({ reason: z.string() })),
+  rejectedSuggestions: z.array(codeSuggestionSchema.extend({ reason: z.string() })),
+});
+
+/** reviewData 파싱용 스키마. verification은 optional이므로 기존 v2 데이터도
+ *  그대로 파싱된다 — REVIEW_SCHEMA_VERSION 버전 범프 불필요(하위 호환 추가). */
+export const storedReviewDataSchema = structuredReviewSchema.extend({
+  verification: reviewVerificationSchema.optional(),
+});
+
+export type VerificationVerdict = z.infer<typeof verificationVerdictSchema>;
+export type ReviewVerification = z.infer<typeof reviewVerificationSchema>;
+export type StoredReviewData = z.infer<typeof storedReviewDataSchema>;

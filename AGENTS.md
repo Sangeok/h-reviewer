@@ -2,7 +2,8 @@
 
 ## Project Structure & Module Organization
 - `app/`: Next.js App Router pages, route groups, and API routes (`app/api/auth`, `app/api/webhooks/github`, `app/api/inngest`).
-- `module/`: feature modules (`auth`, `repository`, `review`, `dashboard`, `settings`, `ai`, `github`). Keep feature logic, UI, hooks, and actions colocated.
+- `features/`: feature modules (`auth`, `repository`, `review`, `dashboard`, `settings`, `ai`, `payment`, `suggestion`). Keep feature logic, UI, hooks, and actions colocated.
+- `lib/github/`: shared GitHub infrastructure (Octokit wrapper, diff parser, markdown/mermaid utilities) consumed by features and Inngest jobs.
 - `components/`: shared UI and layout primitives (`components/ui`, `components/layouts`, `components/provider`).
 - `lib/`: cross-cutting utilities (auth/session helpers, DB client, shared helpers).
 - `prisma/`: schema and migrations. `inngest/`: background jobs. `public/`: static assets. `docs/`: specs and conventions.

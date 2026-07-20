@@ -1,10 +1,10 @@
 import prisma from "@/lib/db";
 import { inngest } from "../client";
-import { getPullRequestDiff, postReviewComment } from "@/module/github/lib/github";
+import { getPullRequestDiff, postReviewComment } from "@/lib/github/github";
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
-import { stripFencedCodeBlocks } from "@/module/ai";
-import { getLanguageName, isValidLanguageCode } from "@/module/settings";
+import { stripFencedCodeBlocks } from "@/features/ai";
+import { getLanguageName, isValidLanguageCode } from "@/features/settings";
 
 export const generateSummary = inngest.createFunction(
   { id: "generate-summary" },
