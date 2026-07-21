@@ -2,13 +2,13 @@ import prisma from "@/lib/db";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { inngest } from "../client";
 import { getPullRequestDiff, postReviewComment } from "@/lib/github/github";
-import { postPRReviewWithSuggestions, postSecondReviewerReview } from "@/features/review/lib/pr-review";
+import { postPRReviewWithSuggestions, postVerificationReview } from "@/features/review/lib/pr-review";
 import {
   retrieveContext, classifyPRSize, getTopKForSizeMode,
   structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt,
   getIssueLimit, formatStructuredReviewToMarkdown, REVIEW_SCHEMA_VERSION, guardTextFeedback,
   detectRepeatIssues,
-  verifySecondReviewer, applyVerification, buildVerificationTrace, buildSecondReviewerReviewBody, VERIFIER_MODEL_ID,
+  verifyReview, applyVerification, buildVerificationTrace, buildVerificationReviewBody, VERIFIER_MODEL_ID,
 } from "@/features/ai";
 import type { ReviewSizeMode, VerificationResult } from "@/features/ai";
 import { generateText, Output } from "ai";
@@ -69,7 +69,7 @@ export const generateReview = inngest.createFunction(
   { id: "generate-review" },
   { event: "pr.review.requested" },
   async ({ event, step }) => {
-    const { owner, repo, prNumber, userId, preferredLanguage = "en", maxSuggestions = null, reviewerCount = 1 } = event.data;
+    const { owner, repo, prNumber, userId, preferredLanguage = "en", maxSuggestions = null, verificationEnabled = false } = event.data;
 
     // ── Step 1: PR 데이터 + 크기 정보 가져오기 ──
     const { diff, title, description, token, additions, deletions, changedFiles, headSha } =
@@ -300,10 +300,10 @@ export const generateReview = inngest.createFunction(
       };
     });
 
-    // ── Step 5.3: 2차 리뷰어 검증 (reviewerCount=2 && 구조화 출력 존재 시) ──
+    // ── Step 5.3: 리뷰 검증 — 검수자 (verificationEnabled && 구조화 출력 존재 시) ──
     // 실패해도 리뷰 흐름을 막지 않는다 — status: "skipped"로 미검증 게시 (fail-open).
-    const verification = await step.run("second-reviewer-verify", async (): Promise<VerificationResult | null> => {
-      if (reviewerCount !== 2 || !validatedStructuredOutput) return null;
+    const verification = await step.run("verify-findings", async (): Promise<VerificationResult | null> => {
+      if (!verificationEnabled || !validatedStructuredOutput) return null;
 
       const { issues, suggestions } = validatedStructuredOutput;
       if (issues.length === 0 && suggestions.length === 0) {
@@ -311,9 +311,9 @@ export const generateReview = inngest.createFunction(
       }
 
       try {
-        return await verifySecondReviewer({ diff, issues, suggestions, langCode });
+        return await verifyReview({ diff, issues, suggestions, langCode });
       } catch (error) {
-        console.warn("Second reviewer verification failed, continuing unverified:", error);
+        console.warn("Review verification failed, continuing unverified:", error);
         return { status: "skipped", issueVerdicts: [], suggestionVerdicts: [] };
       }
     });
@@ -369,7 +369,7 @@ export const generateReview = inngest.createFunction(
         return {
           ...issue,
           ...(annotation?.repeat ? { repeat: annotation.repeat } : {}),
-          ...(confirmed ? { secondReviewerConfirmed: true } : {}),
+          ...(confirmed ? { verifierConfirmed: true } : {}),
         };
       });
       const inlineIssues = issuesWithRepeat.filter(i => i.file !== null && i.line !== null);
@@ -393,17 +393,17 @@ export const generateReview = inngest.createFunction(
       }
     });
 
-    // ── Step 6.5: 2차 리뷰어 별도 리뷰 엔트리 게시 (검증 수행 시에만) ──
+    // ── Step 6.5: 검수자 별도 리뷰 엔트리 게시 (검증 수행 시에만) ──
     // 1차 리뷰(Step 6)와 독립 — 실패해도 리뷰 흐름을 막지 않는다.
-    // reviewerCount=1이거나 검증 생략(skipped)·검토 대상 0개면 no-op.
-    await step.run("post-second-reviewer-review", async () => {
+    // 검증 비활성이거나 검증 생략(skipped)·검토 대상 0개면 no-op.
+    await step.run("post-verification-review", async () => {
       if (!verified || !verification) return false;
 
       const reviewedCount =
         verification.issueVerdicts.length + verification.suggestionVerdicts.length;
       if (reviewedCount === 0) return false;
 
-      const body = buildSecondReviewerReviewBody({
+      const body = buildVerificationReviewBody({
         keptIssues: finalOutput?.issues ?? [],
         keptIssueVerdicts: verified.keptIssueVerdicts,
         rejectedIssues: verified.rejectedIssues,
@@ -413,10 +413,10 @@ export const generateReview = inngest.createFunction(
       });
 
       try {
-        await postSecondReviewerReview({ token, owner, repo, prNumber, headSha, body });
+        await postVerificationReview({ token, owner, repo, prNumber, headSha, body });
         return true;
       } catch (error) {
-        console.warn("Second reviewer review entry failed (main review was already posted):", error);
+        console.warn("Verification review entry failed (main review was already posted):", error);
         return false;
       }
     });

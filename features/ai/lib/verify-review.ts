@@ -6,7 +6,7 @@ import { verificationVerdictSchema } from "./review-schema";
 import type { StructuredReviewOutput, VerificationVerdict } from "./review-schema";
 import type { CodeSuggestion, StructuredIssue } from "../types";
 import type { LanguageCode } from "@/shared/types/language";
-import { SECOND_REVIEWER_LABELS } from "@/shared/constants";
+import { VERIFICATION_LABELS } from "@/shared/constants";
 
 export interface VerdictEntry {
   verdict: VerificationVerdict;
@@ -76,7 +76,7 @@ function buildVerificationPrompt(params: {
     )
     .join("\n\n");
 
-  return `You are a senior engineer acting as the SECOND REVIEWER.
+  return `You are a senior engineer acting as the VERIFIER (fact-checker).
 A first AI reviewer analyzed the pull request diff below and produced findings.
 Your ONLY job is to verify each finding against the diff. You must NOT add new findings.
 
@@ -116,8 +116,8 @@ function alignVerdicts(
   return aligned;
 }
 
-/** 2차 리뷰어 LLM 호출. 실패 시 throw — 호출부(Inngest step)에서 fail-open 처리한다. */
-export async function verifySecondReviewer(params: {
+/** 검수자 LLM 호출. 실패 시 throw — 호출부(Inngest step)에서 fail-open 처리한다. */
+export async function verifyReview(params: {
   diff: string;
   issues: StructuredIssue[];
   suggestions: CodeSuggestion[];
@@ -198,16 +198,16 @@ export function buildVerificationTrace(
   langCode: LanguageCode,
 ): string | null {
   if (counts.reviewedCount === 0) return null;
-  const labels = SECOND_REVIEWER_LABELS[langCode];
+  const labels = VERIFICATION_LABELS[langCode];
   const summary = labels.summary
     .replace("{reviewed}", String(counts.reviewedCount))
     .replace("{excluded}", String(counts.excludedCount));
   return `> 🛡️ **${labels.title}** — ${summary}`;
 }
 
-/** 2차 리뷰어 명의의 별도 GitHub 리뷰 엔트리 본문 (body-only, 동일 계정).
+/** 검수자 명의의 별도 GitHub 리뷰 엔트리 본문 (body-only, 동일 계정).
  *  이슈별 판정 목록 + 제외 내역 접기. 검토 대상이 0개면 호출하지 않는다 (호출부 가드). */
-export function buildSecondReviewerReviewBody(params: {
+export function buildVerificationReviewBody(params: {
   keptIssues: StructuredIssue[];
   keptIssueVerdicts: VerdictEntry[];
   rejectedIssues: (StructuredIssue & { reason: string })[];
@@ -216,7 +216,7 @@ export function buildSecondReviewerReviewBody(params: {
   langCode: LanguageCode;
 }): string {
   const { keptIssues, keptIssueVerdicts, rejectedIssues, rejectedSuggestions, reviewedCount, langCode } = params;
-  const labels = SECOND_REVIEWER_LABELS[langCode];
+  const labels = VERIFICATION_LABELS[langCode];
   const excludedCount = rejectedIssues.length + rejectedSuggestions.length;
   const summary = labels.summary
     .replace("{reviewed}", String(reviewedCount))

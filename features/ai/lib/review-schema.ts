@@ -57,7 +57,7 @@ const summarySchema = z.object({
   ),
 });
 
-// 2차 리뷰어 검증에서 REJECTED 항목 저장 스키마로 재사용하기 위해 추출
+// 리뷰 검증(검수자)에서 REJECTED 항목 저장 스키마로 재사용하기 위해 추출
 const structuredIssueSchema = z.object({
   file: z.string().nullable().describe(
     "File path from diff. Use null ONLY when the issue spans 2+ files " +
@@ -116,7 +116,7 @@ export const structuredReviewSchema = z.object({
 
 export type StructuredReviewOutput = z.infer<typeof structuredReviewSchema>;
 
-// ── 2차 리뷰어 검증 ──
+// ── 리뷰 검증 (검수자) ──
 // verificationVerdictSchema는 여기(review-schema)가 source of truth.
 // verify-review.ts가 import하여 LLM 출력 스키마에 재사용한다 (순환 import 방지 방향: verify-review → review-schema).
 export const verificationVerdictSchema = z.enum(["CONFIRMED", "UNCERTAIN", "REJECTED"]);

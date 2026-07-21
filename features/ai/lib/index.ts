@@ -11,5 +11,5 @@ export { buildStructuredPrompt, buildFallbackPrompt, getIssueLimit } from "./rev
 export { formatStructuredReviewToMarkdown } from "./review-formatter";
 export { detectRepeatIssues } from "./repeat-detection";
 export type { RepeatAnnotation, RepeatBadgeInfo } from "./repeat-detection";
-export { verifySecondReviewer, applyVerification, buildVerificationTrace, buildSecondReviewerReviewBody } from "./verify-review";
+export { verifyReview, applyVerification, buildVerificationTrace, buildVerificationReviewBody } from "./verify-review";
 export type { VerificationResult, AppliedVerification, VerdictEntry } from "./verify-review";

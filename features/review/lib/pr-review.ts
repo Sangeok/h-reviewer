@@ -3,11 +3,11 @@ import type { CodeSuggestion, StructuredIssue, RepeatBadgeInfo } from "@/feature
 import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "@/features/ai";
 import { normalizeSuggestionExplanation } from "@/features/ai/lib/suggestion-format";
 import type { LanguageCode } from "@/shared/types/language";
-import { ISSUE_FIELD_LABELS, REPEAT_BADGE_LABELS, SECOND_REVIEWER_LABELS } from "@/shared/constants";
+import { ISSUE_FIELD_LABELS, REPEAT_BADGE_LABELS, VERIFICATION_LABELS } from "@/shared/constants";
 
 type RepeatAnnotatedIssue = StructuredIssue & {
   repeat?: RepeatBadgeInfo | null;
-  secondReviewerConfirmed?: boolean;
+  verifierConfirmed?: boolean;
 };
 
 interface ReviewComment {
@@ -68,7 +68,7 @@ export async function postPRReviewWithSuggestions(params: PostPRReviewParams): P
   const issueComments: ReviewComment[] = inlineIssues.map((i) => ({
     path: i.file,
     line: i.line,
-    body: formatIssueComment(i, labels, REPEAT_BADGE_LABELS[langCode], SECOND_REVIEWER_LABELS[langCode]),
+    body: formatIssueComment(i, labels, REPEAT_BADGE_LABELS[langCode], VERIFICATION_LABELS[langCode]),
   }));
 
   // 1차 호출: suggestions + review body (summary + general issues 테이블)
@@ -124,7 +124,7 @@ function formatIssueComment(
   issue: RepeatAnnotatedIssue,
   labels: { impact: string; recommendation: string },
   repeatLabels: { badge: string; context: string },
-  secondReviewerLabels: { badge: string },
+  verificationLabels: { badge: string },
 ): string {
   const sev = `${SEVERITY_EMOJI[issue.severity]} ${issue.severity}`;
   const cat = `${CATEGORY_EMOJI[issue.category]} ${issue.category}`;
@@ -148,8 +148,8 @@ function formatIssueComment(
   if (issue.repeat) {
     lines.push("", `> ⚠️ **${repeatLabels.badge}** — ${repeatLabels.context} ${issue.repeat.prUrl} (${issue.repeat.date})`);
   }
-  if (issue.secondReviewerConfirmed) {
-    lines.push("", `> ✅ **${secondReviewerLabels.badge}**`);
+  if (issue.verifierConfirmed) {
+    lines.push("", `> ✅ **${verificationLabels.badge}**`);
   }
   if (body) lines.push("", body);
   if (impact) lines.push("", `**${labels.impact}:** ${impact}`);
@@ -158,10 +158,10 @@ function formatIssueComment(
   // SYNC:formatIssueBody — review-formatter.ts · structured-review-body.tsx 와 동일 로직 유지
 }
 
-/** 2차 리뷰어 명의(동일 계정)의 body-only 리뷰 엔트리 게시.
+/** 검수자 명의(동일 계정)의 body-only 리뷰 엔트리 게시.
  *  인라인 코멘트 없음 — body가 있는 review는 PR Conversation 탭에 별도 리뷰 카드로 나타난다
  *  (위 postPRReviewWithSuggestions 2차 호출의 "body 필드 생략" 주석과 동일 근거의 역방향 활용). */
-export async function postSecondReviewerReview(params: {
+export async function postVerificationReview(params: {
   token: string;
   owner: string;
   repo: string;

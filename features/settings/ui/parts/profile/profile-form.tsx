@@ -10,10 +10,10 @@ import { DEFAULT_LANGUAGE } from "../../../constants";
 import type { ProfileUpdateInput } from "../../../constants/profile-schema";
 import { useUserProfile } from "../../../hooks/use-user-profile";
 import LanguageSelector from "./language-selector";
-import ReviewerCountSelector from "./reviewer-count-selector";
+import VerificationToggle from "./verification-toggle";
 
 type ProfileFormState = Required<
-  Pick<ProfileUpdateInput, "name" | "email" | "preferredLanguage" | "reviewerCount">
+  Pick<ProfileUpdateInput, "name" | "email" | "preferredLanguage" | "verificationEnabled">
 >;
 
 export default function ProfileForm() {
@@ -26,8 +26,7 @@ export default function ProfileForm() {
     name: profile?.name || "",
     email: profile?.email || "",
     preferredLanguage: profile?.preferredLanguage ?? DEFAULT_LANGUAGE,
-    // DB Int 컬럼 방어적 정규화 — 2가 아니면 전부 1로 취급
-    reviewerCount: profile?.reviewerCount === 2 ? 2 : 1,
+    verificationEnabled: profile?.verificationEnabled ?? false,
   });
 
   const currentFormState = formState ?? getInitialFormState();
@@ -41,7 +40,7 @@ export default function ProfileForm() {
         name: currentFormState.name,
         email: currentFormState.email,
         preferredLanguage: currentFormState.preferredLanguage,
-        reviewerCount: currentFormState.reviewerCount,
+        verificationEnabled: currentFormState.verificationEnabled,
       },
       {
         onSuccess: async (result) => {
@@ -123,17 +122,17 @@ export default function ProfileForm() {
 
           <div className="flex flex-col gap-2">
             <label className="text-sm font-medium text-secondary-foreground">
-              Reviewers
+              Review Verification
             </label>
             <p className="text-xs text-muted-foreground">
-              With 2 reviewers, a second reviewer verifies findings before they are posted.
+              When enabled, a verifier fact-checks findings against the diff and filters out false positives before they are posted.
             </p>
-            <ReviewerCountSelector
-              value={currentFormState.reviewerCount}
+            <VerificationToggle
+              value={currentFormState.verificationEnabled}
               onChange={(value) =>
                 setFormState((prev) => ({
                   ...(prev ?? getInitialFormState()),
-                  reviewerCount: value,
+                  verificationEnabled: value,
                 }))
               }
               disabled={updateMutation.isPending}

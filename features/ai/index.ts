@@ -29,9 +29,9 @@ export { REVIEW_SCHEMA_VERSION } from "./lib/review-schema";
 // ===== Constants (emoji) =====
 export { CATEGORY_EMOJI, SEVERITY_EMOJI } from "./constants";
 
-// ===== Second Reviewer Verification =====
+// ===== Review Verification (검수자) =====
 export { VERIFIER_MODEL_ID } from "./constants";
-export { verifySecondReviewer, applyVerification, buildVerificationTrace, buildSecondReviewerReviewBody, storedReviewDataSchema } from "./lib";
+export { verifyReview, applyVerification, buildVerificationTrace, buildVerificationReviewBody, storedReviewDataSchema } from "./lib";
 export type { VerificationResult, AppliedVerification, VerdictEntry, StoredReviewData, ReviewVerification, VerificationVerdict } from "./lib";
 
 // ===== Utils =====
