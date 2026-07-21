@@ -2,23 +2,23 @@
 
 import { Button } from "@/components/ui/button";
 
-interface ReviewerCountSelectorProps {
-  value: 1 | 2;
-  onChange: (value: 1 | 2) => void;
+interface VerificationToggleProps {
+  value: boolean;
+  onChange: (value: boolean) => void;
   disabled?: boolean;
 }
 
 const OPTIONS = [
-  { value: 1, label: "1 Reviewer" },
-  { value: 2, label: "2 Reviewers (Verified)" },
+  { value: false, label: "Off" },
+  { value: true, label: "On (Verified)" },
 ] as const;
 
-export default function ReviewerCountSelector({ value, onChange, disabled }: ReviewerCountSelectorProps) {
+export default function VerificationToggle({ value, onChange, disabled }: VerificationToggleProps) {
   return (
     <div className="flex gap-2">
       {OPTIONS.map((option) => (
         <Button
-          key={option.value}
+          key={option.label}
           type="button"
           size="sm"
           variant={value === option.value ? "default" : "outline"}

@@ -76,7 +76,7 @@ export default function ReviewDetail({ review, structuredData, langCode }: Props
         </CardContent>
       </Card>
 
-      {/* Second Reviewer Verification */}
+      {/* Review Verification (검수자) */}
       {structuredData?.verification && (
         <VerificationPanel
           issues={structuredData.issues}

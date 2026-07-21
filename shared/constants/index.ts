@@ -43,20 +43,20 @@ export const DIAGRAM_FALLBACK_TEXT: Record<LanguageCode, string> = {
   ko: "Mermaid 검증으로 인해 시퀀스 다이어그램이 생략되었습니다.",
 };
 
-/** 2차 리뷰어 라벨. LanguageCode 추가 시 여기도 추가 필수. */
-export const SECOND_REVIEWER_LABELS = {
+/** 리뷰 검증(검수자) 라벨. LanguageCode 추가 시 여기도 추가 필수. */
+export const VERIFICATION_LABELS = {
   en: {
-    title: "Second Reviewer",
-    badge: "Verified by second reviewer",
+    title: "Review Verification",
+    badge: "Verified against the diff",
     summary: "reviewed {reviewed} findings, excluded {excluded}",
-    skipped: "Second review was skipped",
+    skipped: "Verification was skipped",
     excluded: "Excluded findings",
   },
   ko: {
-    title: "2차 리뷰어",
-    badge: "2차 리뷰어 검증됨",
+    title: "리뷰 검증",
+    badge: "diff 대조 검증됨",
     summary: "{reviewed}개 검토, {excluded}개 제외",
-    skipped: "2차 검증이 생략되었습니다",
+    skipped: "검증이 생략되었습니다",
     excluded: "제외된 항목",
   },
 } as const satisfies Record<

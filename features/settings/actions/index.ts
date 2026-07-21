@@ -27,7 +27,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
         createdAt: true,
         preferredLanguage: true,
         maxSuggestions: true,
-        reviewerCount: true,
+        verificationEnabled: true,
       },
     });
 
@@ -65,7 +65,7 @@ export async function updateUserProfile(data: ProfileUpdateInput): Promise<Updat
         email: true,
         preferredLanguage: true,
         maxSuggestions: true,
-        reviewerCount: true,
+        verificationEnabled: true,
       },
     });
 
