@@ -23,7 +23,8 @@ export interface VerificationResult {
 
 export interface AppliedVerification {
   keptOutput: StructuredReviewOutput;
-  /** keptOutput.issues와 index 정렬 (CONFIRMED | UNCERTAIN만 포함) */
+  /** keptOutput.issues와 index 정렬 (CONFIRMED | UNCERTAIN만 포함).
+   *  review.ts의 checkLengthAlignment가 게시·저장 직전 이 길이 동등성을 soft-assert한다. */
   keptIssueVerdicts: VerdictEntry[];
   /** keptOutput.suggestions와 index 정렬 */
   keptSuggestionVerdicts: VerdictEntry[];
