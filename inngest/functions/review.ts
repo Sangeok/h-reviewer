@@ -2,13 +2,13 @@ import prisma from "@/lib/db";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { inngest } from "../client";
 import { getPullRequestDiff, postReviewComment } from "@/lib/github/github";
-import { postPRReviewWithSuggestions, postSecondReviewerReview } from "@/features/review/lib/pr-review";
+import { postPRReviewWithSuggestions, postVerificationReview } from "@/features/review/lib/pr-review";
 import {
   retrieveContext, classifyPRSize, getTopKForSizeMode,
   structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt,
   getIssueLimit, formatStructuredReviewToMarkdown, REVIEW_SCHEMA_VERSION, guardTextFeedback,
   detectRepeatIssues,
-  verifySecondReviewer, applyVerification, buildVerificationTrace, buildSecondReviewerReviewBody, VERIFIER_MODEL_ID,
+  verifyReview, applyVerification, buildVerificationTrace, buildVerificationReviewBody, VERIFIER_MODEL_ID,
 } from "@/features/ai";
 import type { ReviewSizeMode, VerificationResult } from "@/features/ai";
 import { generateText, Output } from "ai";
@@ -65,11 +65,48 @@ function resolveEntryFile<T extends { file: string }>(
   return resolved === entry.file ? entry : { ...entry, file: resolved };
 }
 
+/**
+ * 게시·저장 직전 병렬 배열 길이 동등성 soft assert.
+ * finalOutput.issues와 병렬 배열(검증 판정·반복 감지 주석)은 같은 index가 같은
+ * 이슈를 가리킨다는 암묵적 약속 위에 있다 — 어긋나면 배지·embedding이 엉뚱한
+ * 이슈에 붙는다. 이 함수는 그 약속의 필요조건인 "길이 동등성"만 검증한다
+ * (같은 길이로 재정렬된 배열은 통과 — 요소 대응까지 보장하지 않는다).
+ * 어긋나면 warn을 남기고 false를 반환하며, 호출부는 해당 장식 부착만 생략하고
+ * 게시·저장 자체는 진행한다 (fail-open, Step 5.3/5.5와 동일 철학).
+ */
+function checkLengthAlignment(
+  scope: "post-review" | "post-verification-review" | "save-review",
+  name: string,
+  expected: number,
+  actual: number,
+  options?: { allowEmpty?: boolean },
+): boolean {
+  if (actual === expected) return true;
+  if (options?.allowEmpty && actual === 0) return true;
+  // "[index-alignment]"는 검증 절차가 grep하는 고정 로그 토큰 — 변경 시 이 토큰을 확인하는 절차도 함께 수정
+  console.warn(`[index-alignment] ${name} length mismatch — related decorations skipped`, {
+    scope,
+    expected,
+    actual,
+  });
+  return false;
+}
+
+/** repeatAnnotations 전용 wrapper — 빈 배열 허용(allowEmpty) 정책을 배열에 바인딩한다.
+ *  Step 5.5는 실패·이슈 0개 시 []를 반환하므로 빈 배열은 정상 상태다. */
+function checkRepeatsAligned(
+  scope: "post-review" | "save-review",
+  expected: number,
+  actual: number,
+): boolean {
+  return checkLengthAlignment(scope, "repeatAnnotations", expected, actual, { allowEmpty: true });
+}
+
 export const generateReview = inngest.createFunction(
   { id: "generate-review" },
   { event: "pr.review.requested" },
   async ({ event, step }) => {
-    const { owner, repo, prNumber, userId, preferredLanguage = "en", maxSuggestions = null, reviewerCount = 1 } = event.data;
+    const { owner, repo, prNumber, userId, preferredLanguage = "en", maxSuggestions = null, verificationEnabled = false } = event.data;
 
     // ── Step 1: PR 데이터 + 크기 정보 가져오기 ──
     const { diff, title, description, token, additions, deletions, changedFiles, headSha } =
@@ -300,10 +337,10 @@ export const generateReview = inngest.createFunction(
       };
     });
 
-    // ── Step 5.3: 2차 리뷰어 검증 (reviewerCount=2 && 구조화 출력 존재 시) ──
+    // ── Step 5.3: 리뷰 검증 — 검수자 (verificationEnabled && 구조화 출력 존재 시) ──
     // 실패해도 리뷰 흐름을 막지 않는다 — status: "skipped"로 미검증 게시 (fail-open).
-    const verification = await step.run("second-reviewer-verify", async (): Promise<VerificationResult | null> => {
-      if (reviewerCount !== 2 || !validatedStructuredOutput) return null;
+    const verification = await step.run("verify-findings", async (): Promise<VerificationResult | null> => {
+      if (!verificationEnabled || !validatedStructuredOutput) return null;
 
       const { issues, suggestions } = validatedStructuredOutput;
       if (issues.length === 0 && suggestions.length === 0) {
@@ -311,9 +348,9 @@ export const generateReview = inngest.createFunction(
       }
 
       try {
-        return await verifySecondReviewer({ diff, issues, suggestions, langCode });
+        return await verifyReview({ diff, issues, suggestions, langCode });
       } catch (error) {
-        console.warn("Second reviewer verification failed, continuing unverified:", error);
+        console.warn("Review verification failed, continuing unverified:", error);
         return { status: "skipped", issueVerdicts: [], suggestionVerdicts: [] };
       }
     });
@@ -363,13 +400,18 @@ export const generateReview = inngest.createFunction(
     const postedAsReview = await step.run("post-review", async () => {
       const suggestions = finalOutput?.suggestions ?? [];
       const issues = finalOutput?.issues ?? [];
+      const issueCount = issues.length;
+      const verdictsAligned =
+        !verified ||
+        checkLengthAlignment("post-review", "keptIssueVerdicts", issueCount, verified.keptIssueVerdicts.length);
+      const repeatsAligned = checkRepeatsAligned("post-review", issueCount, repeatAnnotations.length);
       const issuesWithRepeat = issues.map((issue, index) => {
-        const annotation = repeatAnnotations[index];
-        const confirmed = verified?.keptIssueVerdicts[index]?.verdict === "CONFIRMED";
+        const annotation = repeatsAligned ? repeatAnnotations[index] : undefined;
+        const confirmed = verdictsAligned && verified?.keptIssueVerdicts[index]?.verdict === "CONFIRMED";
         return {
           ...issue,
           ...(annotation?.repeat ? { repeat: annotation.repeat } : {}),
-          ...(confirmed ? { secondReviewerConfirmed: true } : {}),
+          ...(confirmed ? { verifierConfirmed: true } : {}),
         };
       });
       const inlineIssues = issuesWithRepeat.filter(i => i.file !== null && i.line !== null);
@@ -393,18 +435,26 @@ export const generateReview = inngest.createFunction(
       }
     });
 
-    // ── Step 6.5: 2차 리뷰어 별도 리뷰 엔트리 게시 (검증 수행 시에만) ──
+    // ── Step 6.5: 검수자 별도 리뷰 엔트리 게시 (검증 수행 시에만) ──
     // 1차 리뷰(Step 6)와 독립 — 실패해도 리뷰 흐름을 막지 않는다.
-    // reviewerCount=1이거나 검증 생략(skipped)·검토 대상 0개면 no-op.
-    await step.run("post-second-reviewer-review", async () => {
+    // 검증 비활성이거나 검증 생략(skipped)·검토 대상 0개면 no-op.
+    await step.run("post-verification-review", async () => {
       if (!verified || !verification) return false;
+
+      const keptIssues = finalOutput?.issues ?? [];
+      const issueCount = keptIssues.length;
+      // 판정 배열이 게시할 이슈와 어긋나면 잘못된 판정 목록 게시 방지를 위해 카드 전체 생략
+      const verdictsAligned = checkLengthAlignment(
+        "post-verification-review", "keptIssueVerdicts", issueCount, verified.keptIssueVerdicts.length,
+      );
+      if (!verdictsAligned) return false;
 
       const reviewedCount =
         verification.issueVerdicts.length + verification.suggestionVerdicts.length;
       if (reviewedCount === 0) return false;
 
-      const body = buildSecondReviewerReviewBody({
-        keptIssues: finalOutput?.issues ?? [],
+      const body = buildVerificationReviewBody({
+        keptIssues,
         keptIssueVerdicts: verified.keptIssueVerdicts,
         rejectedIssues: verified.rejectedIssues,
         rejectedSuggestions: verified.rejectedSuggestions,
@@ -413,10 +463,10 @@ export const generateReview = inngest.createFunction(
       });
 
       try {
-        await postSecondReviewerReview({ token, owner, repo, prNumber, headSha, body });
+        await postVerificationReview({ token, owner, repo, prNumber, headSha, body });
         return true;
       } catch (error) {
-        console.warn("Second reviewer review entry failed (main review was already posted):", error);
+        console.warn("Verification review entry failed (main review was already posted):", error);
         return false;
       }
     });
@@ -433,6 +483,16 @@ export const generateReview = inngest.createFunction(
       if (!repository) {
         throw new Error("Repository not found");
       }
+
+      const issueCount = finalOutput?.issues?.length ?? 0;
+      const suggestionCount = finalOutput?.suggestions?.length ?? 0;
+      const verdictsAligned =
+        !verified ||
+        checkLengthAlignment("save-review", "keptIssueVerdicts", issueCount, verified.keptIssueVerdicts.length);
+      const suggestionVerdictsAligned =
+        !verified ||
+        checkLengthAlignment("save-review", "keptSuggestionVerdicts", suggestionCount, verified.keptSuggestionVerdicts.length);
+      const repeatsAligned = checkRepeatsAligned("save-review", issueCount, repeatAnnotations.length);
 
       await prisma.$transaction(async (tx) => {
         const createdReview = await tx.review.create({
@@ -452,12 +512,14 @@ export const generateReview = inngest.createFunction(
                   );
                   const storedSchemaVersion = hasNewIssueShape ? REVIEW_SCHEMA_VERSION : 1;
                   // verification 블록은 optional 추가 필드 — 버전 범프 불필요 (storedReviewDataSchema 참조)
+                  // 판정 배열은 저장된 issues/suggestions와 index 정렬이 전제 —
+                  // 어긋나면 빈 배열로 저장한다 (대시보드 패널은 entry 없는 row를 건너뜀).
                   const verificationBlock = verification
                     ? {
                         status: verification.status,
                         model: VERIFIER_MODEL_ID,
-                        issueVerdicts: verified?.keptIssueVerdicts ?? [],
-                        suggestionVerdicts: verified?.keptSuggestionVerdicts ?? [],
+                        issueVerdicts: verdictsAligned ? verified?.keptIssueVerdicts ?? [] : [],
+                        suggestionVerdicts: suggestionVerdictsAligned ? verified?.keptSuggestionVerdicts ?? [] : [],
                         rejectedIssues: verified?.rejectedIssues ?? [],
                         rejectedSuggestions: verified?.rejectedSuggestions ?? [],
                       }
@@ -496,7 +558,7 @@ export const generateReview = inngest.createFunction(
         if (finalOutput?.issues?.length) {
           await tx.reviewIssue.createMany({
             data: finalOutput.issues.map((issue, index) => {
-              const annotation = repeatAnnotations[index];
+              const annotation = repeatsAligned ? repeatAnnotations[index] : undefined;
               return {
                 reviewId: createdReview.id,
                 userId,

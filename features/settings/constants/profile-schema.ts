@@ -12,7 +12,7 @@ export const profileUpdateSchema = z
     maxSuggestions: z
       .union([z.number().int().min(1).max(MAX_SUGGESTION_CAP), z.null()])
       .optional(),
-    reviewerCount: z.union([z.literal(1), z.literal(2)]).optional(),
+    verificationEnabled: z.boolean().optional(),
   })
   .refine((data) => Object.values(data).some((v) => v !== undefined), {
     message: "No profile fields were provided",

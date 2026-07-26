@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ShieldCheck, ShieldAlert } from "lucide-react";
 import type { StoredReviewData, ReviewVerification, VerificationVerdict } from "@/features/ai";
 import type { LanguageCode } from "@/shared/types/language";
-import { SECOND_REVIEWER_LABELS } from "@/shared/constants";
+import { VERIFICATION_LABELS } from "@/shared/constants";
 
 interface Props {
   issues: StoredReviewData["issues"];
@@ -18,7 +18,7 @@ const VERDICT_STYLE: Partial<Record<VerificationVerdict, string>> = {
 };
 
 export function VerificationPanel({ issues, verification, langCode }: Props) {
-  const labels = SECOND_REVIEWER_LABELS[langCode];
+  const labels = VERIFICATION_LABELS[langCode];
 
   if (verification.status === "skipped") {
     return (

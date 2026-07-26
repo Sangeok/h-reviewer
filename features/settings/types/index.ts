@@ -8,7 +8,7 @@ export interface UserProfile {
   createdAt: Date;
   preferredLanguage: LanguageCode;
   maxSuggestions: number | null;
-  reviewerCount: number;
+  verificationEnabled: boolean;
 }
 
 export type UpdateProfileResult =
@@ -20,7 +20,7 @@ export type UpdateProfileResult =
         email: string;
         preferredLanguage: string;
         maxSuggestions: number | null;
-        reviewerCount: number;
+        verificationEnabled: boolean;
       };
     }
   | { success: false; message: string };

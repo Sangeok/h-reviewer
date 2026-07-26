@@ -30,7 +30,7 @@ model User {
 
   preferredLanguage String @default("en")
   maxSuggestions    Int?   // null = PR 크기별 기본값 사용, 1-15 범위
-  reviewerCount     Int    @default(1) // 1 = 단독 리뷰(현행), 2 = 2차 리뷰어 검증 활성화
+  verificationEnabled Boolean @default(false) // true = 게시 전 검수자(LLM 팩트체크)가 오탐을 필터링
 
   @@unique([email])
   @@map("user")

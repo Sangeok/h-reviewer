@@ -37,7 +37,7 @@ export async function reviewPullRequest(
         userId: repository.user.id,
         preferredLanguage,
         maxSuggestions: repository.user.maxSuggestions ?? null,
-        reviewerCount: repository.user.reviewerCount,
+        verificationEnabled: repository.user.verificationEnabled,
       },
     });
 
