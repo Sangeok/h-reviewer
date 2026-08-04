@@ -2,8 +2,6 @@ export interface PRCommand {
   type: "summary" | "review";
 }
 
-export type EmbeddingTaskType = "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY" | "SEMANTIC_SIMILARITY";
-
 export type ReviewPullRequestResult =
   | {
       success: true;

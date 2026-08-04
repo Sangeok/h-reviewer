@@ -32,9 +32,11 @@
 - Hooks must start with `use` (example: `use-repositories.ts`).
 
 ## Testing Guidelines
-- No dedicated test runner is configured yet; required pre-PR checks are:
-  - `npm run lint`
-  - `npx tsc --noEmit`
+- Vitest is configured; required pre-PR checks are:
+  - `npm.cmd run test`
+  - `npm.cmd run lint`
+  - `npx.cmd tsc --noEmit`
+  - `npm.cmd run build`
 - For DB/auth/webhook changes, manually verify flows in local dev and list test steps in the PR.
 - If you add tests, use `*.test.ts` or `*.test.tsx` near the related module.
 
@@ -46,5 +48,6 @@
 
 ## Security & Configuration Tips
 - Do not commit `.env` or secrets.
-- Store OAuth, database, Pinecone, and Google AI credentials in environment variables only.
+- Store OAuth, database, payment, and Google AI credentials in environment variables only.
+- Every source-bearing Google AI environment must map its key to an API-key `Plan: Paid`, active-billing project, non-Free Billing Tier, and usable billing state. Record only a consistently calculated non-secret key fingerprint, project ID, plan, tier, billing plan, and readiness—never the secret value or account balance.
 - Schema changes must include Prisma migration files in `prisma/migrations/`.

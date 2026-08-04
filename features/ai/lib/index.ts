@@ -1,8 +1,18 @@
 export { generateEmbedding } from "./generate-embedding";
 export { getRepositoryWithToken } from "./get-repository-with-token";
-export { indexCodebase } from "./index-codebase";
-export { retrieveContext } from "./retrieve-context";
-export { classifyPRSize, getTopKForSizeMode } from "./review-size-policy";
+export {
+  buildDeterministicPrContext,
+  createEmptyDeterministicPrContext,
+} from "./build-deterministic-pr-context";
+export type {
+  BuildDeterministicPrContextParams,
+  DeterministicPrContext,
+  PrContextManifestEntry,
+  PrContextSelection,
+  PrContextSource,
+  PrContextTreeStatus,
+} from "./build-deterministic-pr-context";
+export { classifyPRSize } from "./review-size-policy";
 export type { ReviewSizeMode, PRSizeInfo } from "./review-size-policy";
 export { guardTextFeedback } from "./guard-text-feedback";
 export { structuredReviewSchema, storedReviewDataSchema } from "./review-schema";

@@ -1,10 +1,49 @@
 export type ReviewSizeMode = "tiny" | "small" | "normal" | "large";
 
-export interface PRSizeInfo {
+export type PRSizeInfo = {
   additions: number;
   deletions: number;
   changedFiles: number;
-}
+};
+
+export type DeterministicContextBudget = {
+  totalCharacters: number;
+  perChangedFileCharacters: number;
+  maxChangedFiles: number;
+  maxRelatedFiles: number;
+  changedLineRadius: number;
+};
+
+const DETERMINISTIC_CONTEXT_BUDGETS = {
+  tiny: {
+    totalCharacters: 12_000,
+    perChangedFileCharacters: 6_000,
+    maxChangedFiles: 2,
+    maxRelatedFiles: 0,
+    changedLineRadius: 20,
+  },
+  small: {
+    totalCharacters: 24_000,
+    perChangedFileCharacters: 8_000,
+    maxChangedFiles: 4,
+    maxRelatedFiles: 2,
+    changedLineRadius: 20,
+  },
+  normal: {
+    totalCharacters: 40_000,
+    perChangedFileCharacters: 12_000,
+    maxChangedFiles: 8,
+    maxRelatedFiles: 4,
+    changedLineRadius: 20,
+  },
+  large: {
+    totalCharacters: 24_000,
+    perChangedFileCharacters: 6_000,
+    maxChangedFiles: 8,
+    maxRelatedFiles: 2,
+    changedLineRadius: 12,
+  },
+} satisfies Record<ReviewSizeMode, DeterministicContextBudget>;
 
 /**
  * PR 크기에 따른 리뷰 모드를 결정한다.
@@ -22,26 +61,24 @@ export function classifyPRSize(info: PRSizeInfo): ReviewSizeMode {
   return "large";
 }
 
-/**
- * size 모드에 따른 RAG topK 값을 반환한다.
- * tiny는 RAG를 건너뛰므로 0 반환.
- */
-export function getTopKForSizeMode(mode: ReviewSizeMode): number {
-  switch (mode) {
-    case "tiny":
-      return 0;
-    case "small":
-      return 2;
-    case "normal":
-    case "large":
-      return 5;
-  }
+export function getDeterministicContextBudget(
+  mode: ReviewSizeMode,
+): DeterministicContextBudget {
+  return DETERMINISTIC_CONTEXT_BUDGETS[mode];
 }
 
 /**
  * size 모드별 포함할 섹션 목록을 반환한다.
  */
-export function getSectionPolicy(mode: ReviewSizeMode) {
+export function getSectionPolicy(mode: ReviewSizeMode): {
+  summary: boolean;
+  walkthrough: boolean;
+  sequenceDiagram: boolean;
+  strengths: boolean;
+  issues: boolean;
+  suggestions: boolean;
+  poem: boolean;
+} {
   switch (mode) {
     case "tiny":
       return {

@@ -1,11 +1,13 @@
 import parseDiff from "parse-diff";
 
-export interface ChangedFileInfo {
+export type DiffChangeType = "added" | "modified" | "deleted" | "renamed";
+
+export type ChangedFileInfo = {
   filePath: string;
   addedLines: number[];
-  /** rename 케이스일 때만 존재. diff의 `a/` 쪽(old path). */
+  changeType: DiffChangeType;
   originalPath?: string;
-}
+};
 
 /**
  * Git core.quotepath=true 모드가 출력하는 quoted path를 역변환한다.
@@ -59,10 +61,17 @@ export function parseDiffFiles(diffText: string): ChangedFileInfo[] {
       return hasTo || hasFrom;
     })
     .map((f) => {
-      const hasTo = f.to && f.to !== "/dev/null";
-      const hasFrom = f.from && f.from !== "/dev/null";
+      const hasTo = Boolean(f.to && f.to !== "/dev/null");
+      const hasFrom = Boolean(f.from && f.from !== "/dev/null");
       const rawPath = hasTo ? f.to! : f.from!;
       const isRename = hasTo && hasFrom && f.to !== f.from;
+      const changeType: DiffChangeType = !hasTo
+        ? "deleted"
+        : !hasFrom
+          ? "added"
+          : isRename
+            ? "renamed"
+            : "modified";
       const addedLines: number[] = [];
       for (const chunk of f.chunks) {
         for (const change of chunk.changes) {
@@ -74,6 +83,7 @@ export function parseDiffFiles(diffText: string): ChangedFileInfo[] {
       return {
         filePath: unescapeGitPath(rawPath),
         addedLines,
+        changeType,
         originalPath: isRename ? unescapeGitPath(f.from!) : undefined,
       };
     });
@@ -88,11 +98,18 @@ export function parseDiffToChangedFiles(diffText: string): string {
   return files
     .map((f) => {
       const lineRanges = summarizeLineRanges(f.addedLines);
-      if (f.addedLines.length === 0) {
-        return f.originalPath
-          ? `- ${f.filePath} (renamed from ${f.originalPath})`
-          : `- ${f.filePath} (deleted)`;
+      if (f.changeType === "deleted") {
+        return `- ${f.filePath} (deleted)`;
       }
+
+      if (f.changeType === "renamed" && f.addedLines.length === 0) {
+        return `- ${f.filePath} (renamed from ${f.originalPath})`;
+      }
+
+      if (f.changeType === "renamed") {
+        return `- ${f.filePath} (renamed from ${f.originalPath}): added lines [${lineRanges}]`;
+      }
+
       return `- ${f.filePath}: added lines [${lineRanges}]`;
     })
     .join("\n");
@@ -100,7 +117,7 @@ export function parseDiffToChangedFiles(diffText: string): string {
 
 /**
  * diff에 포함된 파일별 added line 번호 Set을 반환한다.
- * suggestion line 검증에 사용. rename의 old/new 경로 둘 다 매핑한다.
+ * suggestion line 검증에 사용. 게시 가능한 current path만 key로 둔다.
  */
 export function extractDiffAddedLinesMap(
   diffText: string,
@@ -109,22 +126,60 @@ export function extractDiffAddedLinesMap(
   for (const f of parseDiffFiles(diffText)) {
     const lineSet = new Set(f.addedLines);
     map.set(f.filePath, lineSet);
-    if (f.originalPath) map.set(f.originalPath, lineSet);
   }
   return map;
 }
 
 /**
- * diff에 포함된 파일 경로 Set을 반환한다.
- * rename의 old/new 경로 둘 다 포함하여 AI가 어느 쪽을 써도 매치된다.
+ * diff에 포함된 게시 가능한 current file path Set을 반환한다.
  */
 export function extractDiffFileSet(diffText: string): Set<string> {
   const set = new Set<string>();
   for (const f of parseDiffFiles(diffText)) {
     set.add(f.filePath);
-    if (f.originalPath) set.add(f.originalPath);
   }
   return set;
+}
+
+/** rename old path를 GitHub review에 사용할 current path로 변환한다. */
+export function extractDiffPathAliases(
+  diffText: string,
+): Map<string, string> {
+  const aliases = new Map<string, string>();
+
+  for (const file of parseDiffFiles(diffText)) {
+    if (file.originalPath) {
+      aliases.set(file.originalPath, file.filePath);
+    }
+  }
+
+  return aliases;
+}
+
+/** suggestion의 전체 before 범위가 diff의 added line인지 검증한다. */
+export function isRangeFullyAdded(
+  addedLinesByPath: Map<string, Set<number>>,
+  filePath: string,
+  startLine: number,
+  lineCount: number,
+): boolean {
+  if (
+    !Number.isInteger(startLine) ||
+    startLine < 1 ||
+    !Number.isInteger(lineCount) ||
+    lineCount < 1
+  ) {
+    return false;
+  }
+
+  const addedLines = addedLinesByPath.get(filePath);
+  if (!addedLines || addedLines.size === 0) return false;
+
+  for (let offset = 0; offset < lineCount; offset += 1) {
+    if (!addedLines.has(startLine + offset)) return false;
+  }
+
+  return true;
 }
 
 function summarizeLineRanges(lines: number[]): string {

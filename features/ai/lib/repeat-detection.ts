@@ -1,23 +1,34 @@
 import prisma from "@/lib/db";
 import { generateEmbedding } from "./generate-embedding";
 import {
+  EMBEDDING_OUTPUT_DIMENSION,
   REPEAT_MIN_TEXT_LENGTH,
   REPEAT_SIMILARITY_THRESHOLD,
   REPEAT_WINDOW_DAYS,
 } from "../constants";
 import type { StructuredIssue } from "../types";
 
-export interface RepeatBadgeInfo {
+export type RepeatBadgeInfo = {
   prUrl: string;
   date: string; // YYYY-MM-DD
-}
+};
 
-export interface RepeatAnnotation {
+export type RepeatAnnotation = {
   embedding: number[] | null;
   isRepeat: boolean;
   repeatOfIssueId: string | null;
   repeatSimilarity: number | null;
   repeat: RepeatBadgeInfo | null;
+};
+
+function isCompatibleEmbedding(value: unknown): value is number[] {
+  return (
+    Array.isArray(value) &&
+    value.length === EMBEDDING_OUTPUT_DIMENSION &&
+    value.every(
+      (entry) => typeof entry === "number" && Number.isFinite(entry),
+    )
+  );
 }
 
 function cosineSimilarity(a: number[], b: number[]): number {
@@ -81,14 +92,14 @@ export async function detectRepeatIssues(params: {
       continue;
     }
 
-    const embedding = await generateEmbedding(text, "SEMANTIC_SIMILARITY");
+    const embedding = await generateEmbedding(text);
 
     let best: { id: string; similarity: number; prUrl: string; createdAt: Date } | null = null;
     for (const candidate of candidates) {
       if (candidate.category !== issue.category) continue; // category-primary
-      if (!Array.isArray(candidate.embedding)) continue;
+      if (!isCompatibleEmbedding(candidate.embedding)) continue;
 
-      const similarity = cosineSimilarity(embedding, candidate.embedding as number[]);
+      const similarity = cosineSimilarity(embedding, candidate.embedding);
       if (similarity >= REPEAT_SIMILARITY_THRESHOLD && (!best || similarity > best.similarity)) {
         best = {
           id: candidate.id,

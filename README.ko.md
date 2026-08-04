@@ -6,9 +6,9 @@ AI 기반 GitHub 코드 리뷰 플랫폼으로, 지능형 자동화된 코드 �
 
 ## 🚀 주요 기능
 
-- **AI 기반 코드 리뷰** - Google AI와 RAG (검색 증강 생성)를 활용한 자동화된 코드 분석
+- **AI 기반 코드 리뷰** - Google AI와 정확한 PR head 컨텍스트를 활용한 자동화된 코드 분석
 - **GitHub 통합** - 원활한 OAuth 인증 및 저장소 동기화
-- **벡터 검색** - Pinecone을 활용한 지능형 코드베이스 인덱싱으로 컨텍스트 기반 리뷰 제공
+- **결정적 PR 컨텍스트** - 영구 코드 인덱스 없이 정확한 PR head에서 변경 파일과 제한된 직접 연관 파일을 리뷰
 - **백그라운드 처리** - Inngest를 통한 비동기 리뷰 생성으로 최적의 성능 보장
 - **실시간 웹훅** - Push 이벤트 및 Pull Request 시 자동 리뷰 트리거
 - **사용량 추적** - 내장된 할당량 관리 및 구독 티어 지원
@@ -33,11 +33,10 @@ AI 기반 GitHub 코드 리뷰 플랫폼으로, 지능형 자동화된 코드 �
 - **Better-Auth** - Prisma 어댑터를 사용하는 모던 인증 시스템
 - **GitHub OAuth** - 저장소 접근 권한을 가진 소셜 로그인
 
-### AI & 벡터 검색
+### AI 리뷰
 
-- **Google AI SDK** - 임베딩 생성 및 AI 분석
-- **Pinecone** - 시맨틱 코드 검색을 위한 벡터 데이터베이스
-- **RAG 파이프라인** - 컨텍스트 기반 리뷰를 위한 검색 증강 생성
+- **Google AI SDK** - 리뷰 생성, 2차 리뷰어 검증, 반복 이슈 유사도 분석
+- **결정적 컨텍스트 빌더** - 정확한 PR head의 변경 파일, 연관 테스트, 직접 import를 제한된 예산 안에서 수집
 
 ### 백그라운드 작업
 
@@ -71,7 +70,6 @@ AI 기반 GitHub 코드 리뷰 플랫폼으로, 지능형 자동화된 코드 �
 다음 서비스 계정도 필요합니다:
 
 - **GitHub** (OAuth 및 API 접근용)
-- **Pinecone** (벡터 데이터베이스)
 - **Google AI** (Generative AI API)
 
 ## 🔧 설치 및 설정
@@ -107,12 +105,16 @@ GITHUB_CLIENT_SECRET="your_github_client_secret"
 
 # AI 서비스
 GOOGLE_GENERATIVE_AI_API_KEY="your_google_ai_api_key"
-PINECONE_DB_API_KEY="your_pinecone_api_key"
+
+# 서버 전용 리뷰 컨텍스트 스위치. 승인된 diff-only 롤백 배포에서만 false를 사용합니다.
+DETERMINISTIC_PR_CONTEXT_ENABLED="true"
 
 # 선택사항: Inngest (백그라운드 작업용)
 INNGEST_EVENT_KEY="your_inngest_event_key"
 INNGEST_SIGNING_KEY="your_inngest_signing_key"
 ```
+
+소스 코드를 Google AI로 보내는 모든 환경은 Google AI Studio API 키 화면에서 `Plan: Paid`로 표시되고, 활성 Cloud Billing과 non-Free Billing Tier 및 사용 가능한 `Prepay` 또는 `Postpay` 상태에 연결된 프로젝트 키만 사용해야 합니다. `Plan: Free`, `Set up billing`, `Set up Prepay`, `No credits` 또는 상태를 확인할 수 없는 키에는 소스를 보내지 않습니다. Paid Service도 abuse monitoring을 위한 제한적 prompt/response logging이 있을 수 있으며 zero-data retention은 자동 보장되지 않습니다.
 
 ### 4. 데이터베이스 설정
 
@@ -149,14 +151,7 @@ npx prisma studio
 5. **Client ID**와 **Client Secret**을 `.env` 파일에 복사
 6. **중요**: 저장소 접근을 위해 `repo` 스코프 요청
 
-### 6. Pinecone 설정
-
-1. [Pinecone](https://www.pinecone.io/)에서 계정 생성
-2. `hreviewer`라는 이름의 새 인덱스 생성
-3. 차원(dimension) 설정: `768` (Google AI 임베딩 차원)
-4. API 키를 `.env`의 `PINECONE_DB_API_KEY`로 복사
-
-### 7. Google AI 설정
+### 6. Google AI 설정
 
 1. [Google AI Studio](https://makersuite.google.com/app/apikey)에서 API 키 발급
 2. `.env`의 `GOOGLE_GENERATIVE_AI_API_KEY`로 복사
@@ -234,7 +229,7 @@ hreviewer/
 │   ├── review/                   # 코드 리뷰 기능
 │   ├── settings/                 # 사용자 설정
 │   ├── dashboard/                # 대시보드 기능
-│   ├── ai/lib/                   # AI/RAG 기능
+│   ├── ai/lib/                   # AI 리뷰 및 결정적 PR 컨텍스트
 │   └── github/lib/               # GitHub API 래퍼
 ├── prisma/                       # 데이터베이스 스키마 & 마이그레이션
 │   ├── schema.prisma             # Prisma 스키마
@@ -363,7 +358,6 @@ npx tsc --noEmit
 - [Next.js 문서](https://nextjs.org/docs)
 - [Prisma 문서](https://www.prisma.io/docs)
 - [Better-Auth 문서](https://better-auth.com)
-- [Pinecone 문서](https://docs.pinecone.io)
 - [Google AI 문서](https://ai.google.dev)
 - [Inngest 문서](https://www.inngest.com/docs)
 
