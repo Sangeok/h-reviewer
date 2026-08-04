@@ -6,9 +6,9 @@ AI-powered GitHub code review platform that provides intelligent, automated code
 
 ## 🚀 Features
 
-- **AI-Powered Code Reviews** - Automated code analysis using Google AI and RAG (Retrieval-Augmented Generation)
+- **AI-Powered Code Reviews** - Automated code analysis using Google AI and exact PR-head context
 - **GitHub Integration** - Seamless OAuth authentication and repository synchronization
-- **Vector Search** - Intelligent codebase indexing using Pinecone for context-aware reviews
+- **Deterministic PR Context** - Reviews changed files and bounded directly related files from the exact PR head commit without a persistent code index
 - **Background Processing** - Async review generation with Inngest for optimal performance
 - **Real-time Webhooks** - Automatic review triggers on push events and pull requests
 - **Usage Tracking** - Built-in quota management and subscription tier support
@@ -30,10 +30,9 @@ AI-powered GitHub code review platform that provides intelligent, automated code
 - **Better-Auth** - Modern authentication with Prisma adapter
 - **GitHub OAuth** - Social login with repository access scope
 
-### AI & Vector Search
-- **Google AI SDK** - Embedding generation and AI analysis
-- **Pinecone** - Vector database for semantic code search
-- **RAG Pipeline** - Retrieval-Augmented Generation for context-aware reviews
+### AI Review
+- **Google AI SDK** - Review generation, second-reviewer verification, and repeat-issue similarity
+- **Deterministic Context Builder** - Bounded changed-file, related-test, and direct-import context from the exact PR head
 
 ### Background Jobs
 - **Inngest** - Async job processing for code review generation
@@ -62,7 +61,6 @@ Before you begin, ensure you have the following installed:
 
 You'll also need accounts for:
 - **GitHub** (for OAuth and API access)
-- **Pinecone** (vector database)
 - **Google AI** (Generative AI API)
 
 ## 🔧 Installation & Setup
@@ -98,12 +96,16 @@ GITHUB_CLIENT_SECRET="your_github_client_secret"
 
 # AI Services
 GOOGLE_GENERATIVE_AI_API_KEY="your_google_ai_api_key"
-PINECONE_DB_API_KEY="your_pinecone_api_key"
+
+# Server-only review context switch. Use false only for an approved diff-only rollback deployment.
+DETERMINISTIC_PR_CONTEXT_ENABLED="true"
 
 # Optional: Inngest (for background jobs)
 INNGEST_EVENT_KEY="your_inngest_event_key"
 INNGEST_SIGNING_KEY="your_inngest_signing_key"
 ```
+
+Any environment that sends source code to Google AI must use a key whose Google AI Studio API-key page shows `Plan: Paid`, whose project has active Cloud Billing, a non-Free billing tier, and a usable `Prepay` or `Postpay` state. Do not send source when the key shows `Plan: Free`, `Set up billing`, `Set up Prepay`, `No credits`, or an unknown state. Paid Service use can still include limited prompt/response logging for abuse monitoring; zero-data retention is not automatic.
 
 ### 4. Database Setup
 
@@ -140,14 +142,7 @@ npx prisma studio
 5. Copy **Client ID** and **Client Secret** to your `.env` file
 6. **IMPORTANT**: Request `repo` scope for repository access
 
-### 6. Pinecone Setup
-
-1. Create account at [Pinecone](https://www.pinecone.io/)
-2. Create a new index named `hreviewer`
-3. Set dimension: `768` (Google AI embedding dimension)
-4. Copy API key to `.env` as `PINECONE_DB_API_KEY`
-
-### 7. Google AI Setup
+### 6. Google AI Setup
 
 1. Get API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
 2. Copy to `.env` as `GOOGLE_GENERATIVE_AI_API_KEY`
@@ -225,7 +220,7 @@ hreviewer/
 │   ├── review/                   # Code review functionality
 │   ├── settings/                 # User settings
 │   ├── dashboard/                # Dashboard features
-│   ├── ai/lib/                   # AI/RAG functionality
+│   ├── ai/lib/                   # AI review and deterministic PR context
 │   └── github/lib/               # GitHub API wrapper
 ├── prisma/                       # Database schema & migrations
 │   ├── schema.prisma             # Prisma schema
@@ -354,7 +349,6 @@ npx tsc --noEmit
 - [Next.js Documentation](https://nextjs.org/docs)
 - [Prisma Documentation](https://www.prisma.io/docs)
 - [Better-Auth Documentation](https://better-auth.com)
-- [Pinecone Documentation](https://docs.pinecone.io)
 - [Google AI Documentation](https://ai.google.dev)
 - [Inngest Documentation](https://www.inngest.com/docs)
 

@@ -156,62 +156,6 @@ export const deleteWebhook = async (owner: string, repo: string) => {
   }
 };
 
-export async function getRepoFileContents(
-  token: string,
-  owner: string,
-  repo: string,
-  path: string = ""
-): Promise<{ path: string; content: string }[]> {
-  const octokit = createOctokitClient(token);
-
-  const { data } = await octokit.rest.repos.getContent({
-    owner,
-    repo,
-    path,
-  });
-
-  if (!Array.isArray(data)) {
-    if (data.type === "file" && data.content) {
-      return [
-        {
-          path: data.path,
-          content: Buffer.from(data.content, "base64").toString("utf-8"),
-        },
-      ];
-    }
-    return [];
-  }
-
-  let files: { path: string; content: string }[] = [];
-  for (const item of data) {
-    if (item.type === "file") {
-      const { data: fileData } = await octokit.rest.repos.getContent({
-        owner,
-        repo,
-        path: item.path,
-      });
-
-      if (!Array.isArray(fileData) && fileData.type === "file" && fileData.content) {
-        // Filter out non-code files if needed (images, etc.)
-        // For now, let's include everything that looks like text
-
-        if (!item.path.match(/\.(png|jpg|jpeg|gif|svg|webp|svg|ico|pdf|zip|tar|gz)$/i)) {
-          files.push({
-            path: item.path,
-            content: Buffer.from(fileData.content, "base64").toString("utf-8"),
-          });
-        }
-      }
-    } else if (item.type === "dir") {
-      const subFiles = await getRepoFileContents(token, owner, repo, item.path);
-
-      files = files.concat(subFiles);
-    }
-  }
-
-  return files;
-}
-
 interface GetPullRequestDiffParams {
   token: string;
   owner: string;
@@ -219,36 +163,170 @@ interface GetPullRequestDiffParams {
   prNumber: number;
 }
 
-export async function getPullRequestDiff(params: GetPullRequestDiffParams) {
+export type PullRequestHeadRepository = {
+  owner: string;
+  repo: string;
+};
+
+export type PullRequestDiffResult = {
+  title: string;
+  diff: string;
+  description: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  baseSha: string;
+  headSha: string;
+  headBranch: string;
+  headRepository: PullRequestHeadRepository | null;
+  state: string;
+  merged: boolean;
+};
+
+type PullRequestSnapshot = {
+  title: string;
+  body: string | null;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  updated_at: string;
+  base: { sha: string };
+  head: {
+    sha: string;
+    ref: string;
+    repo: {
+      name: string;
+      owner?: { login: string } | null;
+    } | null;
+  };
+  state: string;
+  merged: boolean;
+};
+
+const MAX_PR_SNAPSHOT_ATTEMPTS = 2;
+
+function mapPullRequestDiffResult(
+  pullRequest: PullRequestSnapshot,
+  diff: string,
+): PullRequestDiffResult {
+  const headOwner = pullRequest.head.repo?.owner?.login;
+
+  return {
+    title: pullRequest.title,
+    diff,
+    description: pullRequest.body || "",
+    additions: pullRequest.additions,
+    deletions: pullRequest.deletions,
+    changedFiles: pullRequest.changed_files,
+    baseSha: pullRequest.base.sha,
+    headSha: pullRequest.head.sha,
+    headBranch: pullRequest.head.ref,
+    headRepository: headOwner && pullRequest.head.repo
+      ? {
+          owner: headOwner,
+          repo: pullRequest.head.repo.name,
+        }
+      : null,
+    state: pullRequest.state,
+    merged: pullRequest.merged,
+  };
+}
+
+export async function getPullRequestDiff(
+  params: GetPullRequestDiffParams,
+): Promise<PullRequestDiffResult> {
   const { token, owner, repo, prNumber } = params;
   const octokit = createOctokitClient(token);
 
-  const { data: pr } = await octokit.rest.pulls.get({
+  for (let attempt = 0; attempt < MAX_PR_SNAPSHOT_ATTEMPTS; attempt += 1) {
+    const { data: before } = await octokit.rest.pulls.get({
+      owner,
+      repo,
+      pull_number: prNumber,
+    });
+
+    const { data: diff } = await octokit.rest.pulls.get({
+      owner,
+      repo,
+      pull_number: prNumber,
+      mediaType: {
+        format: "diff",
+      },
+    });
+
+    const { data: after } = await octokit.rest.pulls.get({
+      owner,
+      repo,
+      pull_number: prNumber,
+    });
+
+    const isStable =
+      before.head.sha === after.head.sha &&
+      before.base.sha === after.base.sha &&
+      before.updated_at === after.updated_at;
+
+    if (isStable) {
+      return mapPullRequestDiffResult(
+        after,
+        diff as unknown as string,
+      );
+    }
+  }
+
+  throw new Error("Pull request changed while fetching a stable diff snapshot");
+}
+
+type GetRepositoryFileTreeParams = {
+  token: string;
+  owner: string;
+  repo: string;
+  commitSha: string;
+  signal?: AbortSignal;
+};
+
+export type RepositoryTreeFile = {
+  path: string;
+  size: number | null;
+};
+
+export type RepositoryFileTree = {
+  files: RepositoryTreeFile[];
+  truncated: boolean;
+};
+
+export async function getRepositoryFileTree(
+  params: GetRepositoryFileTreeParams,
+): Promise<RepositoryFileTree> {
+  const { token, owner, repo, commitSha, signal } = params;
+  const octokit = createOctokitClient(token);
+
+  const { data: commit } = await octokit.rest.repos.getCommit({
     owner,
     repo,
-    pull_number: prNumber,
+    ref: commitSha,
+    ...(signal ? { request: { signal } } : {}),
   });
 
-  const { data: diff } = await octokit.rest.pulls.get({
+  const { data: tree } = await octokit.rest.git.getTree({
     owner,
     repo,
-    pull_number: prNumber,
-    mediaType: {
-      format: "diff",
-    },
+    tree_sha: commit.commit.tree.sha,
+    recursive: "true",
+    ...(signal ? { request: { signal } } : {}),
   });
 
   return {
-    title: pr.title,
-    diff: diff as unknown as string,
-    description: pr.body || "",
-    additions: pr.additions,
-    deletions: pr.deletions,
-    changedFiles: pr.changed_files,
-    headSha: pr.head.sha,
-    headBranch: pr.head.ref,
-    state: pr.state,
-    merged: pr.merged,
+    files: tree.tree.flatMap((entry): RepositoryTreeFile[] => {
+      if (entry.type !== "blob" || typeof entry.path !== "string") {
+        return [];
+      }
+
+      return [{
+        path: entry.path,
+        size: typeof entry.size === "number" ? entry.size : null,
+      }];
+    }),
+    truncated: Boolean(tree.truncated),
   };
 }
 
@@ -258,15 +336,17 @@ interface GetFileContentParams {
   repo: string;
   path: string;
   ref: string;
+  signal?: AbortSignal;
 }
 
 export async function getFileContent(params: GetFileContentParams): Promise<{ content: string; sha: string } | null> {
-  const { token, owner, repo, path, ref } = params;
+  const { token, owner, repo, path, ref, signal } = params;
   const octokit = createOctokitClient(token);
 
   try {
     const { data } = await octokit.rest.repos.getContent({
       owner, repo, path, ref,
+      ...(signal ? { request: { signal } } : {}),
     });
 
     if (Array.isArray(data) || data.type !== "file" || !data.content) {

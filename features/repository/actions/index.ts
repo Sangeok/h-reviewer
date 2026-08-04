@@ -3,7 +3,6 @@
 import prisma from "@/lib/db";
 import { requireAuthSession } from "@/lib/server-utils";
 import { createWebhook, deleteWebhook, getRepositories } from "@/lib/github";
-import { inngest } from "@/inngest/client";
 import { canConnectRepository, incrementRepositoryCount, decrementRepositoryCount } from "@/features/payment/lib/subscription";
 import { isGitHubRepositoryDto, mapGitHubRepositoryDtoToRepository } from "../lib/map-github-repository";
 import type { ConnectRepositoryParams, ConnectRepositoryResult, Repository } from "../types";
@@ -103,20 +102,6 @@ export async function connectRepository({
     }
 
     throw error;
-  }
-
-  // Non-critical side effect: indexing can retry later, so we don't fail connection on queue errors.
-  try {
-    await inngest.send({
-      name: "repository.connected",
-      data: {
-        owner,
-        repo,
-        userId: session.user.id,
-      },
-    });
-  } catch (error) {
-    console.error("Failed to trigger repository indexing", error);
   }
 
   return {

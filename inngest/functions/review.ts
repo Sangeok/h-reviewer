@@ -4,20 +4,91 @@ import { inngest } from "../client";
 import { getPullRequestDiff, postReviewComment } from "@/lib/github/github";
 import { postPRReviewWithSuggestions, postVerificationReview } from "@/features/review/lib/pr-review";
 import {
-  retrieveContext, classifyPRSize, getTopKForSizeMode,
+  buildDeterministicPrContext, createEmptyDeterministicPrContext, classifyPRSize,
   structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt,
   getIssueLimit, formatStructuredReviewToMarkdown, REVIEW_SCHEMA_VERSION, guardTextFeedback,
   detectRepeatIssues,
   verifyReview, applyVerification, buildVerificationTrace, buildVerificationReviewBody, VERIFIER_MODEL_ID,
 } from "@/features/ai";
-import type { ReviewSizeMode, VerificationResult } from "@/features/ai";
+import type {
+  ReviewSizeMode,
+  StructuredReviewOutput,
+  VerificationResult,
+} from "@/features/ai";
 import { generateText, Output } from "ai";
 import { google } from "@ai-sdk/google";
 import { sanitizeMermaidSequenceDiagrams } from "@/lib/github/github-markdown";
 import { isValidLanguageCode } from "@/features/settings";
 import { SECTION_HEADERS, DIAGRAM_FALLBACK_TEXT } from "@/shared/constants";
-import { parseDiffToChangedFiles, extractDiffFileSet, extractDiffAddedLinesMap, unescapeGitPath } from "@/lib/github/diff-parser";
+import {
+  extractDiffAddedLinesMap,
+  extractDiffFileSet,
+  extractDiffPathAliases,
+  isRangeFullyAdded,
+  parseDiffToChangedFiles,
+  unescapeGitPath,
+} from "@/lib/github/diff-parser";
 import type { LanguageCode } from "@/features/settings";
+
+const CONTEXT_BUILD_TIMEOUT_MS = 45_000;
+const AI_GENERATION_TIMEOUT_MS = 100_000;
+const deterministicContextEnabled =
+  process.env.DETERMINISTIC_PR_CONTEXT_ENABLED !== "false";
+
+type SafeExternalErrorSummary = {
+  name: string;
+  status: number | null;
+};
+
+type GenerateAiReviewStepResult = {
+  rawReview: string;
+  structuredOutput: StructuredReviewOutput | null;
+};
+
+function getSafeExternalErrorSummary(
+  error: unknown,
+): SafeExternalErrorSummary {
+  const status =
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof error.status === "number"
+      ? error.status
+      : null;
+
+  return {
+    name: error instanceof Error ? error.name : "UnknownError",
+    status,
+  };
+}
+
+function normalizeGenerateAiReviewStepResult(
+  value: unknown,
+): GenerateAiReviewStepResult {
+  if (typeof value === "string") {
+    return { rawReview: value, structuredOutput: null };
+  }
+
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("rawReview" in value) ||
+    typeof value.rawReview !== "string"
+  ) {
+    throw new Error("Unsupported memoized AI review result");
+  }
+
+  if (!("structuredOutput" in value) || value.structuredOutput === null) {
+    return { rawReview: value.rawReview, structuredOutput: null };
+  }
+
+  const parsed = structuredReviewSchema.safeParse(value.structuredOutput);
+
+  return {
+    rawReview: value.rawReview,
+    structuredOutput: parsed.success ? parsed.data : null,
+  };
+}
 
 /**
  * AI가 echo한 파일 경로를 diffFiles의 정규화된 경로로 해결한다.
@@ -29,14 +100,14 @@ function resolveToDiffPath(
   file: string,
   diffFiles: Set<string>,
   diffArray: string[],
+  pathAliases: Map<string, string>,
   scope: "walkthrough" | "issues" | "suggestions",
 ): string | null {
-  if (diffFiles.has(file)) return file;
-
   const unescaped = unescapeGitPath(file);
-  if (unescaped !== file && diffFiles.has(unescaped)) return unescaped;
+  const currentPath = pathAliases.get(unescaped) ?? unescaped;
+  if (diffFiles.has(currentPath)) return currentPath;
 
-  const basename = file.split("/").pop() ?? file;
+  const basename = currentPath.split("/").pop() ?? currentPath;
   const matches = diffArray.filter(
     (f) => f.endsWith("/" + basename) || f === basename,
   );
@@ -58,9 +129,16 @@ function resolveEntryFile<T extends { file: string }>(
   entry: T,
   diffFiles: Set<string>,
   diffArray: string[],
+  pathAliases: Map<string, string>,
   scope: "walkthrough" | "issues" | "suggestions",
 ): T | null {
-  const resolved = resolveToDiffPath(entry.file, diffFiles, diffArray, scope);
+  const resolved = resolveToDiffPath(
+    entry.file,
+    diffFiles,
+    diffArray,
+    pathAliases,
+    scope,
+  );
   if (!resolved) return null;
   return resolved === entry.file ? entry : { ...entry, file: resolved };
 }
@@ -109,60 +187,165 @@ export const generateReview = inngest.createFunction(
     const { owner, repo, prNumber, userId, preferredLanguage = "en", maxSuggestions = null, verificationEnabled = false } = event.data;
 
     // ── Step 1: PR 데이터 + 크기 정보 가져오기 ──
-    const { diff, title, description, token, additions, deletions, changedFiles, headSha } =
-      await step.run("fetch-pr-data", async () => {
-        const account = await prisma.account.findFirst({
-          where: {
-            userId,
-            providerId: "github",
-          },
-        });
-
-        if (!account?.accessToken) {
-          throw new Error("Github access token not found");
-        }
-
-        const data = await getPullRequestDiff({ token: account.accessToken, owner, repo, prNumber });
-
-        return { ...data, token: account.accessToken };
+    const fetchResult = await step.run("fetch-pr-data", async () => {
+      const account = await prisma.account.findFirst({
+        where: {
+          userId,
+          providerId: "github",
+        },
       });
+
+      if (!account?.accessToken) {
+        throw new Error("Github access token not found");
+      }
+
+      const data = await getPullRequestDiff({
+        token: account.accessToken,
+        owner,
+        repo,
+        prNumber,
+      });
+
+      return { ...data, token: account.accessToken };
+    });
+
+    const {
+      diff,
+      title,
+      description,
+      token,
+      additions,
+      deletions,
+      changedFiles,
+      headSha,
+    } = fetchResult;
+
+    const baseSha =
+      "baseSha" in fetchResult && typeof fetchResult.baseSha === "string"
+        ? fetchResult.baseSha
+        : null;
+
+    const headRepository =
+      "headRepository" in fetchResult
+        ? fetchResult.headRepository ?? null
+        : null;
 
     // ── Step 2: 크기 분류 + 언어 코드 (이후 모든 step에서 공유) ──
     const langCode: LanguageCode = isValidLanguageCode(preferredLanguage) ? preferredLanguage : "en";
     const sizeMode: ReviewSizeMode = classifyPRSize({ additions, deletions, changedFiles });
-    const topK = getTopKForSizeMode(sizeMode);
 
-    // ── Step 3: RAG 컨텍스트 (tiny면 생략) ──
-    const context = await step.run("generate-context", async () => {
-      if (topK === 0) return [];
+    // ── Step 3: deterministic context + AI 리뷰 생성 ──
+    // 같은 step ID와 반환 shape를 유지해 배포 전 memoized run과 호환한다.
+    const aiStepResult: unknown = await step.run("generate-ai-review", async () => {
+      let deterministicContext = createEmptyDeterministicPrContext(headSha);
 
-      const query = `${title}\n\n${description}`;
-      return await retrieveContext(query, `${owner}/${repo}`, topK);
-    });
+      if (!deterministicContextEnabled) {
+        console.warn("[pr-context] disabled by operator; using diff-only review", {
+          owner,
+          repo,
+          prNumber,
+          baseSha,
+          headSha,
+          characters: 0,
+          fileCount: 0,
+          manifestIdentitySha256: null,
+          failedFileCount: 0,
+          treeStatus: "not-requested",
+        });
+      } else if (!headRepository) {
+        console.warn("[pr-context] head repository unavailable; using diff-only review", {
+          owner,
+          repo,
+          prNumber,
+          baseSha,
+          headSha,
+          characters: 0,
+          fileCount: 0,
+          manifestIdentitySha256: null,
+          failedFileCount: 0,
+          treeStatus: "not-requested",
+        });
+      } else {
+        try {
+          deterministicContext = await buildDeterministicPrContext({
+            token,
+            owner: headRepository.owner,
+            repo: headRepository.repo,
+            headSha,
+            diff,
+            sizeMode,
+            signal: AbortSignal.timeout(CONTEXT_BUILD_TIMEOUT_MS),
+          });
 
-    // ── Step 4: AI 리뷰 생성 ──
-    // BREAKING CHANGE: 기존 step은 plain string(text)을 반환했으나, 변경 후 { rawReview, structuredOutput } 객체를 반환한다.
-    const { rawReview, structuredOutput } = await step.run("generate-ai-review", async () => {
+          const sourceCounts = {
+            changed: 0,
+            "related-test": 0,
+            "direct-import": 0,
+          };
+          for (const entry of deterministicContext.manifest) {
+            sourceCounts[entry.source] += 1;
+          }
+
+          console.info("[pr-context] context built", {
+            owner,
+            repo,
+            prNumber,
+            baseSha,
+            headSha,
+            characters: deterministicContext.content.length,
+            fileCount: deterministicContext.manifest.length,
+            manifestIdentitySha256:
+              deterministicContext.manifestIdentitySha256,
+            sourceCounts,
+            truncatedFileCount: deterministicContext.manifest.filter(
+              (entry) => entry.truncated,
+            ).length,
+            omittedByBudgetCount: deterministicContext.omittedByBudgetCount,
+            failedFileCount: deterministicContext.failedFileCount,
+            treeStatus: deterministicContext.treeStatus,
+          });
+        } catch (error) {
+          console.warn("[pr-context] context build failed; using diff-only review", {
+            owner,
+            repo,
+            prNumber,
+            baseSha,
+            headSha,
+            error: getSafeExternalErrorSummary(error),
+          });
+        }
+      }
+
       const headers = SECTION_HEADERS[langCode];
       const changedFilesSummary = parseDiffToChangedFiles(diff);
 
       // 구조화 출력 시도
       try {
         const prompt = buildStructuredPrompt({
-          title, description, diff, context, langCode, sizeMode, changedFilesSummary, maxSuggestions,
+          title,
+          description,
+          diff,
+          deterministicContext: deterministicContext.content,
+          langCode,
+          sizeMode,
+          changedFilesSummary,
+          maxSuggestions,
         });
 
         const { experimental_output } = await generateText({
           model: google("gemini-2.5-flash"),
           experimental_output: Output.object({ schema: structuredReviewSchema }),
           prompt,
+          abortSignal: AbortSignal.timeout(AI_GENERATION_TIMEOUT_MS),
         });
 
         if (experimental_output) {
           // SDK 레벨 검증을 신뢰하지 않고 Zod로 재검증 — 비정상 line 값 등 방어
           const parsed = structuredReviewSchema.safeParse(experimental_output);
           if (!parsed.success) {
-            console.warn("Structured output re-validation failed:", parsed.error.message);
+            console.warn("Structured output re-validation failed", {
+              issueCount: parsed.error.issues.length,
+            });
             // fallback으로 진행
           } else {
             const markdown = formatStructuredReviewToMarkdown(parsed.data, langCode);
@@ -170,20 +353,39 @@ export const generateReview = inngest.createFunction(
           }
         }
       } catch (error) {
-        console.warn("Structured output failed, falling back to markdown:", error);
+        console.warn("Structured output failed; using markdown fallback", {
+          error: getSafeExternalErrorSummary(error),
+        });
       }
 
       // 폴백: 기존 마크다운 경로
-      const fallbackPrompt = buildFallbackPrompt({
-        title, description, diff, context, langCode, sizeMode, headers,
-      });
-      const { text } = await generateText({
-        model: google("gemini-2.5-flash"),
-        prompt: fallbackPrompt,
-      });
+      try {
+        const fallbackPrompt = buildFallbackPrompt({
+          title,
+          description,
+          diff,
+          deterministicContext: deterministicContext.content,
+          langCode,
+          sizeMode,
+          headers,
+        });
+        const { text } = await generateText({
+          model: google("gemini-2.5-flash"),
+          prompt: fallbackPrompt,
+          abortSignal: AbortSignal.timeout(AI_GENERATION_TIMEOUT_MS),
+        });
 
-      return { rawReview: text, structuredOutput: null };
+        return { rawReview: text, structuredOutput: null };
+      } catch (error) {
+        console.error("AI review generation failed", {
+          error: getSafeExternalErrorSummary(error),
+        });
+        throw new Error("AI review generation failed");
+      }
     });
+
+    const { rawReview, structuredOutput } =
+      normalizeGenerateAiReviewStepResult(aiStepResult);
 
     // ── Step 5: 검증 게이트 (validate → markdown 재생성 → sanitize) ──
     const { review, validatedStructuredOutput } = await step.run("validate-review", async () => {
@@ -204,13 +406,21 @@ export const generateReview = inngest.createFunction(
       // ── 2. diffFiles / diffArray 한 번만 계산 ──
       const diffFiles = extractDiffFileSet(diff);
       const diffArray = Array.from(diffFiles);
+      const pathAliases = extractDiffPathAliases(diff);
+      const addedLinesMap = extractDiffAddedLinesMap(diff);
 
       // ── 3. walkthrough 검증: diff 파일 목록으로 필터링 + basename fallback ──
       if (validatedOutput?.walkthrough) {
         validatedOutput = {
           ...validatedOutput,
           walkthrough: validatedOutput.walkthrough
-            .map((entry) => resolveEntryFile(entry, diffFiles, diffArray, "walkthrough"))
+            .map((entry) => resolveEntryFile(
+              entry,
+              diffFiles,
+              diffArray,
+              pathAliases,
+              "walkthrough",
+            ))
             .filter((e): e is NonNullable<typeof e> => e !== null),
         };
       }
@@ -223,7 +433,13 @@ export const generateReview = inngest.createFunction(
             .map((issue) => {
               if (issue.file === null) return issue; // project-level
               if (issue.line !== null && issue.line < 1) return null;
-              const resolved = resolveToDiffPath(issue.file, diffFiles, diffArray, "issues");
+              const resolved = resolveToDiffPath(
+                issue.file,
+                diffFiles,
+                diffArray,
+                pathAliases,
+                "issues",
+              );
               if (!resolved) return null;
               return resolved === issue.file ? issue : { ...issue, file: resolved };
             })
@@ -236,36 +452,50 @@ export const generateReview = inngest.createFunction(
         validatedOutput = {
           ...validatedOutput,
           suggestions: validatedOutput.suggestions
-            .map((s) => resolveEntryFile(s, diffFiles, diffArray, "suggestions"))
+            .map((suggestion) => resolveEntryFile(
+              suggestion,
+              diffFiles,
+              diffArray,
+              pathAliases,
+              "suggestions",
+            ))
             .filter((s): s is NonNullable<typeof s> => s !== null),
         };
       }
 
       // ── 5-1. suggestions line 검증: diff added lines 범위 체크 ──
       if (validatedOutput?.suggestions && validatedOutput.suggestions.length > 0) {
-        const addedLinesMap = extractDiffAddedLinesMap(diff);
         validatedOutput = {
           ...validatedOutput,
-          suggestions: validatedOutput.suggestions.filter((s) => {
+          suggestions: validatedOutput.suggestions.filter((suggestion) => {
             // 타입 가드: line이 유효한 양의 정수인지 확인
-            if (typeof s.line !== "number" || !Number.isFinite(s.line) || s.line < 1) {
+            if (
+              typeof suggestion.line !== "number" ||
+              !Number.isInteger(suggestion.line) ||
+              suggestion.line < 1
+            ) {
               console.warn("[suggestions] dropped entry", {
-                file: s.file, line: s.line, reason: "invalid_line_type",
+                file: suggestion.file,
+                line: suggestion.line,
+                reason: "invalid_line_type",
               });
               return false;
             }
 
-            const fileAddedLines = addedLinesMap.get(s.file);
-            if (!fileAddedLines || fileAddedLines.size === 0) return true; // 삭제 파일 등 예외
+            const beforeLineCount = suggestion.before.split("\n").length;
+            const isFullyAdded = isRangeFullyAdded(
+              addedLinesMap,
+              suggestion.file,
+              suggestion.line,
+              beforeLineCount,
+            );
 
-            // range-based 검증: before 필드의 라인 수만큼 범위 확장
-            const beforeLineCount = s.before.split("\n").length;
-            for (let i = 0; i < beforeLineCount; i++) {
-              if (fileAddedLines.has(s.line + i)) return true;
-            }
+            if (isFullyAdded) return true;
 
             console.warn("[suggestions] dropped entry", {
-              file: s.file, line: s.line, reason: "line_not_in_diff_added_lines",
+              file: suggestion.file,
+              line: suggestion.line,
+              reason: "range_not_fully_added",
             });
             return false;
           }),

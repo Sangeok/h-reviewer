@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Framework**: Next.js 16 (App Router) with React 19
 - **Database**: PostgreSQL with Prisma ORM
 - **Authentication**: Better-Auth with GitHub OAuth
-- **AI/Vector Search**: Google AI SDK + Pinecone for RAG-based code analysis
+- **AI/Review Context**: Google AI SDK + deterministic context from the exact PR head
 - **Background Jobs**: Inngest for async review processing
 - **GitHub Integration**: Octokit + webhooks for repository sync
 - **Styling**: Tailwind CSS v4
@@ -105,9 +105,9 @@ The codebase uses a `/features` directory for domain-driven feature organization
 - `features/review/` - Code review functionality (server actions)
 - `features/settings/` - User settings
 - `features/dashboard/` - Dashboard utilities and components
-- `features/ai/lib/` - AI/RAG functionality (Pinecone embeddings, vector search)
+- `features/ai/lib/` - AI review generation, deterministic PR context, verification, and repeat-issue matching
 
-Shared infrastructure (external service clients) lives in `lib/` instead: `lib/github/` (Octokit wrapper, diff parser), `lib/pinecone.ts`, `lib/db.ts`, `lib/auth.ts`.
+Shared infrastructure (external service clients) lives in `lib/` instead: `lib/github/` (Octokit wrapper, diff parser), `lib/db.ts`, `lib/auth.ts`.
 
 **Server Actions Pattern**: Each module's server-side operations are in `actions/` directories (e.g., `features/repository/actions/index.ts` contains `getRepositoriesByUserId()`)
 
@@ -172,9 +172,11 @@ DATABASE_URL="postgresql://user:password@host:port/dbname"
 GITHUB_CLIENT_ID="gh_..."
 GITHUB_CLIENT_SECRET="gh_..."
 BETTER_AUTH_URL="http://localhost:3000"  # Auth callback URL (dev)
-PINECONE_DB_API_KEY="pcn_..."            # Vector database
-GOOGLE_GENERATIVE_AI_API_KEY="..."      # For embeddings
+GOOGLE_GENERATIVE_AI_API_KEY="..."      # Review, verification, and repeat embeddings
+DETERMINISTIC_PR_CONTEXT_ENABLED="true" # Server-only; false is approved diff-only rollback
 ```
+
+For every source-bearing environment, use only a Google AI key whose API-key page shows `Plan: Paid`, whose project has active Cloud Billing, a non-Free Billing Tier, and usable `Prepay` or `Postpay` readiness. Do not send source with Free, billing-setup, no-credit, or unknown bindings. Paid Service does not automatically guarantee zero-data retention.
 
 ## Key Technical Details
 
@@ -284,20 +286,18 @@ import AppSidebar from "@/components/app-sidebar/ui/app-sidebar";
 - Custom hooks in `features/*/hooks/` for feature-specific data fetching
 - Example: `useConnectRepository()` in `features/repository/hooks/use-connect-repository.ts`
 
-### AI & RAG Architecture
+### AI Review Context Architecture
 
-**Vector Database**: Pinecone (index: "hreviewer") for codebase embeddings
+`getPullRequestDiff()` verifies a stable base/head/updated-at snapshot. `buildDeterministicPrContext()` then reads changed files and a bounded set of directly related tests/imports from that exact head commit. The diff remains primary evidence, context is untrusted secondary evidence, and context collection fails open to diff-only review.
 
-**Embedding Pipeline** (`features/ai/lib/rag.ts`):
+`DETERMINISTIC_PR_CONTEXT_ENABLED` is server-only. Unset or `true` enables the normal deterministic builder; exact `false` skips it for an approved diff-only rollback deployment. It never re-enables a persistent code index.
 
-- `generateEmbedding()` - Uses Google Generative AI to create vector embeddings
-- `storeCodeEmbedding()` - Stores code + metadata in Pinecone
-- `searchSimilarCode()` - Queries Pinecone for similar code patterns
+`generateEmbedding()` remains only for semantic repeat-issue matching and does not index repository source.
 
 **Background Jobs** (Inngest):
 
 - `app/api/inngest/route.ts` - Webhook endpoint for async job processing
-- Used for heavy AI operations and codebase indexing
+- Used for async review generation and PR summaries
 
 ### GitHub Integration
 

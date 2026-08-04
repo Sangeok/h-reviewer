@@ -2,14 +2,14 @@
 
 ## Project Overview
 
-**HReviewer** is an AI-powered GitHub code review platform built with Next.js 16. It automates code analysis using Google AI and RAG (Retrieval-Augmented Generation) with Pinecone vector database.
+**HReviewer** is an AI-powered GitHub code review platform built with Next.js 16. It analyzes pull requests with Google AI using deterministic, bounded context from the exact PR head commit.
 
 ### Key Technologies
 - **Framework**: Next.js 16 (App Router), React 19
 - **Language**: TypeScript (Strict Mode)
 - **Database**: PostgreSQL with Prisma ORM
 - **Authentication**: Better-Auth (GitHub OAuth)
-- **AI/ML**: Google AI SDK, Pinecone (Vector DB)
+- **AI/ML**: Google AI SDK with deterministic PR context; embeddings are limited to repeat-issue similarity
 - **Background Jobs**: Inngest
 - **Styling**: Tailwind CSS v4, Radix UI
 - **Deployment**: Vercel / Railway / Render (implied)
@@ -22,6 +22,8 @@
 - **Build for Production**: `npm run build`
 - **Start Production Server**: `npm start`
 - **Lint Code**: `npm run lint`
+
+Source-bearing Google AI environments must use an API key whose page shows `Plan: Paid`, backed by active Cloud Billing, a non-Free Billing Tier, and usable billing readiness. Do not send source for Free, billing-setup, no-credit, or unknown bindings. Paid Service can still retain limited abuse-monitoring logs, so zero-data retention is not assumed.
 
 ### Database Operations
 - **Generate Prisma Client**: `npx prisma generate`

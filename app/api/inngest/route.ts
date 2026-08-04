@@ -1,11 +1,11 @@
 import { serve } from "inngest/next";
 import { inngest } from "../../../inngest/client";
-import { indexRepository } from "@/inngest/functions";
 import { generateReview } from "@/inngest/functions/review";
 import { generateSummary } from "@/inngest/functions/summary";
 
-// Create an API that serves zero functions
+export const maxDuration = 300;
+
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [indexRepository, generateReview, generateSummary],
+  functions: [generateReview, generateSummary],
 });
