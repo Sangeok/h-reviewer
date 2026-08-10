@@ -38,19 +38,24 @@ const CONTEXT_BUILD_TIMEOUT_MS = 45_000;
 /**
  * 구조화 생성 / 마크다운 폴백 타임아웃.
  *
- * 예산 근거: app/api/inngest/route.ts의 maxDuration = 300s가 이 스텝의 상한이다.
+ * 예산 근거: app/api/inngest/route.ts의 maxDuration = 300s가 HTTP 호출당 상한이다.
  * generate-ai-review의 최악 경로를 합산해야 한다:
- *   context(45s) + 구조화(170s) + 폴백(50s) = 265s < 300s  (여유 35s)
- * 여유분은 네트워크·Zod 재검증·마크다운 변환 오버헤드용이다.
+ *   context(45s) + 구조화(150s) + 폴백(40s) = 235s < 300s  (여유 65s)
+ *
+ * 여유분을 65s로 잡은 이유: 이 스텝이 해당 호출에서 유일한 작업이라는 보장이 없다.
+ * Inngest는 통상 호출당 새 스텝 하나를 실행하지만, 앞선 스텝(fetch-pr-data 등)과
+ * 같은 호출에 묶이면 그만큼이 예산에서 빠진다. 여기에 네트워크·Zod 재검증·마크다운
+ * 변환·대용량 스텝 결과 직렬화 오버헤드가 더해진다.
  * ⚠️ 어느 값이든 올릴 때는 이 합이 maxDuration을 넘지 않는지 반드시 확인할 것.
  * 넘으면 플랫폼이 함수를 중간에 죽여 로그조차 남지 않는다.
  *
- * 실측(2026-08-10): 138 files / 100KB / 30.8k tokens PR의 구조화 생성이 107.7s.
- * 이전 값 100s에서는 이런 PR이 매번 타임아웃 → 마크다운 폴백으로 떨어져
- * 인라인 제안·이슈 행·검수·반복 감지를 전부 잃었다. 170s면 여유롭게 통과한다.
+ * 실측(2026-08-10) 구조화 생성 소요: 42.6s / 48.5s / 107.7s
+ * (마지막은 138 files / 100KB / 30.8k tokens PR). 150s면 최악 관측값 대비 39% 여유다.
+ * 이전 값 100s에서는 그런 PR이 매번 타임아웃 → 마크다운 폴백으로 떨어져
+ * 인라인 제안·이슈 행·검수·반복 감지를 전부 잃었다.
  */
-const AI_GENERATION_TIMEOUT_MS = 170_000;
-const AI_FALLBACK_TIMEOUT_MS = 50_000;
+const AI_GENERATION_TIMEOUT_MS = 150_000;
+const AI_FALLBACK_TIMEOUT_MS = 40_000;
 const deterministicContextEnabled =
   process.env.DETERMINISTIC_PR_CONTEXT_ENABLED !== "false";
 
