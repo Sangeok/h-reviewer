@@ -5,6 +5,7 @@ export { generatePRSummary, reviewPullRequest } from "./actions";
 
 // ===== Constants =====
 export {
+  GENERATOR_MODEL_ID,
   EMBEDDING_MODEL_ID,
   EMBEDDING_OUTPUT_DIMENSION,
   GITHUB_PROVIDER_ID,

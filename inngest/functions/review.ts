@@ -9,6 +9,7 @@ import {
   getIssueLimit, formatStructuredReviewToMarkdown, REVIEW_SCHEMA_VERSION, guardTextFeedback,
   detectRepeatIssues,
   verifyReview, applyVerification, buildVerificationTrace, buildVerificationReviewBody, VERIFIER_MODEL_ID,
+  GENERATOR_MODEL_ID,
 } from "@/features/ai";
 import type {
   ReviewSizeMode,
@@ -333,7 +334,7 @@ export const generateReview = inngest.createFunction(
         });
 
         const { experimental_output } = await generateText({
-          model: google("gemini-2.5-flash"),
+          model: google(GENERATOR_MODEL_ID),
           experimental_output: Output.object({ schema: structuredReviewSchema }),
           prompt,
           abortSignal: AbortSignal.timeout(AI_GENERATION_TIMEOUT_MS),
@@ -370,7 +371,7 @@ export const generateReview = inngest.createFunction(
           headers,
         });
         const { text } = await generateText({
-          model: google("gemini-2.5-flash"),
+          model: google(GENERATOR_MODEL_ID),
           prompt: fallbackPrompt,
           abortSignal: AbortSignal.timeout(AI_GENERATION_TIMEOUT_MS),
         });

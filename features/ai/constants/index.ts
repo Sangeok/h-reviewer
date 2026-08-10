@@ -1,3 +1,8 @@
+// 리뷰·요약·이슈 해결 판정 생성 모델. 이 상수가 유일한 출처다 —
+// 인라인 google("...") 리터럴을 쓰면 scripts/check-model-availability.mjs가
+// 그 모델을 검사하지 못하고, 폐기 시 조용히 죽는다(2026-08-10 사고 참조).
+export const GENERATOR_MODEL_ID = "gemini-2.5-flash";
+
 export const EMBEDDING_MODEL_ID = "gemini-embedding-001";
 export const EMBEDDING_OUTPUT_DIMENSION = 768;
 export const GITHUB_PROVIDER_ID = "github";

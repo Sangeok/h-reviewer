@@ -26,7 +26,12 @@ npm run build      # Build for production
 npm start          # Run production build
 npm run lint       # Run ESLint
 npm run inngest-dev # Start Inngest dev server for background jobs
+npm run check-models # Probe configured Google AI models; fails if a model ID is dead
 ```
+
+`check-models` runs first in `next-build`/`vercel-build`. It fails the build only when a model ID is genuinely gone (404 / "no longer available"); transient errors and a missing API key do not block. `CHECK_MODELS_SOFT=1` overrides for emergency deploys.
+
+All model IDs live in `features/ai/constants/index.ts` (`GENERATOR_MODEL_ID`, `VERIFIER_MODEL_ID`, `EMBEDDING_MODEL_ID`) — never inline a model string in a `google("...")` call, or the check cannot see it. Avoid `preview` models and `-latest` aliases.
 
 ### Database Operations
 
