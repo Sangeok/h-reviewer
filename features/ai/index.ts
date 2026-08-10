@@ -27,7 +27,7 @@ export type {
   PrContextSource,
   PrContextTreeStatus,
 } from "./lib";
-export { guardTextFeedback, structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt, getIssueLimit, formatStructuredReviewToMarkdown } from "./lib";
+export { guardTextFeedback, structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt, getIssueLimit, formatStructuredReviewToMarkdown, buildReviewNotice } from "./lib";
 export { detectRepeatIssues } from "./lib";
 export type { RepeatAnnotation, RepeatBadgeInfo } from "./lib";
 

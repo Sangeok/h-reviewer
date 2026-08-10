@@ -67,7 +67,11 @@ const VERIFIER_MODELS = (
   .map((m) => m.trim())
   .filter(Boolean);
 const LANG_CODE: LanguageCode = "ko";
-const GENERATION_TIMEOUT_MS = 100_000; // 프로덕션 AI_GENERATION_TIMEOUT_MS와 동일
+/** 기본값은 프로덕션 AI_GENERATION_TIMEOUT_MS와 동일. 타임아웃 상향 실험 시 덮어쓴다. */
+const GENERATION_TIMEOUT_MS = Number.parseInt(
+  process.env.GENERATION_TIMEOUT_MS ?? "100000",
+  10,
+);
 
 /** 결과 덤프 위치. CALIBRATION_OUT으로 덮어쓸 수 있다. */
 const OUT_DIR = process.env.CALIBRATION_OUT ?? path.join(tmpdir(), "hreviewer-calibration");
@@ -84,9 +88,15 @@ const ALL_FIXTURES = [
   { merge: "a240c85", label: "PR#59 frontend-clean-code" },
 ];
 
-const FIXTURES = process.env.CALIBRATION_LIMIT
-  ? ALL_FIXTURES.slice(0, Number.parseInt(process.env.CALIBRATION_LIMIT, 10))
-  : ALL_FIXTURES;
+/** CALIBRATION_MERGES="sha1,sha2" 로 임의 머지 커밋을 직접 지정할 수 있다 (타임아웃 실험용). */
+const FIXTURES = process.env.CALIBRATION_MERGES
+  ? process.env.CALIBRATION_MERGES.split(",").map((m) => ({
+      merge: m.trim(),
+      label: `ad-hoc ${m.trim()}`,
+    }))
+  : process.env.CALIBRATION_LIMIT
+    ? ALL_FIXTURES.slice(0, Number.parseInt(process.env.CALIBRATION_LIMIT, 10))
+    : ALL_FIXTURES;
 
 type VerdictCounts = { CONFIRMED: number; UNCERTAIN: number; REJECTED: number };
 type RejectedEntry = { kind: "issue" | "suggestion"; label: string; reason: string };
@@ -224,6 +234,7 @@ describe.skipIf(!process.env.CALIBRATION)("verifier calibration", () => {
         );
 
         let output: StructuredReviewOutput | null = null;
+        const genStarted = Date.now();
         try {
           output = await generate(fixture, sizeMode);
           result.generation = {
@@ -242,12 +253,14 @@ describe.skipIf(!process.env.CALIBRATION)("verifier calibration", () => {
             })),
           };
           console.log(
-            `  생성: ${output.issues.length} issues, ${output.suggestions.length} suggestions`,
+            `  생성: ${output.issues.length} issues, ${output.suggestions.length} suggestions  ${((Date.now() - genStarted) / 1000).toFixed(1)}s`,
           );
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
           result.generation = { model: GENERATOR_MODEL, issues: [], suggestions: [], error: msg };
-          console.log(`  생성 FAILED — ${msg}`);
+          console.log(
+            `  생성 FAILED (${((Date.now() - genStarted) / 1000).toFixed(1)}s, limit ${GENERATION_TIMEOUT_MS / 1000}s) — ${msg}`,
+          );
         }
 
         if (output && (output.issues.length > 0 || output.suggestions.length > 0)) {

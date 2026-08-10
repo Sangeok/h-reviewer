@@ -141,6 +141,69 @@ export function extractDiffFileSet(diffText: string): Set<string> {
   return set;
 }
 
+/**
+ * 리뷰 대상이 아닌 기계 생성 파일. diff 크기를 지배하면서 리뷰 가치는 0이다.
+ * 이 레포 이력만 봐도 1.24MB diff의 대부분과 190KB diff의 최상위 항목이
+ * package-lock.json이었다 — 그대로 모델에 보내면 타임아웃을 유발한다.
+ *
+ * ⚠️ 사람이 쓴 파일은 절대 넣지 말 것 (docs/ 등). 리뷰가 조용히 누락된다.
+ */
+const NON_REVIEWABLE_PATTERNS: RegExp[] = [
+  /(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?)$/,
+  /(^|\/)(Cargo\.lock|poetry\.lock|Gemfile\.lock|composer\.lock|go\.sum)$/,
+  /(^|\/)lib\/generated\//,
+  /\.min\.(js|css|mjs)$/,
+  /\.(map|snap)$/,
+];
+
+export function isNonReviewablePath(filePath: string): boolean {
+  return NON_REVIEWABLE_PATTERNS.some((pattern) => pattern.test(filePath));
+}
+
+export type FilteredDiff = {
+  /** 기계 생성 파일 블록이 제거된 diff */
+  diff: string;
+  /** 제거된 파일 경로 (리뷰 본문에 노출해 조용한 누락을 방지한다) */
+  excludedFiles: string[];
+};
+
+/**
+ * diff에서 기계 생성 파일 블록을 제거한다.
+ *
+ * 프롬프트뿐 아니라 검증(extractDiffFileSet 등)·검수(verifyReview)에도 같은
+ * 결과를 써야 한다 — 모델이 못 본 파일을 검증이 허용하면 정합성이 깨진다.
+ * 따라서 호출부는 이 함수의 결과 diff를 이후 전 경로에서 사용한다.
+ */
+export function filterNonReviewableFiles(diffText: string): FilteredDiff {
+  if (!diffText) return { diff: diffText, excludedFiles: [] };
+
+  // "diff --git"로 분할. split은 선행 구분자를 잃으므로 되붙인다.
+  const blocks = diffText.split(/^diff --git /m);
+  const leading = blocks.shift() ?? "";
+  if (blocks.length === 0) return { diff: diffText, excludedFiles: [] };
+
+  const kept: string[] = [];
+  const excludedFiles: string[] = [];
+
+  for (const block of blocks) {
+    // "a/<old> b/<new>" 첫 줄에서 new path 추출 (quoted path 포함)
+    const header = block.slice(0, block.indexOf("\n") === -1 ? undefined : block.indexOf("\n"));
+    const match = header.match(/^"?a\/.*?"?\s+"?b\/(.+?)"?$/);
+    const filePath = match ? unescapeGitPath(match[1]) : null;
+
+    if (filePath && isNonReviewablePath(filePath)) {
+      excludedFiles.push(filePath);
+      continue;
+    }
+    kept.push(block);
+  }
+
+  if (excludedFiles.length === 0) return { diff: diffText, excludedFiles: [] };
+
+  const rebuilt = kept.length > 0 ? leading + "diff --git " + kept.join("diff --git ") : leading;
+  return { diff: rebuilt, excludedFiles };
+}
+
 /** rename old path를 GitHub review에 사용할 current path로 변환한다. */
 export function extractDiffPathAliases(
   diffText: string,

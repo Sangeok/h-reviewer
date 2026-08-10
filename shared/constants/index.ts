@@ -43,6 +43,27 @@ export const DIAGRAM_FALLBACK_TEXT: Record<LanguageCode, string> = {
   ko: "Mermaid 검증으로 인해 시퀀스 다이어그램이 생략되었습니다.",
 };
 
+/**
+ * 리뷰가 온전하지 않을 때 본문 상단에 붙는 고지 라벨.
+ * 열화를 로그에만 남기면 조용히 묻힌다(2026-08-10 사고) — 사용자가 보는 곳에 적는다.
+ * LanguageCode 추가 시 여기도 추가 필수.
+ */
+export const REVIEW_NOTICE_LABELS = {
+  en: {
+    skippedFiles: "Skipped generated files:",
+    limitedReview:
+      "This PR was too large for a full structured review — inline suggestions and per-issue verification are unavailable.",
+  },
+  ko: {
+    skippedFiles: "생성 파일 제외:",
+    limitedReview:
+      "PR이 너무 커서 전체 구조화 리뷰를 만들지 못했습니다 — 인라인 제안과 이슈별 검증이 제공되지 않습니다.",
+  },
+} as const satisfies Record<
+  LanguageCode,
+  { skippedFiles: string; limitedReview: string }
+>;
+
 /** 리뷰 검증(검수자) 라벨. LanguageCode 추가 시 여기도 추가 필수. */
 export const VERIFICATION_LABELS = {
   en: {

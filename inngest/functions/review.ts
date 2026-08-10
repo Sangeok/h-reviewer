@@ -6,7 +6,8 @@ import { postPRReviewWithSuggestions, postVerificationReview } from "@/features/
 import {
   buildDeterministicPrContext, createEmptyDeterministicPrContext, classifyPRSize,
   structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt,
-  getIssueLimit, formatStructuredReviewToMarkdown, REVIEW_SCHEMA_VERSION, guardTextFeedback,
+  getIssueLimit, formatStructuredReviewToMarkdown, buildReviewNotice,
+  REVIEW_SCHEMA_VERSION, guardTextFeedback,
   detectRepeatIssues,
   verifyReview, applyVerification, buildVerificationTrace, buildVerificationReviewBody, VERIFIER_MODEL_ID,
   GENERATOR_MODEL_ID,
@@ -25,6 +26,7 @@ import {
   extractDiffAddedLinesMap,
   extractDiffFileSet,
   extractDiffPathAliases,
+  filterNonReviewableFiles,
   isRangeFullyAdded,
   parseDiffToChangedFiles,
   unescapeGitPath,
@@ -32,7 +34,23 @@ import {
 import type { LanguageCode } from "@/features/settings";
 
 const CONTEXT_BUILD_TIMEOUT_MS = 45_000;
-const AI_GENERATION_TIMEOUT_MS = 100_000;
+
+/**
+ * 구조화 생성 / 마크다운 폴백 타임아웃.
+ *
+ * 예산 근거: app/api/inngest/route.ts의 maxDuration = 300s가 이 스텝의 상한이다.
+ * generate-ai-review의 최악 경로를 합산해야 한다:
+ *   context(45s) + 구조화(170s) + 폴백(50s) = 265s < 300s  (여유 35s)
+ * 여유분은 네트워크·Zod 재검증·마크다운 변환 오버헤드용이다.
+ * ⚠️ 어느 값이든 올릴 때는 이 합이 maxDuration을 넘지 않는지 반드시 확인할 것.
+ * 넘으면 플랫폼이 함수를 중간에 죽여 로그조차 남지 않는다.
+ *
+ * 실측(2026-08-10): 138 files / 100KB / 30.8k tokens PR의 구조화 생성이 107.7s.
+ * 이전 값 100s에서는 이런 PR이 매번 타임아웃 → 마크다운 폴백으로 떨어져
+ * 인라인 제안·이슈 행·검수·반복 감지를 전부 잃었다. 170s면 여유롭게 통과한다.
+ */
+const AI_GENERATION_TIMEOUT_MS = 170_000;
+const AI_FALLBACK_TIMEOUT_MS = 50_000;
 const deterministicContextEnabled =
   process.env.DETERMINISTIC_PR_CONTEXT_ENABLED !== "false";
 
@@ -45,6 +63,21 @@ type GenerateAiReviewStepResult = {
   rawReview: string;
   structuredOutput: StructuredReviewOutput | null;
 };
+
+/**
+ * AbortSignal.timeout() 발화 여부.
+ *
+ * 흐름을 바꾸지는 않는다(폴백은 그대로 시도한다). 로그 심각도를 가르는 데만 쓴다 —
+ * 타임아웃으로 인한 축소는 diff가 예산을 넘었다는 구조적 신호이므로 warn이 아니라
+ * error로 남겨야 한다. 사용자에게 보이는 고지는 buildReviewNotice가 담당한다.
+ */
+function isTimeoutError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const name = "name" in error ? String(error.name) : "";
+  if (name === "TimeoutError" || name === "AbortError") return true;
+  const message = "message" in error ? String(error.message).toLowerCase() : "";
+  return message.includes("aborted due to timeout") || message.includes("timeout");
+}
 
 function getSafeExternalErrorSummary(
   error: unknown,
@@ -211,7 +244,7 @@ export const generateReview = inngest.createFunction(
     });
 
     const {
-      diff,
+      diff: rawDiff,
       title,
       description,
       token,
@@ -220,6 +253,29 @@ export const generateReview = inngest.createFunction(
       changedFiles,
       headSha,
     } = fetchResult;
+
+    // ── Step 1.5: 기계 생성 파일(lock 파일 등) 제거 ──
+    // diff 크기를 지배하면서 리뷰 가치는 0이라 타임아웃만 유발한다.
+    // 프롬프트·검증·검수 전 경로가 같은 diff를 봐야 하므로 여기서 한 번만 필터한다.
+    //
+    // 전부 제외되면(예: lock 파일만 바꾼 dependabot PR) 원본을 쓴다 —
+    // 빈 diff를 모델에 보내는 새 실패 모드를 만들지 않는다.
+    const filtered = filterNonReviewableFiles(rawDiff);
+    const hasReviewableContent = extractDiffFileSet(filtered.diff).size > 0;
+    const diff = hasReviewableContent ? filtered.diff : rawDiff;
+    const excludedFiles = hasReviewableContent ? filtered.excludedFiles : [];
+
+    if (filtered.excludedFiles.length > 0) {
+      console.info("[diff-filter] non-reviewable files", {
+        owner,
+        repo,
+        prNumber,
+        excluded: filtered.excludedFiles,
+        appliedFilter: hasReviewableContent,
+        rawChars: rawDiff.length,
+        filteredChars: diff.length,
+      });
+    }
 
     const baseSha =
       "baseSha" in fetchResult && typeof fetchResult.baseSha === "string"
@@ -354,7 +410,21 @@ export const generateReview = inngest.createFunction(
           }
         }
       } catch (error) {
-        console.warn("Structured output failed; using markdown fallback", {
+        // 타임아웃은 diff가 예산보다 크다는 신호다. 폴백은 여전히 시도한다 —
+        // 마크다운은 출력이 단순해 구조화가 못 한 크기에서 성공할 여지가 있고,
+        // 폴백 예산(50s)은 maxDuration 합산에 이미 반영돼 있다.
+        // 다만 warn이 아니라 error로 남긴다: 크기 때문에 리뷰가 축소되는 것은
+        // 조용히 지나가면 안 되는 사건이다.
+        const logDegradation = isTimeoutError(error) ? console.error : console.warn;
+        logDegradation("Structured output failed; using markdown fallback", {
+          owner,
+          repo,
+          prNumber,
+          timedOut: isTimeoutError(error),
+          timeoutMs: AI_GENERATION_TIMEOUT_MS,
+          diffChars: diff.length,
+          changedFiles,
+          sizeMode,
           error: getSafeExternalErrorSummary(error),
         });
       }
@@ -370,10 +440,12 @@ export const generateReview = inngest.createFunction(
           sizeMode,
           headers,
         });
+        // 구조화가 이미 예산을 상당히 태웠을 수 있어 폴백은 짧은 상한을 쓴다
+        // (maxDuration 합산 근거는 AI_FALLBACK_TIMEOUT_MS 주석 참조).
         const { text } = await generateText({
           model: google(GENERATOR_MODEL_ID),
           prompt: fallbackPrompt,
-          abortSignal: AbortSignal.timeout(AI_GENERATION_TIMEOUT_MS),
+          abortSignal: AbortSignal.timeout(AI_FALLBACK_TIMEOUT_MS),
         });
 
         return { rawReview: text, structuredOutput: null };
@@ -600,6 +672,17 @@ export const generateReview = inngest.createFunction(
       const trace = buildVerificationTrace({ reviewedCount, excludedCount }, langCode);
       const markdown = formatStructuredReviewToMarkdown(verified.keptOutput, langCode);
       finalReview = sanitizeMermaidSequenceDiagrams(trace ? `${trace}\n\n${markdown}` : markdown, langCode);
+    }
+
+    // ── 열화 고지: diff에서 뺀 파일 / 구조화 실패로 축소된 리뷰 ──
+    // 로그만 남기면 조용히 묻힌다 — 사용자가 보는 본문 최상단에 적는다.
+    const notice = buildReviewNotice({
+      excludedFiles,
+      limitedReview: validatedStructuredOutput === null,
+      langCode,
+    });
+    if (notice) {
+      finalReview = `${notice}\n\n${finalReview}`;
     }
 
     // ── Step 5.5: 반복 실수 감지 (wedge) ──

@@ -18,7 +18,7 @@ export { guardTextFeedback } from "./guard-text-feedback";
 export { structuredReviewSchema, storedReviewDataSchema } from "./review-schema";
 export type { StoredReviewData, ReviewVerification, VerificationVerdict } from "./review-schema";
 export { buildStructuredPrompt, buildFallbackPrompt, getIssueLimit } from "./review-prompt";
-export { formatStructuredReviewToMarkdown } from "./review-formatter";
+export { formatStructuredReviewToMarkdown, buildReviewNotice } from "./review-formatter";
 export { detectRepeatIssues } from "./repeat-detection";
 export type { RepeatAnnotation, RepeatBadgeInfo } from "./repeat-detection";
 export { verifyReview, applyVerification, buildVerificationTrace, buildVerificationReviewBody } from "./verify-review";
