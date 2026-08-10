@@ -1,6 +1,6 @@
 import type { StructuredReviewOutput } from "./review-schema";
 import type { LanguageCode } from "@/shared/types/language";
-import { SECTION_HEADERS, ISSUE_FIELD_LABELS } from "@/shared/constants";
+import { SECTION_HEADERS, ISSUE_FIELD_LABELS, REVIEW_NOTICE_LABELS } from "@/shared/constants";
 import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "../constants/review-emoji";
 import {
   formatSuggestionSummaryItem,
@@ -19,6 +19,39 @@ const CHANGE_EMOJI: Record<string, string> = {
   deleted: "\u274c",
   renamed: "\ud83d\udd04",
 };
+
+/**
+ * 리뷰 본문 상단 고지문. 열화가 없으면 null.
+ *
+ * - excludedFiles: diff에서 제외한 기계 생성 파일 (리뷰 누락을 명시)
+ * - limitedReview: 구조화 출력 실패로 마크다운 폴백을 쓴 경우
+ *   (인라인 제안·이슈 행·검수·반복 감지가 모두 빠진다)
+ *
+ * 파일 목록은 6개까지만 나열한다 — 그 이상은 본문을 잡아먹는다.
+ */
+export function buildReviewNotice(params: {
+  excludedFiles: string[];
+  limitedReview: boolean;
+  langCode: LanguageCode;
+}): string | null {
+  const { excludedFiles, limitedReview, langCode } = params;
+  const labels = REVIEW_NOTICE_LABELS[langCode];
+  const lines: string[] = [];
+
+  if (limitedReview) {
+    lines.push(`> ⚠️ ${labels.limitedReview}`);
+  }
+
+  if (excludedFiles.length > 0) {
+    const MAX_LISTED = 6;
+    const listed = excludedFiles.slice(0, MAX_LISTED).map((f) => `\`${f}\``);
+    const rest = excludedFiles.length - listed.length;
+    const suffix = rest > 0 ? `, +${rest}` : "";
+    lines.push(`> ℹ️ ${labels.skippedFiles} ${listed.join(", ")}${suffix}`);
+  }
+
+  return lines.length > 0 ? lines.join("\n>\n") : null;
+}
 
 export function formatStructuredReviewToMarkdown(
   output: StructuredReviewOutput,

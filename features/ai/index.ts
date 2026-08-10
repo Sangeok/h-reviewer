@@ -5,6 +5,7 @@ export { generatePRSummary, reviewPullRequest } from "./actions";
 
 // ===== Constants =====
 export {
+  GENERATOR_MODEL_ID,
   EMBEDDING_MODEL_ID,
   EMBEDDING_OUTPUT_DIMENSION,
   GITHUB_PROVIDER_ID,
@@ -26,7 +27,7 @@ export type {
   PrContextSource,
   PrContextTreeStatus,
 } from "./lib";
-export { guardTextFeedback, structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt, getIssueLimit, formatStructuredReviewToMarkdown } from "./lib";
+export { guardTextFeedback, structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt, getIssueLimit, formatStructuredReviewToMarkdown, buildReviewNotice } from "./lib";
 export { detectRepeatIssues } from "./lib";
 export type { RepeatAnnotation, RepeatBadgeInfo } from "./lib";
 

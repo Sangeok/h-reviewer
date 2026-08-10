@@ -3,7 +3,7 @@ import { inngest } from "../client";
 import { getPullRequestDiff, postReviewComment } from "@/lib/github/github";
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
-import { stripFencedCodeBlocks } from "@/features/ai";
+import { stripFencedCodeBlocks, GENERATOR_MODEL_ID } from "@/features/ai";
 import { getLanguageName, isValidLanguageCode } from "@/features/settings";
 
 export const generateSummary = inngest.createFunction(
@@ -73,7 +73,7 @@ export const generateSummary = inngest.createFunction(
         \`\`\``;
 
       const { text } = await generateText({
-        model: google("gemini-2.5-flash"),
+        model: google(GENERATOR_MODEL_ID),
         prompt,
       });
 

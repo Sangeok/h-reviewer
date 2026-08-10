@@ -4,6 +4,7 @@ import { extractPatchOldSideTouchedLines } from "@/lib/github/diff-parser";
 import { generateText, Output } from "ai";
 import { google } from "@ai-sdk/google";
 import { z } from "zod";
+import { GENERATOR_MODEL_ID } from "@/features/ai";
 
 type ReconcileIssueParams = {
   token: string;
@@ -92,7 +93,7 @@ export async function reconcileIssueResolutions(
       .join("\n\n---\n\n");
 
     const { experimental_output } = await generateText({
-      model: google("gemini-2.5-flash"),
+      model: google(GENERATOR_MODEL_ID),
       experimental_output: Output.object({ schema: judgeSchema }),
       prompt:
         "For each review issue below, decide whether the code change in the patch actually resolves that issue " +
