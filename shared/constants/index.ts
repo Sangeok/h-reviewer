@@ -69,16 +69,16 @@ export const VERIFICATION_LABELS = {
   en: {
     title: "Review Verification",
     badge: "Verified against the diff",
-    summary: "reviewed {reviewed} findings, excluded {excluded}",
+    summary: "{excluded} of {reviewed} findings filtered out (contradicted by the diff)",
     skipped: "Verification was skipped",
-    excluded: "Excluded findings",
+    excluded: "Filtered-out findings",
   },
   ko: {
     title: "리뷰 검증",
     badge: "diff 대조 검증됨",
-    summary: "{reviewed}개 검토, {excluded}개 제외",
+    summary: "지적·제안 {reviewed}개 중 {excluded}개는 diff와 달라 걸러냄",
     skipped: "검증이 생략되었습니다",
-    excluded: "제외된 항목",
+    excluded: "걸러낸 항목",
   },
 } as const satisfies Record<
   LanguageCode,
