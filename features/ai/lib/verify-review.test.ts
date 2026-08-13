@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyVerification } from "./verify-review";
+import { applyVerification, buildVerificationReviewBody } from "./verify-review";
 import type { VerificationResult } from "./verify-review";
 import type { StructuredReviewOutput } from "./review-schema";
 import type { CodeSuggestion, StructuredIssue } from "../types";
@@ -81,5 +81,66 @@ describe("applyVerification", () => {
     const applied = applyVerification(output, partial);
     expect(applied!.keptOutput.issues.map((i) => i.title)).toEqual(["i1", "i2"]);
     expect(applied!.keptIssueVerdicts.every((v) => v.verdict === "UNCERTAIN")).toBe(true);
+  });
+});
+
+describe("buildVerificationReviewBody", () => {
+  const rejectedIssue = {
+    ...makeIssue("널 체크 누락"),
+    file: "lib/db.ts",
+    line: 15,
+    reason: "이미 옵셔널 체이닝이 있음",
+  };
+
+  it("제외 이슈의 파일·줄·제목·사유를 모두 렌더한다", () => {
+    const body = buildVerificationReviewBody({
+      rejectedIssues: [rejectedIssue],
+      rejectedSuggestions: [],
+      langCode: "ko",
+    });
+    // 취소선은 위치 앞에서 열린다 — `~~널 체크 누락~~`은 부분문자열로 존재하지 않는다.
+    expect(body).toContain("**~~`lib/db.ts:15` · 널 체크 누락~~**");
+    expect(body).toContain("이미 옵셔널 체이닝이 있음");
+    expect(body).toContain("(1)");
+  });
+
+  it("제외가 0개면 null을 반환한다", () => {
+    expect(
+      buildVerificationReviewBody({
+        rejectedIssues: [],
+        rejectedSuggestions: [],
+        langCode: "ko",
+      }),
+    ).toBeNull();
+  });
+
+  it("생존 항목 판정 명부를 포함하지 않는다", () => {
+    const body = buildVerificationReviewBody({
+      rejectedIssues: [rejectedIssue],
+      rejectedSuggestions: [],
+      langCode: "ko",
+    });
+    expect(body).not.toContain("CONFIRMED");
+    expect(body).not.toContain("UNCERTAIN");
+  });
+
+  it("접힘(<details>)을 쓰지 않는다", () => {
+    const body = buildVerificationReviewBody({
+      rejectedIssues: [rejectedIssue],
+      rejectedSuggestions: [],
+      langCode: "ko",
+    });
+    expect(body).not.toContain("<details>");
+  });
+
+  it("reason이 빈 문자열이어도 제목 줄은 렌더한다", () => {
+    // 검수자 LLM이 REJECTED에 reason:"" 를 반환하는 경로 방어 (스키마가 빈 문자열 허용)
+    const body = buildVerificationReviewBody({
+      rejectedIssues: [{ ...rejectedIssue, reason: "" }],
+      rejectedSuggestions: [],
+      langCode: "ko",
+    });
+    expect(body).toContain("**~~`lib/db.ts:15` · 널 체크 누락~~**");
+    expect(body).not.toContain("\n\n\n");
   });
 });

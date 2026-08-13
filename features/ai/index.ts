@@ -43,7 +43,7 @@ export { CATEGORY_EMOJI, SEVERITY_EMOJI } from "./constants";
 
 // ===== Review Verification (검수자) =====
 export { VERIFIER_MODEL_ID } from "./constants";
-export { verifyReview, applyVerification, buildVerificationTrace, buildVerificationReviewBody, storedReviewDataSchema } from "./lib";
+export { verifyReview, applyVerification, buildVerificationReviewBody, countExcluded, storedReviewDataSchema } from "./lib";
 export type { VerificationResult, AppliedVerification, VerdictEntry, StoredReviewData, ReviewVerification, VerificationVerdict } from "./lib";
 
 // ===== Utils =====
