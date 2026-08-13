@@ -9,7 +9,7 @@ import {
   getIssueLimit, formatStructuredReviewToMarkdown, buildReviewNotice,
   REVIEW_SCHEMA_VERSION, guardTextFeedback,
   detectRepeatIssues,
-  verifyReview, applyVerification, buildVerificationTrace, buildVerificationReviewBody, VERIFIER_MODEL_ID,
+  verifyReview, applyVerification, buildVerificationReviewBody, countExcluded, VERIFIER_MODEL_ID,
   GENERATOR_MODEL_ID,
 } from "@/features/ai";
 import type {
@@ -192,7 +192,7 @@ function resolveEntryFile<T extends { file: string }>(
  * 게시·저장 자체는 진행한다 (fail-open, Step 5.3/5.5와 동일 철학).
  */
 function checkLengthAlignment(
-  scope: "post-review" | "post-verification-review" | "save-review",
+  scope: "post-review" | "save-review",
   name: string,
   expected: number,
   actual: number,
@@ -671,12 +671,8 @@ export const generateReview = inngest.createFunction(
 
     let finalReview = review;
     if (verified) {
-      const reviewedCount =
-        (verification?.issueVerdicts.length ?? 0) + (verification?.suggestionVerdicts.length ?? 0);
-      const excludedCount = verified.rejectedIssues.length + verified.rejectedSuggestions.length;
-      const trace = buildVerificationTrace({ reviewedCount, excludedCount }, langCode);
       const markdown = formatStructuredReviewToMarkdown(verified.keptOutput, langCode);
-      finalReview = sanitizeMermaidSequenceDiagrams(trace ? `${trace}\n\n${markdown}` : markdown, langCode);
+      finalReview = sanitizeMermaidSequenceDiagrams(markdown, langCode);
     }
 
     // ── 열화 고지: diff에서 뺀 파일 / 구조화 실패로 축소된 리뷰 ──
@@ -754,32 +750,20 @@ export const generateReview = inngest.createFunction(
       }
     });
 
-    // ── Step 6.5: 검수자 별도 리뷰 엔트리 게시 (검증 수행 시에만) ──
+    // ── Step 6.5: 검수자가 제외한 항목 게시 (제외가 있을 때만) ──
     // 1차 리뷰(Step 6)와 독립 — 실패해도 리뷰 흐름을 막지 않는다.
-    // 검증 비활성이거나 검증 생략(skipped)·검토 대상 0개면 no-op.
+    // 생존 항목의 판정은 인라인 배지와 대시보드 패널이 전달하므로 여기서 반복하지 않는다.
     await step.run("post-verification-review", async () => {
-      if (!verified || !verification) return false;
-
-      const keptIssues = finalOutput?.issues ?? [];
-      const issueCount = keptIssues.length;
-      // 판정 배열이 게시할 이슈와 어긋나면 잘못된 판정 목록 게시 방지를 위해 카드 전체 생략
-      const verdictsAligned = checkLengthAlignment(
-        "post-verification-review", "keptIssueVerdicts", issueCount, verified.keptIssueVerdicts.length,
-      );
-      if (!verdictsAligned) return false;
-
-      const reviewedCount =
-        verification.issueVerdicts.length + verification.suggestionVerdicts.length;
-      if (reviewedCount === 0) return false;
+      if (!verified) return false;
+      if (countExcluded(verified) === 0) return false;
 
       const body = buildVerificationReviewBody({
-        keptIssues,
-        keptIssueVerdicts: verified.keptIssueVerdicts,
         rejectedIssues: verified.rejectedIssues,
         rejectedSuggestions: verified.rejectedSuggestions,
-        reviewedCount,
         langCode,
       });
+      // string | null 좁히기 — 위 게이트는 타입을 좁히지 못한다.
+      if (body === null) return false;
 
       try {
         await postVerificationReview({ token, owner, repo, prNumber, headSha, body });

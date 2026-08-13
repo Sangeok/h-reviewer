@@ -64,23 +64,36 @@ export const REVIEW_NOTICE_LABELS = {
   { skippedFiles: string; limitedReview: string }
 >;
 
-/** 리뷰 검증(검수자) 라벨. LanguageCode 추가 시 여기도 추가 필수. */
+/** 리뷰 검증(검수자) 라벨. LanguageCode 추가 시 여기도 추가 필수.
+ *  excluded        — 대시보드 패널의 <summary> 라벨 (VerificationPanel)
+ *  excludedHeading — GitHub 검수자 카드의 H2 헤더 (buildVerificationReviewBody)
+ *  두 소비처가 독립적으로 바뀔 수 있도록 의도적으로 분리한 키다. 합치지 말 것. */
 export const VERIFICATION_LABELS = {
   en: {
     title: "Review Verification",
     badge: "Verified against the diff",
-    summary: "{excluded} of {reviewed} findings filtered out (contradicted by the diff)",
     skipped: "Verification was skipped",
-    excluded: "Filtered-out findings",
+    excluded: "Excluded findings",
+    excludedHeading: "Findings excluded by the verifier",
+    excludedIntro:
+      "The first reviewer raised these, but the diff contradicts them, so they were removed from the review.",
   },
   ko: {
     title: "리뷰 검증",
     badge: "diff 대조 검증됨",
-    summary: "지적·제안 {reviewed}개 중 {excluded}개는 diff와 달라 걸러냄",
     skipped: "검증이 생략되었습니다",
-    excluded: "걸러낸 항목",
+    excluded: "제외된 지적",
+    excludedHeading: "검수자가 제외한 지적",
+    excludedIntro: "1차 리뷰어가 낸 지적 중 diff와 맞지 않아 리뷰에서 뺀 항목입니다.",
   },
 } as const satisfies Record<
   LanguageCode,
-  { title: string; badge: string; summary: string; skipped: string; excluded: string }
+  {
+    title: string;
+    badge: string;
+    skipped: string;
+    excluded: string;
+    excludedHeading: string;
+    excludedIntro: string;
+  }
 >;
