@@ -64,6 +64,22 @@ export const REVIEW_NOTICE_LABELS = {
   { skippedFiles: string; limitedReview: string }
 >;
 
+/** 리뷰 최상단 결론 줄 라벨. LanguageCode 추가 시 여기도 추가 필수.
+ *  결론 줄은 판단 문장이 아니라 사실 조립이다 — 배지(기존 riskLevel) + 카운트(산술).
+ *  권장행동("병합 가능" 등)은 넣지 않는다: severity는 검수자가 조정하지 않는 미검증
+ *  값이고, 파생 지시는 배지와 모순될 수 있으며, 결정권은 사용자에게 있다. */
+export const VERDICT_LINE_LABELS = {
+  en: { issues: "{n} issues", suggestions: "{n} suggestions" },
+  ko: { issues: "지적 {n}건", suggestions: "제안 {n}건" },
+} as const satisfies Record<LanguageCode, { issues: string; suggestions: string }>;
+
+/** 발견된 문제점 섹션의 인라인 연결 안내.
+ *  개선 제안 섹션의 SUGGESTION_SECTION_HINT(suggestion-format.ts)와 동형 패턴. */
+export const ISSUE_SECTION_HINT = {
+  en: "> Items with a file and line map 1:1 to inline comments in the Files changed tab.",
+  ko: "> 파일·줄이 있는 항목은 Files changed 탭의 인라인 코멘트와 1:1로 연결됩니다.",
+} as const satisfies Record<LanguageCode, string>;
+
 /** 리뷰 검증(검수자) 라벨. LanguageCode 추가 시 여기도 추가 필수.
  *  excluded        — 대시보드 패널의 <summary> 라벨 (VerificationPanel)
  *  excludedHeading — GitHub 검수자 카드의 H2 헤더 (buildVerificationReviewBody)

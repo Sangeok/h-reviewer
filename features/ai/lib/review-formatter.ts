@@ -1,6 +1,12 @@
 import type { StructuredReviewOutput } from "./review-schema";
 import type { LanguageCode } from "@/shared/types/language";
-import { SECTION_HEADERS, ISSUE_FIELD_LABELS, REVIEW_NOTICE_LABELS } from "@/shared/constants";
+import {
+  SECTION_HEADERS,
+  ISSUE_FIELD_LABELS,
+  REVIEW_NOTICE_LABELS,
+  VERDICT_LINE_LABELS,
+  ISSUE_SECTION_HINT,
+} from "@/shared/constants";
 import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "../constants/review-emoji";
 import {
   formatSuggestionSummaryItem,
@@ -60,24 +66,66 @@ export function formatStructuredReviewToMarkdown(
   const headers = SECTION_HEADERS[langCode];
   const sections: string[] = [];
 
-  const summaryLines = [
-    `## ${headers.summary}`,
-    "",
-    `> **${RISK_BADGE[output.summary.riskLevel]}**`,
-    "",
-    output.summary.overview,
-  ];
+  // ── 결론 줄: 배지 + 카운트. 전부 기존 필드 이동이거나 산술 — 판단 문장 금지 ──
+  // (권장행동을 넣지 않는 이유는 VERDICT_LINE_LABELS 주석 참조)
+  // 🚨/⚠️만 괄호 내역으로 센다. 0이면 괄호 생략.
+  const criticalCount = output.issues.filter((i) => i.severity === "CRITICAL").length;
+  const warningCount = output.issues.filter((i) => i.severity === "WARNING").length;
+  const breakdownParts = [
+    criticalCount > 0 ? `${SEVERITY_EMOJI.CRITICAL} ${criticalCount}` : null,
+    warningCount > 0 ? `${SEVERITY_EMOJI.WARNING} ${warningCount}` : null,
+  ].filter((p): p is string => p !== null);
+  const breakdown = breakdownParts.length > 0 ? ` (${breakdownParts.join(" · ")})` : "";
 
-  if (output.summary.keyPoints.length > 0) {
-    summaryLines.push(
-      "",
-      `**${headers.reviewFocus}**`,
-      "",
-      ...output.summary.keyPoints.map((point) => `- ${point}`),
+  const verdictLabels = VERDICT_LINE_LABELS[langCode];
+  const issuesPart =
+    verdictLabels.issues.replace("{n}", String(output.issues.length)) + breakdown;
+  const suggestionsPart = verdictLabels.suggestions.replace(
+    "{n}",
+    String(output.suggestions.length),
+  );
+  sections.push(
+    `> **${RISK_BADGE[output.summary.riskLevel]}** — ${issuesPart} · ${suggestionsPart}`,
+  );
+
+  // ── 발견된 문제점: 전수 표시 ──
+  // 인라인 판별은 pr-review.ts의 술어(file !== null && line !== null)와 동일하게 유지.
+  // 본문은 그 여집합 — 기존 line === null 필터가 놓치던 file:null·line:non-null도 포함된다.
+  if (output.issues.length > 0) {
+    const inlineIssues = output.issues.filter((i) => i.file !== null && i.line !== null);
+    const bodyIssues = output.issues.filter((i) => !(i.file !== null && i.line !== null));
+
+    const parts: string[] = [`## ${headers.issues} (${output.issues.length})`];
+
+    if (inlineIssues.length > 0) {
+      parts.push("", ISSUE_SECTION_HINT[langCode], "");
+      parts.push(
+        ...inlineIssues.map(
+          (issue) =>
+            `- ${SEVERITY_EMOJI[issue.severity]} ${CATEGORY_EMOJI[issue.category]} \`${issue.file}:${issue.line}\` — ${(issue.title ?? "").trim()}`,
+        ),
+      );
+    }
+
+    if (bodyIssues.length > 0) {
+      parts.push("", formatBodyIssues(bodyIssues, langCode));
+    }
+
+    sections.push(parts.join("\n"));
+  }
+
+  if (output.suggestions.length > 0) {
+    const items = output.suggestions
+      .map(formatSuggestionSummaryItem)
+      .join("\n\n");
+
+    sections.push(
+      `## ${headers.suggestions} (${output.suggestions.length})\n\n${SUGGESTION_SECTION_HINT[langCode]}\n\n${items}`,
     );
   }
 
-  sections.push(summaryLines.join("\n"));
+  // ── 요약: 배지는 결론 줄로 이동, keyPoints(리뷰 포인트)는 렌더하지 않는다 ──
+  sections.push(`## ${headers.summary}\n\n${output.summary.overview}`);
 
   if (output.walkthrough && output.walkthrough.length > 0) {
     const items = output.walkthrough
@@ -99,66 +147,59 @@ export function formatStructuredReviewToMarkdown(
     );
   }
 
-  if (output.strengths.length > 0) {
-    const items = output.strengths.map((strength) => `- ${strength}`).join("\n");
+  // \uac15\uc810\uc740 \uc55e\uc758 2\uac1c\ub9cc \u2014 \uc11c\uc0ac\ub294 \uc18c\uc74c \uacc4\uce35\uc774\ubbc0\ub85c \uc0c1\ud55c\uc744 \ub454\ub2e4 (\ubc30\uc5f4 \uc21c\uc11c \uc758\uc874, \u00a77-2 \ucc38\uc870)
+  const topStrengths = output.strengths.slice(0, 2);
+  if (topStrengths.length > 0) {
+    const items = topStrengths.map((strength) => `- ${strength}`).join("\n");
     sections.push(
       `<details>\n<summary>\n\n## ${headers.strengths}\n\n</summary>\n\n${items}\n\n</details>`,
     );
   }
 
-  const bodyIssues = output.issues.filter((issue) => issue.line === null);
-
-  if (bodyIssues.length > 0) {
-    const labels = ISSUE_FIELD_LABELS[langCode];
-    const items = bodyIssues
-      .map((issue) => {
-        const severity = `${SEVERITY_EMOJI[issue.severity]} ${issue.severity}`;
-        const category = `${CATEGORY_EMOJI[issue.category]} ${issue.category}`;
-        const fileTag = issue.file ? ` \u00b7 \`${issue.file}\`` : "";
-
-        const title = (issue.title ?? "").trim();
-        const rawBody = (issue.body ?? (issue as { description?: string }).description ?? "").trim();
-        const impact = (issue.impact ?? "").trim();
-        const recommendation = (issue.recommendation ?? "").trim();
-
-        const titleSuffix = title && rawBody.startsWith(title) ? rawBody.slice(title.length) : null;
-        const body =
-          titleSuffix !== null && (titleSuffix === "" || /^[\s.,:;-]/.test(titleSuffix))
-            ? titleSuffix.replace(/^[\s.,:;-]+/, "")
-            : rawBody;
-
-        const lines: string[] = [
-          `### ${severity} \u00b7 ${category}${fileTag}${title ? ` - ${title}` : ""}`,
-        ];
-
-        if (body) {
-          lines.push("", body);
-        }
-
-        if (impact) {
-          lines.push("", `**${labels.impact}:** ${impact}`);
-        }
-
-        if (recommendation) {
-          lines.push("", `**${labels.recommendation}:** ${recommendation}`);
-        }
-
-        return lines.join("\n");
-      })
-      .join("\n\n");
-
-    sections.push(`## ${headers.issues}\n\n${items}`);
-  }
-
-  if (output.suggestions.length > 0) {
-    const items = output.suggestions
-      .map(formatSuggestionSummaryItem)
-      .join("\n\n");
-
-    sections.push(
-      `## ${headers.suggestions}\n\n${SUGGESTION_SECTION_HINT[langCode]}\n\n${items}`,
-    );
-  }
-
   return sections.join("\n\n");
+}
+
+/** line === null \ub4f1 \uc778\ub77c\uc778 \ucf54\uba58\ud2b8\ub85c \ubabb \uac00\ub294 \uc774\uc288\uc758 \uc804\ubb38 \ub80c\ub354.
+ *  SYNC:formatIssueBody \u2014 pr-review.ts \u00b7 structured-review-body.tsx \uc640 \ub3d9\uc77c \ub85c\uc9c1 \uc720\uc9c0 */
+function formatBodyIssues(
+  bodyIssues: StructuredReviewOutput["issues"],
+  langCode: LanguageCode,
+): string {
+  const labels = ISSUE_FIELD_LABELS[langCode];
+  return bodyIssues
+    .map((issue) => {
+      const severity = `${SEVERITY_EMOJI[issue.severity]} ${issue.severity}`;
+      const category = `${CATEGORY_EMOJI[issue.category]} ${issue.category}`;
+      const fileTag = issue.file ? ` \u00b7 \`${issue.file}\`` : "";
+
+      const title = (issue.title ?? "").trim();
+      const rawBody = (issue.body ?? (issue as { description?: string }).description ?? "").trim();
+      const impact = (issue.impact ?? "").trim();
+      const recommendation = (issue.recommendation ?? "").trim();
+
+      const titleSuffix = title && rawBody.startsWith(title) ? rawBody.slice(title.length) : null;
+      const body =
+        titleSuffix !== null && (titleSuffix === "" || /^[\s.,:;-]/.test(titleSuffix))
+          ? titleSuffix.replace(/^[\s.,:;-]+/, "")
+          : rawBody;
+
+      const lines: string[] = [
+        `### ${severity} \u00b7 ${category}${fileTag}${title ? ` - ${title}` : ""}`,
+      ];
+
+      if (body) {
+        lines.push("", body);
+      }
+
+      if (impact) {
+        lines.push("", `**${labels.impact}:** ${impact}`);
+      }
+
+      if (recommendation) {
+        lines.push("", `**${labels.recommendation}:** ${recommendation}`);
+      }
+
+      return lines.join("\n");
+    })
+    .join("\n\n");
 }
