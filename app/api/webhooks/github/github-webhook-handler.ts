@@ -281,10 +281,8 @@ async function finalizeMergedPullRequest(
 function createDefaultDependencies(): GithubWebhookHandlerDependencies {
   return {
     verifySignature: verifyGithubSignature,
-    queueReview: ({ owner, repo, prNumber }) =>
-      reviewPullRequest(owner, repo, prNumber),
-    queueSummary: ({ owner, repo, prNumber }) =>
-      generatePRSummary(owner, repo, prNumber),
+    queueReview: (input) => reviewPullRequest(input),
+    queueSummary: (input) => generatePRSummary(input),
     handleSynchronize,
     finalizeMergedPullRequest,
   };
@@ -363,7 +361,7 @@ export function createGithubWebhookHandler(
           );
 
           if (!reviewResult.success) {
-            if (reviewResult.reason === "plan_restricted") {
+            if (reviewResult.reason !== "internal_error") {
               console.info(
                 `Review skipped for ${fullName} #${identity.prNumber}: ${reviewResult.message}`,
               );
@@ -441,6 +439,16 @@ export function createGithubWebhookHandler(
           });
 
           if (!summaryResult.success) {
+            if (summaryResult.reason !== "internal_error") {
+              console.info(
+                `Summary skipped for ${repoInfo.fullName} #${prNumber}: ${summaryResult.message}`,
+              );
+              return {
+                status: 200,
+                body: { message: summaryResult.message },
+              };
+            }
+
             console.error(
               `Summary queueing failed for ${repoInfo.fullName} #${prNumber}: ${summaryResult.message}`,
             );

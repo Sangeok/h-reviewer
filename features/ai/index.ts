@@ -32,7 +32,14 @@ export { detectRepeatIssues } from "./lib";
 export type { RepeatAnnotation, RepeatBadgeInfo } from "./lib";
 
 // ===== Types =====
-export type { PRCommand, ReviewPullRequestResult, GeneratePRSummaryResult } from "./types";
+export type {
+  GeneratePRSummaryResult,
+  PRCommand,
+  PullRequestIdentityInput,
+  ReviewPullRequestResult,
+  ReviewRequestFailureReason,
+  ReviewRequestMetadata,
+} from "./types";
 export type { ReviewSizeMode, PRSizeInfo } from "./lib";
 export type { CodeSuggestion, StructuredIssue, SuggestionSeverity, IssueCategory } from "./types";
 export type { StructuredReviewOutput } from "./lib/review-schema";
