@@ -8,8 +8,19 @@ import {
   type ReviewPullRequestResult,
 } from "@/features/ai";
 import { reconcileIssueResolutions } from "@/features/review/lib/reconcile-issue-resolutions";
+import {
+  resumeReviewRequest,
+  type CreateReviewRequestResult,
+} from "@/features/review/lib/review-request";
 import { reconcileNativeSuggestions } from "@/features/suggestion/lib/reconcile-native-suggestions";
 import prisma from "@/lib/db";
+import {
+  acquireGithubWebhookDelivery,
+  completeGithubWebhookDelivery,
+  failGithubWebhookDelivery,
+  GithubWebhookDeliveryError,
+  type GithubWebhookTransportBinding,
+} from "@/lib/github/github-webhook-delivery";
 
 export type GithubWebhookInput = {
   event: string | null;
@@ -51,10 +62,23 @@ export type GithubWebhookHandlerDependencies = {
     signature: string | null;
     secret: string;
   }): boolean;
-  queueReview(input: PullRequestIdentity): Promise<ReviewPullRequestResult>;
-  queueSummary(input: PullRequestIdentity): Promise<GeneratePRSummaryResult>;
+  acquireDelivery: typeof acquireGithubWebhookDelivery;
+  completeDelivery: typeof completeGithubWebhookDelivery;
+  failDelivery: typeof failGithubWebhookDelivery;
+  queueReview(
+    input: PullRequestIdentity & {
+      transportBinding: GithubWebhookTransportBinding;
+    },
+  ): Promise<ReviewPullRequestResult>;
+  queueSummary(
+    input: PullRequestIdentity & {
+      transportBinding: GithubWebhookTransportBinding;
+    },
+  ): Promise<GeneratePRSummaryResult>;
+  resumeRequest(requestKey: string): Promise<CreateReviewRequestResult>;
   handleSynchronize(input: SynchronizeInput): Promise<SynchronizeResult>;
   finalizeMergedPullRequest(input: PullRequestIdentity): Promise<void>;
+  now(): Date;
 };
 
 type RepoFullNameParts = {
@@ -281,10 +305,263 @@ async function finalizeMergedPullRequest(
 function createDefaultDependencies(): GithubWebhookHandlerDependencies {
   return {
     verifySignature: verifyGithubSignature,
+    acquireDelivery: acquireGithubWebhookDelivery,
+    completeDelivery: completeGithubWebhookDelivery,
+    failDelivery: failGithubWebhookDelivery,
     queueReview: (input) => reviewPullRequest(input),
     queueSummary: (input) => generatePRSummary(input),
+    resumeRequest: (requestKey) => resumeReviewRequest(requestKey),
     handleSynchronize,
     finalizeMergedPullRequest,
+    now: () => new Date(),
+  };
+}
+
+type EventProcessingResult = {
+  response: GithubWebhookResponse;
+  requestKey?: string;
+  operationalFailure?: {
+    code: string;
+    message: string;
+  };
+};
+
+function getResultRequestKey(result: {
+  requestKey?: string;
+}): string | undefined {
+  return typeof result.requestKey === "string" ? result.requestKey : undefined;
+}
+
+function createOperationalFailureResult(
+  response: GithubWebhookResponse,
+  requestKey?: string,
+): EventProcessingResult {
+  return {
+    response,
+    ...(requestKey === undefined ? {} : { requestKey }),
+    operationalFailure: {
+      code: "REQUEST_DISPATCH_FAILED",
+      message: "The review request could not be dispatched.",
+    },
+  };
+}
+
+async function processGithubEvent(input: {
+  event: string;
+  body: unknown;
+  transportBinding: GithubWebhookTransportBinding;
+  dependencies: GithubWebhookHandlerDependencies;
+}): Promise<EventProcessingResult> {
+  const { event, body, transportBinding, dependencies } = input;
+
+  if (event === "ping") {
+    return { response: { status: 200, body: { message: "Pong" } } };
+  }
+
+  if (!isRecord(body)) {
+    return {
+      response: {
+        status: 200,
+        body: { message: "Ignored: invalid payload" },
+      },
+    };
+  }
+
+  if (event === "pull_request") {
+    const action = body["action"];
+    const identity = getPullRequestIdentity(body);
+
+    if (typeof action !== "string" || !identity) {
+      return {
+        response: {
+          status: 200,
+          body: { message: "Ignored: malformed pull_request payload" },
+        },
+      };
+    }
+
+    const { fullName, ...pullRequestIdentity } = identity;
+
+    if (action === "opened" || action === "synchronize") {
+      if (action === "synchronize") {
+        const { headOwner, headRepoName } = parseHeadRepository(body);
+        const synchronizeResult = await dependencies.handleSynchronize({
+          ...pullRequestIdentity,
+          fullName,
+          beforeSha:
+            typeof body["before"] === "string" ? body["before"] : undefined,
+          afterSha:
+            typeof body["after"] === "string" ? body["after"] : undefined,
+          headOwner,
+          headRepoName,
+        });
+
+        if (synchronizeResult.type === "skip") {
+          return {
+            response: {
+              status: 200,
+              body: { message: synchronizeResult.message },
+            },
+          };
+        }
+      }
+
+      const reviewResult = await dependencies.queueReview({
+        ...pullRequestIdentity,
+        transportBinding,
+      });
+      const requestKey = getResultRequestKey(reviewResult);
+
+      if (!reviewResult.success) {
+        if (reviewResult.reason !== "internal_error") {
+          console.info(
+            `Review skipped for ${fullName} #${identity.prNumber}: ${reviewResult.message}`,
+          );
+          return {
+            response: {
+              status: 200,
+              body: { message: reviewResult.message },
+            },
+            ...(requestKey === undefined ? {} : { requestKey }),
+          };
+        }
+
+        console.error(
+          `Review queueing failed for ${fullName} #${identity.prNumber}`,
+        );
+        return createOperationalFailureResult(
+          { status: 500, body: { error: reviewResult.message } },
+          requestKey,
+        );
+      }
+
+      console.log(`Review queued for ${fullName} #${identity.prNumber}`);
+      return {
+        response: { status: 200, body: { message: "Event Processed" } },
+        requestKey: reviewResult.requestKey,
+      };
+    }
+
+    if (action === "closed") {
+      const pullRequest = body["pull_request"];
+      const isMerged =
+        isRecord(pullRequest) && pullRequest["merged"] === true;
+
+      if (isMerged) {
+        await dependencies.finalizeMergedPullRequest(pullRequestIdentity);
+      }
+    }
+
+    return {
+      response: { status: 200, body: { message: "Event Processed" } },
+    };
+  }
+
+  if (event === "issue_comment") {
+    if (body["action"] !== "created") {
+      return { response: { status: 200, body: { message: "Ignored" } } };
+    }
+
+    const issue = body["issue"];
+    const comment = body["comment"];
+    const repository = body["repository"];
+    const isPullRequest = isRecord(issue) && issue["pull_request"] != null;
+
+    if (!isPullRequest) {
+      return {
+        response: { status: 200, body: { message: "Not a PR comment" } },
+      };
+    }
+
+    const commentBody = isRecord(comment) ? comment["body"] : undefined;
+    const repoInfo = parseRepoFullName(
+      isRecord(repository) ? repository["full_name"] : undefined,
+    );
+    const prNumber = parsePrNumber(
+      isRecord(issue) ? issue["number"] : undefined,
+    );
+
+    if (typeof commentBody !== "string" || !repoInfo || prNumber === null) {
+      return {
+        response: {
+          status: 200,
+          body: { message: "Ignored: malformed issue_comment payload" },
+        },
+      };
+    }
+
+    const command = parseCommand(commentBody);
+
+    if (command?.type === "summary") {
+      const summaryResult = await dependencies.queueSummary({
+        owner: repoInfo.owner,
+        repo: repoInfo.repo,
+        prNumber,
+        transportBinding,
+      });
+      const requestKey = getResultRequestKey(summaryResult);
+
+      if (!summaryResult.success) {
+        if (summaryResult.reason !== "internal_error") {
+          console.info(
+            `Summary skipped for ${repoInfo.fullName} #${prNumber}: ${summaryResult.message}`,
+          );
+          return {
+            response: {
+              status: 200,
+              body: { message: summaryResult.message },
+            },
+            ...(requestKey === undefined ? {} : { requestKey }),
+          };
+        }
+
+        console.error(
+          `Summary queueing failed for ${repoInfo.fullName} #${prNumber}`,
+        );
+        return createOperationalFailureResult(
+          { status: 500, body: { error: summaryResult.message } },
+          requestKey,
+        );
+      }
+
+      console.log(`Summary queued for ${repoInfo.fullName} #${prNumber}`);
+      return {
+        response: { status: 200, body: { message: "Event Processed" } },
+        requestKey: summaryResult.requestKey,
+      };
+    }
+
+    return {
+      response: { status: 200, body: { message: "Event Processed" } },
+    };
+  }
+
+  return { response: { status: 200, body: { message: "Ignored" } } };
+}
+
+function getSafeFailure(error: unknown): {
+  code: string;
+  message: string;
+} {
+  if (error instanceof GithubWebhookDeliveryError) {
+    return { code: error.code, message: error.message };
+  }
+
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "DELIVERY_REQUEST_NOT_FOUND"
+  ) {
+    return {
+      code: "DELIVERY_REQUEST_NOT_FOUND",
+      message: "The review request bound to this delivery was not found.",
+    };
+  }
+
+  return {
+    code: "WEBHOOK_PROCESSING_FAILED",
+    message: "Error processing webhook",
   };
 }
 
@@ -292,6 +569,14 @@ export function createGithubWebhookHandler(
   dependencies: GithubWebhookHandlerDependencies,
 ): (input: GithubWebhookInput) => Promise<GithubWebhookResponse> {
   return async (input) => {
+    let acquiredDelivery:
+      | Extract<
+          Awaited<ReturnType<typeof acquireGithubWebhookDelivery>>,
+          { kind: "acquired" }
+        >
+      | undefined;
+    let requestKey: string | undefined;
+
     try {
       if (!input.event) {
         return {
@@ -311,160 +596,113 @@ export function createGithubWebhookHandler(
         return { status: 401, body: { error: "Invalid signature" } };
       }
 
+      if (!input.deliveryId) {
+        return {
+          status: 400,
+          body: { error: "Missing x-github-delivery header" },
+        };
+      }
+
       const body: unknown = JSON.parse(input.rawBody);
+      const action =
+        isRecord(body) && typeof body["action"] === "string"
+          ? body["action"]
+          : null;
+      const payloadSha256 = crypto
+        .createHash("sha256")
+        .update(input.rawBody)
+        .digest("hex");
+      const acquireResult = await dependencies.acquireDelivery({
+        deliveryId: input.deliveryId,
+        payloadSha256,
+        event: input.event,
+        action,
+        now: dependencies.now(),
+      });
 
-      if (input.event === "ping") {
-        return { status: 200, body: { message: "Pong" } };
+      if (acquireResult.kind === "processed") {
+        return { status: 200, body: { message: "Event already processed" } };
       }
 
-      if (!isRecord(body)) {
-        return { status: 200, body: { message: "Ignored: invalid payload" } };
+      if (acquireResult.kind === "processing") {
+        return { status: 202, body: { message: "Event processing" } };
       }
 
-      if (input.event === "pull_request") {
-        const action = body["action"];
-        const identity = getPullRequestIdentity(body);
+      acquiredDelivery = acquireResult;
+      requestKey = acquireResult.requestKey ?? undefined;
 
-        if (typeof action !== "string" || !identity) {
-          return {
-            status: 200,
-            body: { message: "Ignored: malformed pull_request payload" },
-          };
-        }
+      if (requestKey) {
+        const resumeResult = await dependencies.resumeRequest(requestKey);
 
-        const { fullName, ...pullRequestIdentity } = identity;
-
-        if (action === "opened" || action === "synchronize") {
-          if (action === "synchronize") {
-            const { headOwner, headRepoName } = parseHeadRepository(body);
-            const synchronizeResult = await dependencies.handleSynchronize({
-              ...pullRequestIdentity,
-              fullName,
-              beforeSha:
-                typeof body["before"] === "string" ? body["before"] : undefined,
-              afterSha:
-                typeof body["after"] === "string" ? body["after"] : undefined,
-              headOwner,
-              headRepoName,
-            });
-
-            if (synchronizeResult.type === "skip") {
-              return {
-                status: 200,
-                body: { message: synchronizeResult.message },
-              };
-            }
-          }
-
-          const reviewResult = await dependencies.queueReview(
-            pullRequestIdentity,
-          );
-
-          if (!reviewResult.success) {
-            if (reviewResult.reason !== "internal_error") {
-              console.info(
-                `Review skipped for ${fullName} #${identity.prNumber}: ${reviewResult.message}`,
-              );
-              return {
-                status: 200,
-                body: { message: reviewResult.message },
-              };
-            }
-
-            console.error(
-              `Review queueing failed for ${fullName} #${identity.prNumber}: ${reviewResult.message}`,
-            );
-            return { status: 500, body: { error: reviewResult.message } };
-          }
-
-          console.log(`Review queued for ${fullName} #${identity.prNumber}`);
-        }
-
-        if (action === "closed") {
-          const pullRequest = body["pull_request"];
-          const isMerged =
-            isRecord(pullRequest) && pullRequest["merged"] === true;
-
-          if (isMerged) {
-            await dependencies.finalizeMergedPullRequest(
-              pullRequestIdentity,
-            );
-          }
-        }
-
-        return { status: 200, body: { message: "Event Processed" } };
-      }
-
-      if (input.event === "issue_comment") {
-        if (body["action"] !== "created") {
-          return { status: 200, body: { message: "Ignored" } };
-        }
-
-        const issue = body["issue"];
-        const comment = body["comment"];
-        const repository = body["repository"];
-        const isPullRequest =
-          isRecord(issue) && issue["pull_request"] != null;
-
-        if (!isPullRequest) {
-          return { status: 200, body: { message: "Not a PR comment" } };
-        }
-
-        const commentBody = isRecord(comment) ? comment["body"] : undefined;
-        const repoInfo = parseRepoFullName(
-          isRecord(repository) ? repository["full_name"] : undefined,
-        );
-        const prNumber = parsePrNumber(
-          isRecord(issue) ? issue["number"] : undefined,
-        );
-
-        if (
-          typeof commentBody !== "string" ||
-          !repoInfo ||
-          prNumber === null
-        ) {
-          return {
-            status: 200,
-            body: { message: "Ignored: malformed issue_comment payload" },
-          };
-        }
-
-        const command = parseCommand(commentBody);
-
-        if (command?.type === "summary") {
-          const summaryResult = await dependencies.queueSummary({
-            owner: repoInfo.owner,
-            repo: repoInfo.repo,
-            prNumber,
+        if (resumeResult.kind === "dispatch-failed") {
+          await dependencies.failDelivery({
+            deliveryRowId: acquiredDelivery.deliveryRowId,
+            leaseToken: acquiredDelivery.leaseToken,
+            requestKey,
+            errorCode: "REQUEST_DISPATCH_FAILED",
+            errorMessage: resumeResult.message,
           });
-
-          if (!summaryResult.success) {
-            if (summaryResult.reason !== "internal_error") {
-              console.info(
-                `Summary skipped for ${repoInfo.fullName} #${prNumber}: ${summaryResult.message}`,
-              );
-              return {
-                status: 200,
-                body: { message: summaryResult.message },
-              };
-            }
-
-            console.error(
-              `Summary queueing failed for ${repoInfo.fullName} #${prNumber}: ${summaryResult.message}`,
-            );
-            return { status: 500, body: { error: summaryResult.message } };
-          }
-
-          console.log(`Summary queued for ${repoInfo.fullName} #${prNumber}`);
+          return { status: 500, body: { error: resumeResult.message } };
         }
 
+        await dependencies.completeDelivery({
+          deliveryRowId: acquiredDelivery.deliveryRowId,
+          leaseToken: acquiredDelivery.leaseToken,
+          requestKey,
+          now: dependencies.now(),
+        });
         return { status: 200, body: { message: "Event Processed" } };
       }
 
-      return { status: 200, body: { message: "Ignored" } };
+      const eventResult = await processGithubEvent({
+        event: input.event,
+        body,
+        transportBinding: {
+          kind: "GITHUB_WEBHOOK",
+          deliveryRowId: acquiredDelivery.deliveryRowId,
+          leaseToken: acquiredDelivery.leaseToken,
+        },
+        dependencies,
+      });
+      requestKey = eventResult.requestKey;
+
+      if (eventResult.operationalFailure) {
+        await dependencies.failDelivery({
+          deliveryRowId: acquiredDelivery.deliveryRowId,
+          leaseToken: acquiredDelivery.leaseToken,
+          ...(requestKey === undefined ? {} : { requestKey }),
+          errorCode: eventResult.operationalFailure.code,
+          errorMessage: eventResult.operationalFailure.message,
+        });
+        return eventResult.response;
+      }
+
+      await dependencies.completeDelivery({
+        deliveryRowId: acquiredDelivery.deliveryRowId,
+        leaseToken: acquiredDelivery.leaseToken,
+        ...(requestKey === undefined ? {} : { requestKey }),
+        now: dependencies.now(),
+      });
+      return eventResult.response;
     } catch (error) {
-      console.error("Error processing webhook:", error);
-      return { status: 500, body: { error: "Error processing webhook" } };
+      const safeFailure = getSafeFailure(error);
+
+      if (acquiredDelivery) {
+        try {
+          await dependencies.failDelivery({
+            deliveryRowId: acquiredDelivery.deliveryRowId,
+            leaseToken: acquiredDelivery.leaseToken,
+            ...(requestKey === undefined ? {} : { requestKey }),
+            errorCode: safeFailure.code,
+            errorMessage: safeFailure.message,
+          });
+        } catch {
+          console.error("GitHub webhook failure lease was already lost");
+        }
+      }
+
+      console.error(`Error processing webhook: ${safeFailure.code}`);
+      return { status: 500, body: { error: safeFailure.message } };
     }
   };
 }

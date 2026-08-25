@@ -26,12 +26,22 @@ describe("reviewPullRequest", () => {
       owner: "octo",
       repo: "sample",
       prNumber: 42,
+      transportBinding: {
+        kind: "GITHUB_WEBHOOK",
+        deliveryRowId: "delivery-row-1",
+        leaseToken: "delivery-lease-1",
+      },
     });
 
     expect(reviewRequestMocks.createReviewRequest).toHaveBeenCalledWith({
       owner: "octo",
       repo: "sample",
       prNumber: 42,
+      transportBinding: {
+        kind: "GITHUB_WEBHOOK",
+        deliveryRowId: "delivery-row-1",
+        leaseToken: "delivery-lease-1",
+      },
       reviewType: "FULL_REVIEW",
       reviewMode: "FULL",
       requestSource: "AUTOMATIC",

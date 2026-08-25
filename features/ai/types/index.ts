@@ -1,3 +1,5 @@
+import type { GithubWebhookTransportBinding } from "@/lib/github/github-webhook-delivery";
+
 export interface PRCommand {
   type: "summary" | "review";
 }
@@ -6,6 +8,7 @@ export type PullRequestIdentityInput = {
   owner: string;
   repo: string;
   prNumber: number;
+  transportBinding?: GithubWebhookTransportBinding;
 };
 
 export type ReviewRequestMetadata = {

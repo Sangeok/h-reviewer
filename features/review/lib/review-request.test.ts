@@ -6,6 +6,7 @@ import type { ReviewStatus } from "@/lib/generated/prisma/enums";
 
 import {
   createReviewRequest,
+  resumeReviewRequest,
   retryReviewRequest,
   type ReviewRequestDependencies,
 } from "./review-request";
@@ -34,6 +35,7 @@ function createRequestHarness(): {
   reviews: FakeReview[];
   sendEvent: ReturnType<typeof vi.fn>;
   getPullRequestSnapshot: ReturnType<typeof vi.fn>;
+  bindGithubWebhookDeliveryRequest: ReturnType<typeof vi.fn>;
 } {
   const reviews: FakeReview[] = [];
   const reviewDelegate = {
@@ -123,6 +125,7 @@ function createRequestHarness(): {
     ),
   };
   const sendEvent = vi.fn(async () => ({ ids: ["event-1"] }));
+  const bindGithubWebhookDeliveryRequest = vi.fn(async () => undefined);
   const getPullRequestSnapshot = vi.fn(async () => ({
     title: "Improve coordinator",
     url: "https://github.com/octo/sample/pull/42",
@@ -147,11 +150,18 @@ function createRequestHarness(): {
     getPullRequestSnapshot,
     getUserLanguageByUserId: vi.fn(async (): Promise<"ko"> => "ko"),
     getUserTier: vi.fn(async (): Promise<"PRO"> => "PRO"),
+    bindGithubWebhookDeliveryRequest,
     sendEvent,
     now: () => NOW,
   };
 
-  return { dependencies, reviews, sendEvent, getPullRequestSnapshot };
+  return {
+    dependencies,
+    reviews,
+    sendEvent,
+    getPullRequestSnapshot,
+    bindGithubWebhookDeliveryRequest,
+  };
 }
 
 function createFullReviewInput() {
@@ -215,6 +225,54 @@ describe("review request coordinator", () => {
     });
     expect(reviews).toHaveLength(1);
     expect(sendEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("binds a new and an existing semantic request inside their transactions", async () => {
+    const {
+      dependencies,
+      bindGithubWebhookDeliveryRequest,
+    } = createRequestHarness();
+    const transportBinding = {
+      kind: "GITHUB_WEBHOOK",
+      deliveryRowId: "delivery-row-1",
+      leaseToken: "delivery-lease-1",
+    } as const;
+
+    await createReviewRequest(
+      { ...createFullReviewInput(), transportBinding },
+      dependencies,
+    );
+    await createReviewRequest(
+      {
+        ...createFullReviewInput(),
+        requestSource: "COMMAND",
+        transportBinding: {
+          ...transportBinding,
+          deliveryRowId: "delivery-row-2",
+          leaseToken: "delivery-lease-2",
+        },
+      },
+      dependencies,
+    );
+
+    expect(bindGithubWebhookDeliveryRequest).toHaveBeenNthCalledWith(
+      1,
+      {
+        deliveryRowId: "delivery-row-1",
+        leaseToken: "delivery-lease-1",
+        requestKey: "FULL_REVIEW:FULL:repository-1:42:head-sha:default",
+      },
+      expect.objectContaining({ review: expect.any(Object) }),
+    );
+    expect(bindGithubWebhookDeliveryRequest).toHaveBeenNthCalledWith(
+      2,
+      {
+        deliveryRowId: "delivery-row-2",
+        leaseToken: "delivery-lease-2",
+        requestKey: "FULL_REVIEW:FULL:repository-1:42:head-sha:default",
+      },
+      expect.objectContaining({ review: expect.any(Object) }),
+    );
   });
 
   it("rejects a free full review before snapshot or durable side effects", async () => {
@@ -344,6 +402,105 @@ describe("review request coordinator", () => {
         id: "hreviewer:review-run:review-1:2",
         data: expect.objectContaining({ attempt: 2 }),
       }),
+    );
+  });
+
+  it("resumes a bound queue failure on the same review without a new snapshot", async () => {
+    const { dependencies, reviews, sendEvent, getPullRequestSnapshot } =
+      createRequestHarness();
+    sendEvent.mockRejectedValueOnce(new Error("queue unavailable"));
+    const failed = await createReviewRequest(createFullReviewInput(), dependencies);
+    if (!("requestKey" in failed)) throw new Error("Missing request key");
+    sendEvent.mockClear();
+    getPullRequestSnapshot.mockClear();
+
+    const resumed = await resumeReviewRequest(failed.requestKey, dependencies);
+
+    expect(resumed).toMatchObject({
+      kind: "existing",
+      reviewId: "review-1",
+      status: "PENDING",
+    });
+    expect(reviews).toHaveLength(1);
+    expect(reviews[0]?.attemptCount).toBe(2);
+    expect(getPullRequestSnapshot).not.toHaveBeenCalled();
+    expect(sendEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "hreviewer:review-run:review-1:2",
+        data: expect.objectContaining({ attempt: 2 }),
+      }),
+    );
+  });
+
+  it("resends an unacknowledged pending request with the same attempt and event ID", async () => {
+    const { dependencies, reviews, sendEvent, getPullRequestSnapshot } =
+      createRequestHarness();
+    await createReviewRequest(createFullReviewInput(), dependencies);
+    const review = reviews[0];
+    if (!review) throw new Error("Missing review fixture");
+    review.lastCompletedStage = null;
+    sendEvent.mockClear();
+    getPullRequestSnapshot.mockClear();
+
+    const resumed = await resumeReviewRequest(review.requestKey, dependencies);
+
+    expect(resumed).toMatchObject({ kind: "existing", status: "PENDING" });
+    expect(review.attemptCount).toBe(1);
+    expect(getPullRequestSnapshot).not.toHaveBeenCalled();
+    expect(sendEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "hreviewer:review-run:review-1:1",
+        data: expect.objectContaining({ attempt: 1 }),
+      }),
+    );
+  });
+
+  it("does not redispatch an already acknowledged pending request", async () => {
+    const { dependencies, reviews, sendEvent, getPullRequestSnapshot } =
+      createRequestHarness();
+    await createReviewRequest(createFullReviewInput(), dependencies);
+    const review = reviews[0];
+    if (!review) throw new Error("Missing review fixture");
+    sendEvent.mockClear();
+    getPullRequestSnapshot.mockClear();
+
+    await expect(
+      resumeReviewRequest(review.requestKey, dependencies),
+    ).resolves.toMatchObject({ kind: "existing", status: "PENDING" });
+    expect(sendEvent).not.toHaveBeenCalled();
+    expect(getPullRequestSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("rejects a delivery request key without a persisted review", async () => {
+    const { dependencies, sendEvent, getPullRequestSnapshot } =
+      createRequestHarness();
+
+    await expect(
+      resumeReviewRequest("missing-request", dependencies),
+    ).rejects.toMatchObject({ code: "DELIVERY_REQUEST_NOT_FOUND" });
+    expect(sendEvent).not.toHaveBeenCalled();
+    expect(getPullRequestSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("rotates only an expired queue lease before resending the same attempt", async () => {
+    const { dependencies, reviews, sendEvent } = createRequestHarness();
+    await createReviewRequest(createFullReviewInput(), dependencies);
+    const review = reviews[0];
+    if (!review) throw new Error("Missing review fixture");
+    const priorLeaseToken = review.executionLeaseToken;
+    review.lastCompletedStage = null;
+    review.executionLeaseExpiresAt = new Date(NOW.getTime() - 1);
+    sendEvent.mockClear();
+
+    await resumeReviewRequest(review.requestKey, dependencies);
+
+    expect(review.attemptCount).toBe(1);
+    expect(review.executionLeaseToken).not.toBe(priorLeaseToken);
+    expect(review.executionLeaseExpiresAt).toEqual(
+      new Date(NOW.getTime() + 30 * 60 * 1000),
+    );
+    expect(sendEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "hreviewer:review-run:review-1:1" }),
     );
   });
 });
