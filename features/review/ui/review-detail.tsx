@@ -13,14 +13,28 @@ import type { StoredReviewData } from "@/features/ai";
 import type { LanguageCode } from "@/shared/types/language";
 import { StructuredReviewBody } from "./parts/structured-review-body";
 import { VerificationPanel } from "./parts/verification-panel";
+import {
+  getReviewStatusPresentation,
+  ReviewStatusBadge,
+} from "./parts/review-status-badge";
 
-interface Props {
+interface ReviewDetailProps {
   review: ReviewDetailData;
   structuredData: StoredReviewData | null;
   langCode: LanguageCode;
 }
 
-export default function ReviewDetail({ review, structuredData, langCode }: Props) {
+export default function ReviewDetail({
+  review,
+  structuredData,
+  langCode,
+}: ReviewDetailProps) {
+  const isCompleted = review.status === "COMPLETED";
+  const statusPresentation = getReviewStatusPresentation(review.status);
+  const isRetryableFailure =
+    review.status === "FAILED" &&
+    review.failureStage !== null &&
+    review.failureStage !== "LEGACY";
   const structuredSuggestionCount = structuredData?.suggestions.length ?? 0;
   const persistedSuggestionCount = review.suggestions.length;
   const shouldRenderSuggestionSummary =
@@ -40,7 +54,10 @@ export default function ReviewDetail({ review, structuredData, langCode }: Props
 
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-medium text-foreground">{review.prTitle}</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-medium text-foreground">{review.prTitle}</h1>
+              <ReviewStatusBadge status={review.status} />
+            </div>
             <p className="text-sm text-muted-foreground mt-1">
               {review.repository.fullName} • PR #{review.prNumber}
             </p>
@@ -60,7 +77,18 @@ export default function ReviewDetail({ review, structuredData, langCode }: Props
           <CardTitle className="text-lg font-medium text-foreground">Review</CardTitle>
         </CardHeader>
         <CardContent>
-          {structuredData ? (
+          {!isCompleted ? (
+            <div className="space-y-2 text-sm text-secondary-foreground">
+              <p>{review.failureMessage ?? statusPresentation.description}</p>
+              {review.status === "FAILED" && (
+                <p className="text-muted-foreground">
+                  {isRetryableFailure
+                    ? "This review can be retried."
+                    : "Retry is unavailable for this legacy failure."}
+                </p>
+              )}
+            </div>
+          ) : structuredData ? (
             <StructuredReviewBody
               data={structuredData}
               langCode={langCode}
@@ -77,7 +105,7 @@ export default function ReviewDetail({ review, structuredData, langCode }: Props
       </Card>
 
       {/* Review Verification (검수자) */}
-      {structuredData?.verification && (
+      {isCompleted && structuredData?.verification && (
         <VerificationPanel
           issues={structuredData.issues}
           verification={structuredData.verification}
@@ -86,7 +114,7 @@ export default function ReviewDetail({ review, structuredData, langCode }: Props
       )}
 
       {/* Suggestions */}
-      {review.suggestions.length > 0 && (
+      {isCompleted && review.suggestions.length > 0 && (
         <QueryBoundary
           fallback={<SuggestionListSkeleton />}
           title="Suggestions"

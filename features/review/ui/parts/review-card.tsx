@@ -6,13 +6,23 @@ import { formatDistanceToNow } from "@/lib/formatDistanceToNow";
 import Link from "next/link";
 import type { ReviewListItem } from "../../types";
 import { REVIEW_PREVIEW_MAX_CHARS } from "../../constants";
-import { ReviewStatusBadge } from "./review-status-badge";
+import {
+  getReviewStatusPresentation,
+  ReviewStatusBadge,
+} from "./review-status-badge";
 
 interface ReviewCardProps {
   review: ReviewListItem;
 }
 
 export function ReviewCard({ review }: ReviewCardProps) {
+  const statusPresentation = getReviewStatusPresentation(review.status);
+  const isCompleted = review.status === "COMPLETED";
+  const isRetryableFailure =
+    review.status === "FAILED" &&
+    review.failureStage !== null &&
+    review.failureStage !== "LEGACY";
+
   return (
     <Card className="group relative overflow-hidden bg-gradient-to-b from-card to-background border-border hover:border-ring/50 transition-all duration-300">
       {/* Subtle hover glow */}
@@ -71,10 +81,23 @@ export function ReviewCard({ review }: ReviewCardProps) {
               <span className="text-xs text-muted-foreground-alt font-mono">AI Review</span>
             </div>
 
-            <pre className="text-xs text-secondary-foreground font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto">
-              {(review.review ?? "").substring(0, REVIEW_PREVIEW_MAX_CHARS)}
-              {(review.review ?? "").length > REVIEW_PREVIEW_MAX_CHARS ? "..." : ""}
-            </pre>
+            {isCompleted ? (
+              <pre className="text-xs text-secondary-foreground font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto">
+                {review.review.substring(0, REVIEW_PREVIEW_MAX_CHARS)}
+                {review.review.length > REVIEW_PREVIEW_MAX_CHARS ? "..." : ""}
+              </pre>
+            ) : (
+              <div className="space-y-2 text-xs text-secondary-foreground">
+                <p>{review.failureMessage ?? statusPresentation.description}</p>
+                {review.status === "FAILED" && (
+                  <p className="text-muted-foreground">
+                    {isRetryableFailure
+                      ? "This review can be retried."
+                      : "Retry is unavailable for this legacy failure."}
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-card to-transparent pointer-events-none" />
           </div>

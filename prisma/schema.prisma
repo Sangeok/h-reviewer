@@ -1,4 +1,3 @@
-
 generator client {
   provider = "prisma-client"
   output   = "../lib/generated/prisma"
@@ -9,27 +8,26 @@ datasource db {
 }
 
 model User {
-  id            String    @id
+  id            String   @id
   name          String
   email         String
-  emailVerified Boolean   @default(false)
+  emailVerified Boolean  @default(false)
   image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  sessions      Session[]
-  accounts      Account[]
-  repositories  Repository[]
+  sessions     Session[]
+  accounts     Account[]
+  repositories Repository[]
 
+  usage               UserUsage?
+  subscriptionTier    String     @default("FREE")
+  subscriptionStatus  String? // ACTIVE, CANCELLED, EXPIRED
+  polarCustomerId     String?    @unique
+  polarSubscriptionId String?    @unique
 
-  usage UserUsage?
-  subscriptionTier String @default("FREE")
-  subscriptionStatus String? // ACTIVE, CANCELLED, EXPIRED
-  polarCustomerId String? @unique
-  polarSubscriptionId String? @unique
-
-  preferredLanguage String @default("en")
-  maxSuggestions    Int?   // null = PR 크기별 기본값 사용, 1-15 범위
+  preferredLanguage   String  @default("en")
+  maxSuggestions      Int? // null = PR 크기별 기본값 사용, 1-15 범위
   verificationEnabled Boolean @default(false) // true = 게시 전 검수자(LLM 팩트체크)가 오탐을 필터링
 
   @@unique([email])
@@ -73,15 +71,15 @@ model Account {
 }
 
 model Repository {
-  id String @id @default(cuid())
-  githubId BigInt @unique
-  name String
-  owner String
+  id       String   @id @default(cuid())
+  githubId BigInt   @unique
+  name     String
+  owner    String
   fullName String
-  url String
-  userId String
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reviews Review[]
+  url      String
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviews  Review[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -93,6 +91,67 @@ model Repository {
 enum ReviewType {
   SUMMARY
   FULL_REVIEW
+}
+
+enum ReviewStatus {
+  PENDING
+  RUNNING
+  POSTING
+  COMPLETED
+  FAILED
+  SUPERSEDED
+}
+
+enum ReviewRequestSource {
+  LEGACY
+  AUTOMATIC
+  COMMAND
+}
+
+enum ReviewMode {
+  FULL
+  INCREMENTAL
+}
+
+enum ReviewFailureStage {
+  LEGACY
+  QUEUE
+  FETCH
+  GENERATE
+  VERIFY
+  PERSIST
+  POST
+  RECONCILE
+}
+
+enum ReviewExecutionStage {
+  QUEUED
+  FETCHED
+  GENERATED
+  VERIFIED
+  PERSISTED
+  MAIN_POSTED
+  INLINE_POSTED
+  VERIFICATION_POSTED
+}
+
+enum ReviewExecutionLeaseOwner {
+  QUEUE
+  WORKER
+  RECONCILER
+}
+
+enum TrialCreditState {
+  NOT_APPLICABLE
+  RESERVED
+  CONSUMED
+  RELEASED
+}
+
+enum GithubWebhookDeliveryStatus {
+  PROCESSING
+  PROCESSED
+  FAILED
 }
 
 enum SuggestionStatus {
@@ -115,32 +174,77 @@ enum SuggestionApplySource {
 }
 
 model Review {
-  id  String @id @default(cuid())
-  repositoryId  String
-  repository Repository @relation(fields: [repositoryId], references:[id], onDelete: Cascade)
-  prNumber  Int
-  prTitle   String
-  prUrl     String
-  review    String  @db.Text
-  reviewData Json?     // 구조화 출력 JSON (웹 UI 렌더링용) — AI 출력 + schemaVersion만 저장
-  langCode  String  @default("en")  // 리뷰 생성 시점의 언어 코드
-  reviewType ReviewType @default(FULL_REVIEW)
-  status    String  @default("completed") // completed, failed, pending
-  headSha   String?
+  id                  String     @id @default(cuid())
+  repositoryId        String
+  repository          Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  prNumber            Int
+  prTitle             String
+  prUrl               String
+  review              String     @db.Text
+  reviewData          Json? // 구조화 출력 JSON (웹 UI 렌더링용) — AI 출력 + schemaVersion만 저장
+  langCode            String     @default("en") // 리뷰 생성 시점의 언어 코드
+  maxSuggestions      Int?
+  verificationEnabled Boolean    @default(false)
+  reviewType          ReviewType @default(FULL_REVIEW)
+  headSha             String?
+
+  requestKey              String                     @unique @db.VarChar(255)
+  requestSource           ReviewRequestSource        @default(LEGACY)
+  reviewMode              ReviewMode                 @default(FULL)
+  status                  ReviewStatus               @default(PENDING)
+  failureStage            ReviewFailureStage?
+  failureMessage          String?                    @db.VarChar(1000)
+  lastCompletedStage      ReviewExecutionStage?
+  attemptCount            Int                        @default(1)
+  executionLeaseExpiresAt DateTime?
+  executionLeaseToken     String?                    @db.VarChar(64)
+  executionLeaseOwner     ReviewExecutionLeaseOwner?
+
+  githubMainReviewId     String?          @db.VarChar(64)
+  githubMainPostedAt     DateTime?
+  githubAuthorId         String?          @db.VarChar(64)
+  artifactLookupMissedAt DateTime?
+  trialCreditState       TrialCreditState @default(NOT_APPLICABLE)
+
   suggestions Suggestion[]
-  issues    ReviewIssue[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  issues      ReviewIssue[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   @@index([repositoryId])
+  @@index([repositoryId, prNumber, headSha])
+  @@index([status, executionLeaseExpiresAt])
   @@map("review")
 }
 
+model GithubWebhookDelivery {
+  id            String  @id @default(cuid())
+  deliveryId    String  @unique @db.VarChar(64)
+  payloadSha256 String  @db.Char(64)
+  event         String  @db.VarChar(64)
+  action        String? @db.VarChar(64)
+  requestKey    String? @db.VarChar(255)
+
+  status         GithubWebhookDeliveryStatus @default(PROCESSING)
+  attemptCount   Int                         @default(1)
+  leaseToken     String?                     @db.VarChar(64)
+  leaseExpiresAt DateTime?
+
+  lastErrorCode    String?   @db.VarChar(64)
+  lastErrorMessage String?   @db.VarChar(1000)
+  processedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([status, leaseExpiresAt])
+  @@map("github_webhook_delivery")
+}
+
 enum IssueResolutionStatus {
-  PENDING           // 관찰 중 (PR 미종료)
-  ADDRESSED_STRONG  // 라인 수정 + 시맨틱 판정 통과
-  ADDRESSED_WEAK    // 라인 수정만 (판정 불통과/실패)
-  IGNORED           // PR 머지까지 무변경
+  PENDING // 관찰 중 (PR 미종료)
+  ADDRESSED_STRONG // 라인 수정 + 시맨틱 판정 통과
+  ADDRESSED_WEAK // 라인 수정만 (판정 불통과/실패)
+  IGNORED // PR 머지까지 무변경
 }
 
 model ReviewIssue {
@@ -152,7 +256,7 @@ model ReviewIssue {
   filePath   String?
   lineNumber Int?
   title      String
-  body       String @db.Text
+  body       String             @db.Text
   severity   SuggestionSeverity
   category   String // source of truth: issueCategorySchema (module/ai/lib/review-schema.ts)
 
@@ -177,25 +281,25 @@ model ReviewIssue {
 }
 
 model Suggestion {
-  id            String              @id @default(cuid())
-  reviewId      String
-  review        Review              @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  reviewId String
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
 
-  filePath      String
-  lineNumber    Int
-  beforeCode    String   @db.Text
-  afterCode     String   @db.Text
-  explanation   String   @db.Text
-  severity      SuggestionSeverity  @default(SUGGESTION)
+  filePath    String
+  lineNumber  Int
+  beforeCode  String             @db.Text
+  afterCode   String             @db.Text
+  explanation String             @db.Text
+  severity    SuggestionSeverity @default(SUGGESTION)
 
-  status        SuggestionStatus    @default(PENDING)
-  appliedAt     DateTime?
+  status           SuggestionStatus       @default(PENDING)
+  appliedAt        DateTime?
   appliedCommitSha String?
-  appliedSource SuggestionApplySource?
-  dismissedAt   DateTime?
+  appliedSource    SuggestionApplySource?
+  dismissedAt      DateTime?
 
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([reviewId])
   @@index([status])
@@ -204,13 +308,14 @@ model Suggestion {
 }
 
 model UserUsage {
-  id  String  @id @default(cuid())
-  userId  String  @unique
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  repositoryCount Int @default(0)
-  reviewCounts  Json  @default("{}") // {"repoId":count}
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repositoryCount        Int      @default(0)
+  reviewCounts           Json     @default("{}") // {"repoId":count}
+  trialReviewCreditsUsed Int      @default(0)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
   @@map("user_usage")
 }

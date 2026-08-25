@@ -1,14 +1,14 @@
 # HReviewer 개인 리뷰 코치 P0 구현 상세 계획
 
-> 상태: **T01 완료 — 다음 task T02; T09 generation target 결정 완료, lifecycle·품질 release gate 유지**
+> 상태: **T01-T02 완료 — T03 NEXT; T09 generation target 결정 완료, lifecycle·품질 release gate 유지**
 >
 > 기준일: <code>2026-08-25</code>
 >
-> 코드 기준: <code>06990238d309b91b787705fdd2e8d028aeedea84</code>
+> 코드 기준: <code>f165cd2a06c966c97385c190259a8045be8c3c96</code>
 >
-> 재조정 기준: <code>2026-08-25 Asia/Seoul</code>. 직접 source bundle은 이 문서, 상위 로드맵(<code>SHA-256 834ba415497808639bde107e89c161fdf72e4e5336d296dd0e170c379d6f8f80</code>), 기존 RAG 제거 평가(<code>SHA-256 8cba9e2b3a358ff162d0880e4f11647bfe5ff014a317606b84699a7024aa0601</code>)다.
+> 재조정 기준: <code>2026-08-25 Asia/Seoul</code>. 직접 source bundle은 이 문서, 상위 로드맵(<code>SHA-256 d411f776b5bc142683a905e82d79141a140f5fee5275958df60e73f3d616322d</code>), 기존 RAG 제거 평가(<code>SHA-256 8cba9e2b3a358ff162d0880e4f11647bfe5ff014a317606b84699a7024aa0601</code>)다.
 >
-> candidate inventory는 <code>git ls-files -- app components features inngest lib prisma scripts package.json package-lock.json vitest.config.ts tsconfig.json next.config.ts eslint.config.mjs .gitignore</code> 결과를 ordinal 정렬하고 각 repository-relative path를 LF로 연결한 뒤 마지막 LF를 붙인 UTF-8 bytes다. 기준 commit에서 <code>201</code>개, <code>SHA-256 917e903268d3395acbeb8aec1c424fb59b56424383312243fa1c095812e93ff0</code>이며 task 시작 시 같은 방식으로 다시 계산한다.
+> candidate inventory는 <code>git ls-files -- app components features inngest lib prisma scripts package.json package-lock.json vitest.config.ts tsconfig.json next.config.ts eslint.config.mjs .gitignore</code> 결과를 ordinal 정렬하고 각 repository-relative path를 LF로 연결한 뒤 마지막 LF를 붙인 UTF-8 bytes다. 기준 commit에서 <code>207</code>개, <code>SHA-256 af1d20b65a4c91ec73affb68b04f3f7deec6173c83d255787982f3cf61534c97</code>이며 task 시작 시 같은 방식으로 다시 계산한다.
 >
 > 상위 문서: [HReviewer 개인 코드 리뷰 코치 실행 제안서](./hreviewer-personal-review-coach-roadmap.md)
 >
@@ -528,7 +528,7 @@ export const GITHUB_POST_TIMEOUT_MS = 60 * 1000;
 export const REVIEW_ARTIFACT_ABSENCE_GRACE_MS = 5 * 60 * 1000;
 ~~~
 
-T03은 queue/execution lease 두 상수만 추가하고, GitHub timeout과 absence grace 상수는 그 소비자가 생기는 T07에서 같은 파일에 추가한다.
+T02는 상태 claim과 만료 fencing에 필요한 <code>REVIEW_EXECUTION_LEASE_MS</code>를 먼저 추가한다. T03은 request queue가 생길 때 <code>REVIEW_QUEUE_LEASE_MS</code>를 추가하고, GitHub timeout과 absence grace 상수는 그 소비자가 생기는 T07에서 같은 파일에 추가한다.
 
 PENDING row 생성 시 QUEUE owner의 token과 queue lease를 반드시 설정한다. worker claim은 token을 새 WORKER token으로 회전하고, 각 장기 외부 단계 직전에는 exact token으로 execution lease를 갱신한다. COMPLETED와 일반 FAILED·SUPERSEDED 전이에서는 lease token/owner/expiry를 모두 null로 지운다. T07부터 marker ambiguity가 남은 FAILED·SUPERSEDED만 RECONCILER owner의 새 token으로 같은 column을 due lease로 다시 획득할 수 있다. 이렇게 해야 T07 reconciler가 queue 전송 뒤 실행되지 않은 PENDING도 회수하고 terminal ambiguity를 중복 조회 없이 수렴시키며, lease가 만료된 이전 worker가 뒤늦게 post하거나 완료 상태를 덮어쓰지 못한다.
 
@@ -553,6 +553,7 @@ export type TransitionReviewExecutionInput = {
   attempt: number;
   leaseToken: string;
   leaseOwner: "QUEUE" | "WORKER" | "RECONCILER";
+  now: Date;
   from: readonly ReviewStatus[];
   to: ReviewStatus;
   failure?: {
@@ -608,9 +609,9 @@ export async function recordGithubMainArtifact(
 ): Promise<void>;
 ~~~
 
-구현은 <code>updateMany()</code>의 where에 ID, allowed status, <code>attemptCount</code>, <code>executionLeaseToken</code>, <code>executionLeaseOwner</code>를 모두 넣는 fencing CAS를 사용하고 count가 1이 아니면 <code>ReviewStateConflictError</code>를 던진다. claim은 PENDING의 event attempt가 현재 <code>attemptCount</code>와 같을 때만 WORKER token으로 회전한다. <code>acknowledgeReviewDispatch()</code>는 exact PENDING/QUEUE fence에서만 QUEUED checkpoint를 쓰며, CAS miss이면 같은 attempt의 factual status를 읽어 worker 선행 claim인지 idempotent acknowledgement인지 분류하고 설명되지 않는 PENDING fence만 conflict로 거절한다. reconciler acquire는 만료 조건과 현재 token을 CAS해 RECONCILER token으로 회전한다. <code>to=FAILED</code>인데 failure가 없거나 허용하지 않은 상태 전이면 DB query 전에 거절한다. P0 최종 계약에서 <code>recordGithubMainArtifact()</code>는 trusted GitHub 응답 또는 marker lookup 결과의 non-empty ID·postedAt과 <code>lastCompletedStage=MAIN_POSTED</code>를 즉시 기록한다. 이후 <code>to=COMPLETED</code> CAS는 persisted <code>Review.review</code>가 non-empty이고 <code>githubMainReviewId</code>, <code>githubMainPostedAt</code>, <code>MAIN_POSTED</code> 또는 이후 checkpoint가 모두 있는 row만 대상으로 삼아 status와 lease 정리를 기록한다. worker 정상 경로는 main 게시 직후 artifact를 먼저 보존하고 optional post 뒤 완료하며, reconciler는 artifact 기록과 완료 전이를 같은 DB transaction에서 수행한다. 두 helper를 우회해 GitHub 필드나 COMPLETED를 직접 update하는 경로를 만들지 않는다.
+구현은 <code>updateMany()</code>의 where에 ID, allowed status, <code>attemptCount</code>, <code>executionLeaseToken</code>, <code>executionLeaseOwner</code>와 <code>executionLeaseExpiresAt &gt; now</code>를 모두 넣는 fencing CAS를 사용하고 count가 1이 아니면 <code>ReviewStateConflictError</code>를 던진다. claim은 PENDING의 event attempt가 현재 <code>attemptCount</code>와 같을 때만 WORKER token으로 회전한다. <code>acknowledgeReviewDispatch()</code>는 exact PENDING/QUEUE fence에서만 QUEUED checkpoint를 쓰며, CAS miss이면 같은 attempt의 factual status를 읽어 worker 선행 claim인지 idempotent acknowledgement인지 분류하고 설명되지 않는 PENDING fence만 conflict로 거절한다. reconciler acquire는 만료 조건과 현재 token을 CAS해 RECONCILER token으로 회전한다. <code>to=FAILED</code>인데 failure가 없거나 허용하지 않은 상태 전이면 DB query 전에 거절한다. P0 최종 계약에서 <code>recordGithubMainArtifact()</code>는 trusted GitHub 응답 또는 marker lookup 결과의 non-empty ID·postedAt과 <code>lastCompletedStage=MAIN_POSTED</code>를 즉시 기록한다. 이후 <code>to=COMPLETED</code> CAS는 persisted <code>Review.review</code>가 non-empty이고 <code>githubMainReviewId</code>, <code>githubMainPostedAt</code>, <code>MAIN_POSTED</code> 또는 이후 checkpoint가 모두 있는 row만 대상으로 삼아 status와 lease 정리를 기록한다. worker 정상 경로는 main 게시 직후 artifact를 먼저 보존하고 optional post 뒤 완료하며, reconciler는 artifact 기록과 완료 전이를 같은 DB transaction에서 수행한다. 두 helper를 우회해 GitHub 필드나 COMPLETED를 직접 update하는 경로를 만들지 않는다.
 
-T02의 최초 helper는 아직 GitHub posting 함수가 ID를 반환하지 않는 T03-T06 호환을 위해 <code>POSTING -> COMPLETED</code>의 artifact 강제를 활성화하지 않고 <code>FAILED -> COMPLETED</code>도 허용하지 않는다. T07이 posting 반환 contract와 DB-before-post를 함께 도입하는 같은 task에서 <code>recordGithubMainArtifact()</code>, completion guard, <code>FAILED -> COMPLETED</code> 복구 전이와 관련 테스트를 추가한다. T02에서 T07의 GitHub artifact 동작을 선반영하거나, T07 이후에도 임시 무-artifact 완료 분기를 남기지 않는다.
+T02의 최초 helper surface는 <code>transitionReviewExecution()</code>, <code>claimReviewExecution()</code>, <code>renewReviewExecutionLease()</code>와 <code>ReviewStateConflictError</code>다. 이 단계에서 claim만 <code>PENDING -> RUNNING</code>과 새 WORKER token 회전을 소유하고, 일반 transition은 현재 lease가 있는 <code>PENDING -> FAILED | SUPERSEDED</code>, <code>RUNNING -> POSTING | FAILED | SUPERSEDED</code>, <code>POSTING -> COMPLETED | FAILED | SUPERSEDED</code>만 허용한다. terminal 전이는 lease를 지우므로, 새 attempt·QUEUE lease를 한 transaction에서 만드는 <code>FAILED -> PENDING</code>은 T03의 retry helper와 함께 추가한다. 아직 GitHub posting 함수가 ID를 반환하지 않는 T03-T06 호환을 위해 <code>POSTING -> COMPLETED</code>의 artifact 강제는 활성화하지 않는다. <code>acknowledgeReviewDispatch()</code>는 T03, reconciler lease acquire와 <code>recordGithubMainArtifact()</code>, completion guard, <code>FAILED -> COMPLETED</code> 복구 전이는 T07이 각각 consumer와 같은 task에서 추가한다. T02에서 terminal row의 null lease를 임시 token으로 되살리거나 T07의 GitHub artifact·reconciler 동작을 선반영하지 않고, T07 이후에도 임시 무-artifact 완료 분기를 남기지 않는다.
 
 P0 최종 허용 전이:
 
@@ -899,7 +900,7 @@ TSX discovery는 React DOM server renderer를 사용하는 status badge smoke te
 #### 수정 파일
 
 - 수정: <code>prisma/schema.prisma</code>
-- 생성: <code>prisma/migrations/{generated_timestamp}_add_review_execution_state/migration.sql</code>
+- 생성: <code>prisma/migrations/20260825110650_add_review_execution_state/migration.sql</code>
 - 생성: <code>features/review/lib/review-execution-state.ts</code>
 - 생성: <code>features/review/lib/review-execution-state.test.ts</code>
 - 생성: <code>features/review/lib/review-execution-migration.integration.test.ts</code>
@@ -912,7 +913,9 @@ TSX discovery는 React DOM server renderer를 사용하는 status badge smoke te
 - 수정: <code>features/review/ui/review-detail.tsx</code>
 - 생성: <code>features/review/ui/review-detail.test.tsx</code>
 - 수정: 현재 Review를 쓰는 <code>features/ai/actions/review-pull-request.ts</code>, <code>inngest/functions/review.ts</code>, <code>inngest/functions/summary.ts</code>
+- 수정: 기존 worker 저장 계약을 검증하는 <code>inngest/functions/review.test.ts</code>, <code>inngest/functions/summary.test.ts</code>
 - 생성: <code>lib/test/create-test-prisma-client.ts</code>
+- 생성: <code>lib/test/create-test-prisma-client.test.ts</code>
 - 생성: <code>scripts/prepare-p0-test-database.mjs</code>
 
 #### 구현
@@ -926,16 +929,17 @@ TSX discovery는 React DOM server renderer를 사용하는 status badge smoke te
 - 수정 대상인 <code>review-detail.tsx</code>의 generic <code>Props</code>는 <code>ReviewDetailProps</code>로, <code>review-status-badge.tsx</code>의 inline props type은 <code>ReviewStatusBadgeProps</code>로 바꾼다. <code>review-card.tsx</code>의 기존 <code>ReviewCardProps</code>는 유지한다.
 - 기존 write 지점을 모두 대문자 enum 값으로 바꿔 typecheck를 통과시킨다.
 - T03 전 호환을 위해 현재 Review create 세 곳은 <code>legacy-runtime:</code> random UUID request key와 필수 enum/실패 metadata를 명시한다. schema default로 request key 누락을 숨기지 않는다.
+- T02의 초기 execution helper는 섹션 6.3의 phase-specific surface와 전이만 구현한다. terminal 상태의 null lease를 재사용하는 retry adapter나 RECONCILER lease acquire를 만들지 않는다.
 - <code>lib/test/create-test-prisma-client.ts</code>는 <code>TEST_DATABASE_URL</code>만 허용하고, URL의 database 이름이 <code>_test</code>로 끝나며 <code>DATABASE_URL</code>/<code>DIRECT_URL</code>과 다름을 확인한다. 공통 request/delivery/trial integration test의 migration 대상과 query 대상을 일치시키기 위해 URL의 schema가 없으면 <code>public</code>으로 정규화하고, non-empty이면서 <code>public</code>이 아닌 schema는 write 전에 거부한다. 정규화한 URL과 <code>new PrismaPg({ connectionString }, { schema: "public" })</code>로 direct Prisma client를 만들며 production barrel에서 export하지 않는다.
 - <code>scripts/prepare-p0-test-database.mjs</code>도 같은 database·URL·schema 검사를 수행한 뒤, 검증된 URL에 <code>schema=public</code>을 명시한 값으로만 <code>prisma migrate deploy</code>를 실행한다. migration 성공 뒤 같은 정규화 URL에서 <code>current_schema() = 'public'</code>, <code>_prisma_migrations</code>, T02까지 필요한 base table과 신규 table의 존재를 read-only로 확인한 다음에만 성공 종료한다. production·development DB를 통합 테스트 대상으로 재사용하지 않는다.
 - 현재 <code>prisma.config.ts</code>는 <code>DIRECT_URL ?? DATABASE_URL</code> 순서로 datasource를 선택한다. 따라서 준비 스크립트는 shell을 거치지 않는 child process에만 정규화한 <code>TEST_DATABASE_URL</code>을 <code>DATABASE_URL</code>과 <code>DIRECT_URL</code> 양쪽으로 명시해 <code>prisma migrate deploy</code>를 실행하고, 부모 process 환경은 바꾸지 않는다. 기존 <code>DIRECT_URL</code>을 상속해 다른 DB로 우회하는 경로와 URL schema와 adapter schema가 달라지는 경로를 테스트한다.
-- 현재 존재하지 않는 <code>lib/test/</code> parent를 T02에서 먼저 만들고 <code>create-test-prisma-client.ts</code>만 배치한다. 이 test helper를 production barrel에서 export하지 않는다.
+- 현재 존재하지 않는 <code>lib/test/</code> parent를 T02에서 먼저 만들고 <code>create-test-prisma-client.ts</code>와 같은 계약의 URL 안전 검사를 고정하는 co-located unit test만 배치한다. 이 test helper를 production barrel에서 export하지 않는다.
 - migration transition integration test만 공통 <code>public</code> client를 사용하지 않는다. test database 안에 검증된 실행 ID로 격리 schema를 만들고 session의 <code>search_path</code>를 그 exact schema로 고정한 뒤 target T02 이전의 모든 migration SQL을 timestamp 순으로 replay해 실제 pre-T02 구조와 FK를 만든다. exact User, Repository, Review, UserUsage fixture를 삽입한 뒤 같은 session·schema에서 target migration SQL만 적용한다. 손으로 만든 <code>review</code>/<code>user_usage</code> 축약 DDL은 금지한다. 정상 세 status의 cast·backfill과 알 수 없는 status의 guard 중단·transaction rollback을 각각 실제 PostgreSQL에서 검증하고, 시작 전에 생성·기록한 exact schema 하나만 정리한다. 공통 integration fixture는 실행별 고유 ID로 자신이 만든 row만 삭제하며 database 또는 <code>public</code> schema 전체를 정리하지 않는다.
 - <code>npx.cmd prisma generate</code>가 다시 만드는 <code>lib/generated/prisma/**</code>는 <code>.gitignore</code> 대상인 derived verification artifact이지 T02의 commit source가 아니다. generate 전후에 <code>rg --files lib/generated/prisma | Sort-Object</code>로 exact manifest를 기록하고, 최소한 <code>enums.ts</code>, <code>models/Review.ts</code>, <code>models/UserUsage.ts</code>, 신규 <code>models/GithubWebhookDelivery.ts</code>, <code>models.ts</code>, <code>client.ts</code>가 존재하며 새 enum·field·model을 노출하는지 확인한다. 생성물을 force-add하지 않고 schema, migration, generate 결과와 typecheck를 task 완료 기록에 함께 남긴다.
 
 #### 테스트
 
-- 허용 전이 전부 성공
+- T02 단계에서 허용한 claim·현재-lease 전이 전부 성공
 - 금지 전이와 terminal 상태 재전이 실패
 - FAILED인데 failure metadata가 없는 호출 실패
 - migration fixture의 세 기존 status 매핑
@@ -943,7 +947,7 @@ TSX discovery는 React DOM server renderer를 사용하는 status badge smoke te
 - historical request key가 row마다 unique
 - T02 종료 시 <code>legacy-runtime:</code> + <code>randomUUID()</code> production write가 현재 세 Review create 파일에 정확히 하나씩 있고 다른 non-test source 위치에는 0개
 - badge 여섯 상태와 card/detail의 PENDING/RUNNING/POSTING empty-body guard, FAILED/SUPERSEDED 안내, COMPLETED body 렌더링
-- execution lease의 attempt/token/owner fencing, lease 만료 뒤 이전 worker write 거절, 동시 reconciler 중 token owner 한 명만 획득
+- execution lease의 attempt/token/owner/expiry fencing, lease 만료 뒤 이전 worker write 거절, 동시 worker claim 중 token owner 한 명만 획득
 - 격리된 PostgreSQL snapshot에서 migration guard, enum cast, NOT NULL·UNIQUE 제약을 실제 적용해 검증
 - 준비 script와 공통 Prisma client가 모두 전용 <code>_test</code> database의 <code>public</code> schema를 가리키며, migration 뒤 <code>current_schema()</code>·<code>_prisma_migrations</code>·필수 table 확인 전 fixture write 0회
 - migration transition test의 격리 schema와 공통 integration test의 <code>public</code> schema가 섞이지 않고, cleanup은 실행 ID로 소유권을 증명한 schema 또는 row만 대상으로 함

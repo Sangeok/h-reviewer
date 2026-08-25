@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { inngest } from "@/inngest/client";
 import prisma from "@/lib/db";
 import { getPullRequestDiff } from "@/lib/github";
@@ -47,8 +49,8 @@ export async function reviewPullRequest(
       success: true,
       message: "Review Queued",
     };
-  } catch (error) {
-    await createFailedReviewRecord(owner, repo, prNumber, error);
+  } catch {
+    await createFailedReviewRecord({ owner, repo, prNumber });
 
     return {
       success: false,
@@ -58,7 +60,17 @@ export async function reviewPullRequest(
   }
 }
 
-async function createFailedReviewRecord(owner: string, repo: string, prNumber: number, error: unknown) {
+type CreateFailedReviewRecordInput = {
+  owner: string;
+  repo: string;
+  prNumber: number;
+};
+
+async function createFailedReviewRecord({
+  owner,
+  repo,
+  prNumber,
+}: CreateFailedReviewRecordInput): Promise<void> {
   try {
     const repository = await prisma.repository.findFirst({
       where: {
@@ -77,8 +89,23 @@ async function createFailedReviewRecord(owner: string, repo: string, prNumber: n
         prNumber,
         prTitle: "Failed to fetch PR",
         prUrl: buildPRUrl(owner, repo, prNumber),
-        review: `Error : ${error instanceof Error ? error.message : "Unknown error"}`,
-        status: "failed",
+        review: "The review could not be queued. Retry the review from the pull request page.",
+        requestKey: `legacy-runtime:${randomUUID()}`,
+        requestSource: "LEGACY",
+        reviewMode: "FULL",
+        status: "FAILED",
+        failureStage: "LEGACY",
+        failureMessage: "The review request could not be prepared.",
+        lastCompletedStage: null,
+        attemptCount: 1,
+        executionLeaseExpiresAt: null,
+        executionLeaseToken: null,
+        executionLeaseOwner: null,
+        githubMainReviewId: null,
+        githubMainPostedAt: null,
+        githubAuthorId: null,
+        artifactLookupMissedAt: null,
+        trialCreditState: "NOT_APPLICABLE",
       },
     });
   } catch (loggingError) {

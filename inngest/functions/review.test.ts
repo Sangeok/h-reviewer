@@ -192,7 +192,10 @@ describe("createGenerateReviewHandler", () => {
         prTitle: "Add value",
         prUrl: "https://github.com/octo/sample/pull/42",
         reviewType: "FULL_REVIEW",
-        status: "completed",
+        requestSource: "LEGACY",
+        reviewMode: "FULL",
+        status: "COMPLETED",
+        trialCreditState: "NOT_APPLICABLE",
         headSha: "head-sha",
       }),
     });

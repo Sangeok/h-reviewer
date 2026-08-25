@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import prisma from "@/lib/db";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { inngest } from "../client";
@@ -871,7 +873,24 @@ export function createGenerateReviewHandler(
               : Prisma.DbNull,
             langCode,
             reviewType: "FULL_REVIEW",
-            status: "completed",
+            maxSuggestions,
+            verificationEnabled,
+            requestKey: `legacy-runtime:${randomUUID()}`,
+            requestSource: "LEGACY",
+            reviewMode: "FULL",
+            status: "COMPLETED",
+            failureStage: null,
+            failureMessage: null,
+            lastCompletedStage: null,
+            attemptCount: 1,
+            executionLeaseExpiresAt: null,
+            executionLeaseToken: null,
+            executionLeaseOwner: null,
+            githubMainReviewId: null,
+            githubMainPostedAt: null,
+            githubAuthorId: null,
+            artifactLookupMissedAt: null,
+            trialCreditState: "NOT_APPLICABLE",
             headSha,
           },
         });
