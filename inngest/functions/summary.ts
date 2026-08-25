@@ -1,20 +1,21 @@
-import { randomUUID } from "node:crypto";
-
-import prisma from "@/lib/db";
-import { inngest } from "../client";
-import { getPullRequestDiff, postReviewComment } from "@/lib/github/github";
-import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
-import { stripFencedCodeBlocks, GENERATOR_MODEL_ID } from "@/features/ai";
-import { getLanguageName, isValidLanguageCode } from "@/features/settings";
+import { generateText } from "ai";
 
-export type SummaryWorkerEventData = {
-  owner: string;
-  repo: string;
-  prNumber: number;
-  userId: string;
-  preferredLanguage?: string;
-};
+import { GENERATOR_MODEL_ID, stripFencedCodeBlocks } from "@/features/ai";
+import {
+  claimReviewExecution,
+  renewReviewExecutionLease,
+  transitionReviewExecution,
+} from "@/features/review/lib/review-execution-state";
+import { getLanguageName, isValidLanguageCode } from "@/features/settings";
+import prisma from "@/lib/db";
+import { getPullRequestDiff, postReviewComment } from "@/lib/github/github";
+
+import { inngest } from "../client";
+import type { HReviewerEvents } from "../events";
+
+export type SummaryWorkerEventData =
+  HReviewerEvents["pr.summary.requested"]["data"];
 
 export type SummaryWorkerStep = {
   run<T>(id: string, handler: () => Promise<T> | T): Promise<T>;
@@ -31,48 +32,183 @@ export type SummaryWorkerDependencies = {
   postReviewComment: typeof postReviewComment;
   generateText: typeof generateText;
   createGeneratorModel: typeof google;
+  now(): Date;
 };
+
+type ClaimedSummaryRequest = {
+  id: string;
+  attemptCount: number;
+  headSha: string;
+  githubAuthorId: string;
+  langCode: string;
+  prNumber: number;
+  repository: {
+    owner: string;
+    name: string;
+    userId: string;
+  };
+};
+
+async function getBoundGithubToken(
+  dependencies: SummaryWorkerDependencies,
+  reviewRequest: ClaimedSummaryRequest,
+): Promise<string> {
+  const account = await dependencies.prisma.account.findFirst({
+    where: {
+      accountId: reviewRequest.githubAuthorId,
+      userId: reviewRequest.repository.userId,
+      providerId: "github",
+    },
+    select: { accessToken: true },
+  });
+
+  if (!account?.accessToken) {
+    throw new Error("The persisted GitHub account binding is unavailable");
+  }
+
+  return account.accessToken;
+}
 
 export function createGenerateSummaryHandler(
   dependencies: SummaryWorkerDependencies,
 ): SummaryWorkerHandler {
   return async ({ event, step }) => {
-    const { owner, repo, prNumber, userId, preferredLanguage = "en" } = event.data;
-
-    // Fetch PR data
-    const { diff, title, description, token } = await step.run("fetch-pr-data", async () => {
-      const account = await dependencies.prisma.account.findFirst({
-        where: {
-          userId,
-          providerId: "github",
+    const { reviewId, attempt } = event.data;
+    const { leaseToken } = await step.run("claim-review", () =>
+      claimReviewExecution(
+        { reviewId, attempt, now: dependencies.now() },
+        dependencies.prisma,
+      ),
+    );
+    const reviewRequest = await step.run("load-review-request", async () => {
+      const review = await dependencies.prisma.review.findUnique({
+        where: { id: reviewId },
+        select: {
+          id: true,
+          attemptCount: true,
+          headSha: true,
+          githubAuthorId: true,
+          langCode: true,
+          prNumber: true,
+          repository: {
+            select: {
+              owner: true,
+              name: true,
+              userId: true,
+            },
+          },
         },
       });
 
-      if (!account?.accessToken) {
-        throw new Error("Github access token not found");
+      if (
+        !review ||
+        !review.headSha ||
+        !review.githubAuthorId ||
+        review.attemptCount !== attempt
+      ) {
+        throw new Error("Claimed summary request data is incomplete");
       }
 
-      const data = await dependencies.getPullRequestDiff({
-        token: account.accessToken,
-        owner,
-        repo,
-        prNumber,
-      });
+      return {
+        ...review,
+        headSha: review.headSha,
+        githubAuthorId: review.githubAuthorId,
+      } satisfies ClaimedSummaryRequest;
+    });
+    const owner = reviewRequest.repository.owner;
+    const repo = reviewRequest.repository.name;
+    const prNumber = reviewRequest.prNumber;
 
-      return { ...data, token: account.accessToken };
+    const pullRequest = await step.run("fetch-pr-data", async () => {
+      await renewReviewExecutionLease(
+        {
+          reviewId,
+          attempt,
+          leaseToken,
+          leaseOwner: "WORKER",
+          allowedStatuses: ["RUNNING"],
+          now: dependencies.now(),
+        },
+        dependencies.prisma,
+      );
+
+      try {
+        const token = await getBoundGithubToken(dependencies, reviewRequest);
+        const data = await dependencies.getPullRequestDiff({
+          token,
+          owner,
+          repo,
+          prNumber,
+        });
+
+        if (data.headSha !== reviewRequest.headSha) {
+          await transitionReviewExecution(
+            {
+              reviewId,
+              attempt,
+              leaseToken,
+              leaseOwner: "WORKER",
+              now: dependencies.now(),
+              from: ["RUNNING"],
+              to: "FAILED",
+              failure: {
+                stage: "FETCH",
+                message: "The pull request head changed before summary execution.",
+              },
+            },
+            dependencies.prisma,
+          );
+          return null;
+        }
+
+        return data;
+      } catch {
+        await transitionReviewExecution(
+          {
+            reviewId,
+            attempt,
+            leaseToken,
+            leaseOwner: "WORKER",
+            now: dependencies.now(),
+            from: ["RUNNING"],
+            to: "FAILED",
+            failure: {
+              stage: "FETCH",
+              message: "Pull request data could not be fetched.",
+            },
+          },
+          dependencies.prisma,
+        );
+        return null;
+      }
     });
 
-    // Generate AI summary
+    if (!pullRequest) {
+      return { success: true };
+    }
+
+    const { diff, title, description, headSha } = pullRequest;
     const summary = await step.run("generate-ai-summary", async () => {
-      // Validate language code and generate language instruction
-      const langCode = isValidLanguageCode(preferredLanguage) ? preferredLanguage : "en";
+      await renewReviewExecutionLease(
+        {
+          reviewId,
+          attempt,
+          leaseToken,
+          leaseOwner: "WORKER",
+          allowedStatuses: ["RUNNING"],
+          now: dependencies.now(),
+        },
+        dependencies.prisma,
+      );
+      const langCode = isValidLanguageCode(reviewRequest.langCode)
+        ? reviewRequest.langCode
+        : "en";
       const languageInstruction =
         langCode !== "en"
           ? `\n\nIMPORTANT: Write the entire summary in ${getLanguageName(
-              langCode
+              langCode,
             )}. Keep section headers in English, but write all content in ${getLanguageName(langCode)}.`
           : "";
-
       const prompt = `You are an expert code reviewer. Produce a concise PR summary for a GitHub comment.${languageInstruction}
 
         Rules:
@@ -108,13 +244,39 @@ export function createGenerateSummaryHandler(
         model: dependencies.createGeneratorModel(GENERATOR_MODEL_ID),
         prompt,
       });
-
       const sanitized = stripFencedCodeBlocks(text);
       return sanitized.length > 0 ? sanitized : text.trim();
     });
 
-    // Step 3: Post comment to GitHub
+    await step.run("mark-summary-posting", () =>
+      transitionReviewExecution(
+        {
+          reviewId,
+          attempt,
+          leaseToken,
+          leaseOwner: "WORKER",
+          now: dependencies.now(),
+          from: ["RUNNING"],
+          to: "POSTING",
+          lastCompletedStage: "GENERATED",
+        },
+        dependencies.prisma,
+      ),
+    );
+
     await step.run("post-comment", async () => {
+      await renewReviewExecutionLease(
+        {
+          reviewId,
+          attempt,
+          leaseToken,
+          leaseOwner: "WORKER",
+          allowedStatuses: ["POSTING"],
+          now: dependencies.now(),
+        },
+        dependencies.prisma,
+      );
+      const token = await getBoundGithubToken(dependencies, reviewRequest);
       await dependencies.postReviewComment(
         token,
         owner,
@@ -125,41 +287,41 @@ export function createGenerateSummaryHandler(
       );
     });
 
-    // Step 4: Save to database
     await step.run("save-summary", async () => {
-      const repository = await dependencies.prisma.repository.findFirst({
-        where: { owner, name: repo },
-      });
-
-      if (!repository) {
-        throw new Error("Repository not found");
-      }
-
-      await dependencies.prisma.review.create({
-        data: {
-          repositoryId: repository.id,
-          prNumber,
-          prTitle: title,
-          prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
-          review: summary,
-          reviewType: "SUMMARY", // Summary 타입 명시
-          requestKey: `legacy-runtime:${randomUUID()}`,
-          requestSource: "LEGACY",
-          reviewMode: "FULL",
-          status: "COMPLETED",
-          failureStage: null,
-          failureMessage: null,
-          lastCompletedStage: null,
-          attemptCount: 1,
-          executionLeaseExpiresAt: null,
-          executionLeaseToken: null,
-          executionLeaseOwner: null,
-          githubMainReviewId: null,
-          githubMainPostedAt: null,
-          githubAuthorId: null,
-          artifactLookupMissedAt: null,
-          trialCreditState: "NOT_APPLICABLE",
+      await renewReviewExecutionLease(
+        {
+          reviewId,
+          attempt,
+          leaseToken,
+          leaseOwner: "WORKER",
+          allowedStatuses: ["POSTING"],
+          now: dependencies.now(),
         },
+        dependencies.prisma,
+      );
+
+      await dependencies.prisma.$transaction(async (client) => {
+        await client.review.update({
+          where: { id: reviewId },
+          data: {
+            prTitle: title,
+            review: summary,
+            headSha,
+          },
+        });
+        await transitionReviewExecution(
+          {
+            reviewId,
+            attempt,
+            leaseToken,
+            leaseOwner: "WORKER",
+            now: dependencies.now(),
+            from: ["POSTING"],
+            to: "COMPLETED",
+            lastCompletedStage: "PERSISTED",
+          },
+          client,
+        );
       });
     });
 
@@ -173,6 +335,7 @@ const defaultSummaryWorkerDependencies: SummaryWorkerDependencies = {
   postReviewComment,
   generateText,
   createGeneratorModel: google,
+  now: () => new Date(),
 };
 
 export const generateSummary = inngest.createFunction(

@@ -7,4 +7,6 @@ export const REVIEWS_STALE_TIME_MS = 1000 * 60 * 2;
 
 export const REVIEW_PREVIEW_MAX_CHARS = 300;
 
+export const REVIEW_QUEUE_LEASE_MS = 30 * 60 * 1000;
+
 export const REVIEW_EXECUTION_LEASE_MS = 15 * 60 * 1000;

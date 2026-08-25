@@ -5,8 +5,10 @@ vi.mock("server-only", () => ({}));
 import type { ReviewStatus } from "@/lib/generated/prisma/enums";
 
 import {
+  acknowledgeReviewDispatch,
   claimReviewExecution,
   renewReviewExecutionLease,
+  retryFailedReviewExecution,
   ReviewStateConflictError,
   transitionReviewExecution,
   type ReviewExecutionClient,
@@ -17,16 +19,20 @@ const NOW = new Date("2026-08-25T00:00:00.000Z");
 const LEASE_EXPIRES_AT = new Date("2026-08-25T00:15:00.000Z");
 
 type UpdateMany = ReviewExecutionClient["review"]["updateMany"];
+type FindUnique = ReviewExecutionClient["review"]["findUnique"];
 
 function createReviewExecutionClient(): {
   client: ReviewExecutionClient;
   updateMany: ReturnType<typeof vi.fn<UpdateMany>>;
+  findUnique: ReturnType<typeof vi.fn<FindUnique>>;
 } {
   const updateMany = vi.fn<UpdateMany>();
+  const findUnique = vi.fn<FindUnique>();
 
   return {
-    client: { review: { updateMany } },
+    client: { review: { findUnique, updateMany } },
     updateMany,
+    findUnique,
   };
 }
 
@@ -49,10 +55,12 @@ function createTransitionInput(
 describe("review execution state", () => {
   let client: ReviewExecutionClient;
   let updateMany: ReturnType<typeof vi.fn<UpdateMany>>;
+  let findUnique: ReturnType<typeof vi.fn<FindUnique>>;
 
   beforeEach(() => {
-    ({ client, updateMany } = createReviewExecutionClient());
+    ({ client, updateMany, findUnique } = createReviewExecutionClient());
     updateMany.mockResolvedValue({ count: 1 });
+    findUnique.mockResolvedValue(null);
   });
 
   it.each<{
@@ -217,5 +225,77 @@ describe("review execution state", () => {
         }),
       }),
     );
+  });
+
+  it("acknowledges only the exact pending queue fence", async () => {
+    const status = await acknowledgeReviewDispatch(
+      {
+        reviewId: "review-1",
+        attempt: 1,
+        queueLeaseToken: "queue-token-1",
+      },
+      client,
+    );
+
+    expect(status).toBe("PENDING");
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "review-1",
+        status: "PENDING",
+        attemptCount: 1,
+        executionLeaseToken: "queue-token-1",
+        executionLeaseOwner: "QUEUE",
+      },
+      data: { lastCompletedStage: "QUEUED" },
+    });
+  });
+
+  it("returns the factual worker status when claim wins the dispatch race", async () => {
+    updateMany.mockResolvedValue({ count: 0 });
+    findUnique.mockResolvedValue({
+      status: "RUNNING",
+      attemptCount: 1,
+      executionLeaseToken: "worker-token-1",
+      executionLeaseOwner: "WORKER",
+      lastCompletedStage: "QUEUED",
+    });
+
+    await expect(
+      acknowledgeReviewDispatch(
+        {
+          reviewId: "review-1",
+          attempt: 1,
+          queueLeaseToken: "queue-token-1",
+        },
+        client,
+      ),
+    ).resolves.toBe("RUNNING");
+  });
+
+  it("retries a failed review by incrementing only the same row attempt", async () => {
+    const result = await retryFailedReviewExecution(
+      {
+        reviewId: "review-1",
+        attempt: 2,
+        queueLeaseToken: "queue-token-3",
+        now: NOW,
+      },
+      client,
+    );
+
+    expect(result).toEqual({ attempt: 3 });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: "review-1",
+        status: "FAILED",
+        attemptCount: 2,
+      }),
+      data: expect.objectContaining({
+        status: "PENDING",
+        attemptCount: 3,
+        executionLeaseToken: "queue-token-3",
+        executionLeaseOwner: "QUEUE",
+      }),
+    });
   });
 });

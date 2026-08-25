@@ -1,114 +1,87 @@
-import { randomUUID } from "node:crypto";
+import { createReviewRequest } from "@/features/review/lib/review-request";
 
-import { inngest } from "@/inngest/client";
-import prisma from "@/lib/db";
-import { getPullRequestDiff } from "@/lib/github";
-import { canCreateReview, incrementReviewCount } from "@/features/payment/lib/subscription";
-import { getUserLanguageByUserId } from "@/features/settings";
-import { buildPRUrl } from "../utils";
-import { getRepositoryWithToken } from "../lib/get-repository-with-token";
-import { type ReviewPullRequestResult } from "../types";
+import type {
+  PullRequestIdentityInput,
+  ReviewPullRequestResult,
+} from "../types";
 
 export async function reviewPullRequest(
-  owner: string,
-  repo: string,
-  prNumber: number,
+  input: PullRequestIdentityInput,
 ): Promise<ReviewPullRequestResult> {
   try {
-    const { repository, accessToken } = await getRepositoryWithToken(owner, repo);
-    const canReview = await canCreateReview(repository.user.id, repository.id);
+    const result = await createReviewRequest({
+      ...input,
+      reviewType: "FULL_REVIEW",
+      reviewMode: "FULL",
+      requestSource: "AUTOMATIC",
+      dispatchMode: "DIRECT",
+    });
 
-    if (!canReview) {
+    if (result.kind === "rejected") {
+      const reason = {
+        PLAN_RESTRICTED: "plan_restricted",
+        TRIAL_EXHAUSTED: "trial_exhausted",
+        PR_NOT_REVIEWABLE: "pr_not_reviewable",
+      } as const;
+
       return {
         success: false,
-        message: "Review creation is available on the Pro plan only",
-        reason: "plan_restricted",
+        message: result.message,
+        reason: reason[result.reason],
       };
     }
 
-    await getPullRequestDiff({ token: accessToken, owner, repo, prNumber });
-
-    const preferredLanguage = await getUserLanguageByUserId(repository.user.id);
-
-    await inngest.send({
-      name: "pr.review.requested",
-      data: {
-        owner,
-        repo,
-        prNumber,
-        userId: repository.user.id,
-        preferredLanguage,
-        maxSuggestions: repository.user.maxSuggestions ?? null,
-        verificationEnabled: repository.user.verificationEnabled,
-      },
-    });
-
-    await incrementReviewCount(repository.user.id, repository.id);
-
-    return {
-      success: true,
-      message: "Review Queued",
+    const metadata = {
+      reviewId: result.reviewId,
+      requestKey: result.requestKey,
+      status: result.status,
+      ...(result.kind === "dispatch-failed"
+        ? { failureStage: result.failureStage }
+        : {}),
     };
-  } catch {
-    await createFailedReviewRecord({ owner, repo, prNumber });
 
+    if (result.kind === "dispatch-failed") {
+      return {
+        success: false,
+        message: result.message,
+        reason: "internal_error",
+        ...metadata,
+      };
+    }
+
+    if (result.status === "FAILED") {
+      return {
+        success: false,
+        message: "The review failed. Retry it from the pull request page.",
+        reason: "review_failed",
+        ...metadata,
+      };
+    }
+
+    if (result.status === "SUPERSEDED") {
+      return {
+        success: false,
+        message: "A newer pull request head superseded this review.",
+        reason: "review_superseded",
+        ...metadata,
+      };
+    }
+
+    const message =
+      result.status === "COMPLETED"
+        ? "Review already completed"
+        : result.status === "RUNNING" || result.status === "POSTING"
+          ? "Review already in progress"
+          : result.kind === "existing"
+            ? "Review already queued"
+            : "Review Queued";
+
+    return { success: true, message, ...metadata };
+  } catch {
     return {
       success: false,
       message: "Error Reviewing Pull Request",
       reason: "internal_error",
     };
-  }
-}
-
-type CreateFailedReviewRecordInput = {
-  owner: string;
-  repo: string;
-  prNumber: number;
-};
-
-async function createFailedReviewRecord({
-  owner,
-  repo,
-  prNumber,
-}: CreateFailedReviewRecordInput): Promise<void> {
-  try {
-    const repository = await prisma.repository.findFirst({
-      where: {
-        owner,
-        name: repo,
-      },
-    });
-
-    if (!repository) {
-      return;
-    }
-
-    await prisma.review.create({
-      data: {
-        repositoryId: repository.id,
-        prNumber,
-        prTitle: "Failed to fetch PR",
-        prUrl: buildPRUrl(owner, repo, prNumber),
-        review: "The review could not be queued. Retry the review from the pull request page.",
-        requestKey: `legacy-runtime:${randomUUID()}`,
-        requestSource: "LEGACY",
-        reviewMode: "FULL",
-        status: "FAILED",
-        failureStage: "LEGACY",
-        failureMessage: "The review request could not be prepared.",
-        lastCompletedStage: null,
-        attemptCount: 1,
-        executionLeaseExpiresAt: null,
-        executionLeaseToken: null,
-        executionLeaseOwner: null,
-        githubMainReviewId: null,
-        githubMainPostedAt: null,
-        githubAuthorId: null,
-        artifactLookupMissedAt: null,
-        trialCreditState: "NOT_APPLICABLE",
-      },
-    });
-  } catch (loggingError) {
-    console.error("Error writing failed review record:", loggingError);
   }
 }

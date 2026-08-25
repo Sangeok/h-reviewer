@@ -92,21 +92,6 @@ export async function canConnectRepository(userId: string): Promise<boolean> {
   return usage.repositoryCount < limit;
 }
 
-export async function canCreateReview(userId: string, repositoryId: string): Promise<boolean> {
-  const tier = await getUserTier(userId);
-
-  if (tier === "PRO") {
-    return true; // PRO users can create unlimited reviews
-  }
-
-  const usage = await getUserUsage(userId);
-  const reviewCounts = parseReviewCounts(usage.reviewCounts);
-  const currentCount = reviewCounts[repositoryId] ?? 0;
-  const limit = TIER_LIMITS.FREE.reviewsPerRepo;
-
-  return currentCount < limit;
-}
-
 export async function incrementRepositoryCount(
   userId: string,
   userUsageClient: UserUsageClient = prisma
@@ -137,22 +122,6 @@ export async function decrementRepositoryCount(userId: string): Promise<void> {
     },
     data: {
       repositoryCount: Math.max(0, usage.repositoryCount - 1),
-    },
-  });
-}
-
-export async function incrementReviewCount(userId: string, repositoryId: string): Promise<void> {
-  const usage = await getUserUsage(userId);
-  const reviewCounts = parseReviewCounts(usage.reviewCounts);
-
-  reviewCounts[repositoryId] = (reviewCounts[repositoryId] || 0) + 1;
-
-  await prisma.userUsage.update({
-    where: {
-      userId,
-    },
-    data: {
-      reviewCounts: reviewCounts,
     },
   });
 }
