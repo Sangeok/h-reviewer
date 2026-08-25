@@ -183,7 +183,7 @@ export type PullRequestDiffResult = {
   merged: boolean;
 };
 
-type PullRequestSnapshot = {
+type GithubPullRequestDiffSnapshot = {
   title: string;
   body: string | null;
   additions: number;
@@ -206,7 +206,7 @@ type PullRequestSnapshot = {
 const MAX_PR_SNAPSHOT_ATTEMPTS = 2;
 
 function mapPullRequestDiffResult(
-  pullRequest: PullRequestSnapshot,
+  pullRequest: GithubPullRequestDiffSnapshot,
   diff: string,
 ): PullRequestDiffResult {
   const headOwner = pullRequest.head.repo?.owner?.login;
@@ -229,6 +229,41 @@ function mapPullRequestDiffResult(
       : null,
     state: pullRequest.state,
     merged: pullRequest.merged,
+  };
+}
+
+export type GetPullRequestSnapshotInput = {
+  token: string;
+  owner: string;
+  repo: string;
+  prNumber: number;
+};
+
+export type PullRequestSnapshotResult = {
+  title: string;
+  url: string;
+  headSha: string;
+  state: string;
+  merged: boolean;
+};
+
+export async function getPullRequestSnapshot(
+  input: GetPullRequestSnapshotInput,
+): Promise<PullRequestSnapshotResult> {
+  const { token, owner, repo, prNumber } = input;
+  const octokit = createOctokitClient(token);
+  const { data } = await octokit.rest.pulls.get({
+    owner,
+    repo,
+    pull_number: prNumber,
+  });
+
+  return {
+    title: data.title,
+    url: data.html_url,
+    headSha: data.head.sha,
+    state: data.state,
+    merged: data.merged,
   };
 }
 

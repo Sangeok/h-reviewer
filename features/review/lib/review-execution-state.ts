@@ -9,7 +9,10 @@ import type {
   ReviewStatus,
 } from "@/lib/generated/prisma/enums";
 
-import { REVIEW_EXECUTION_LEASE_MS } from "../constants";
+import {
+  REVIEW_EXECUTION_LEASE_MS,
+  REVIEW_QUEUE_LEASE_MS,
+} from "../constants";
 
 const T02_ALLOWED_TRANSITIONS: Readonly<
   Record<ReviewStatus, readonly ReviewStatus[]>
@@ -31,7 +34,25 @@ const TERMINAL_REVIEW_STATUSES = new Set<ReviewStatus>([
 const FAILURE_MESSAGE_MAX_CHARS = 1_000;
 
 export type ReviewExecutionClient = {
-  review: Pick<Prisma.TransactionClient["review"], "updateMany">;
+  review: {
+    updateMany: Prisma.TransactionClient["review"]["updateMany"];
+    findUnique(input: {
+      where: { id: string };
+      select: {
+        status: true;
+        attemptCount: true;
+        executionLeaseToken: true;
+        executionLeaseOwner: true;
+        lastCompletedStage: true;
+      };
+    }): Promise<{
+      status: ReviewStatus;
+      attemptCount: number;
+      executionLeaseToken: string | null;
+      executionLeaseOwner: ReviewExecutionLeaseOwner | null;
+      lastCompletedStage: ReviewExecutionStage | null;
+    } | null>;
+  };
 };
 
 export type TransitionReviewExecutionInput = {
@@ -62,6 +83,19 @@ export type RenewReviewExecutionLeaseInput = {
   leaseToken: string;
   leaseOwner: Extract<ReviewExecutionLeaseOwner, "WORKER" | "RECONCILER">;
   allowedStatuses: readonly ReviewStatus[];
+  now: Date;
+};
+
+export type AcknowledgeReviewDispatchInput = {
+  reviewId: string;
+  attempt: number;
+  queueLeaseToken: string;
+};
+
+export type RetryFailedReviewExecutionInput = {
+  reviewId: string;
+  attempt: number;
+  queueLeaseToken: string;
   now: Date;
 };
 
@@ -118,6 +152,10 @@ function assertTransitionInput(input: TransitionReviewExecutionInput): void {
 
 function getLeaseExpiration(now: Date): Date {
   return new Date(now.getTime() + REVIEW_EXECUTION_LEASE_MS);
+}
+
+function getQueueLeaseExpiration(now: Date): Date {
+  return new Date(now.getTime() + REVIEW_QUEUE_LEASE_MS);
 }
 
 export async function transitionReviewExecution(
@@ -194,6 +232,96 @@ export async function claimReviewExecution(
   }
 
   return { leaseToken };
+}
+
+export async function acknowledgeReviewDispatch(
+  input: AcknowledgeReviewDispatchInput,
+  client: ReviewExecutionClient = prisma,
+): Promise<ReviewStatus> {
+  const result = await client.review.updateMany({
+    where: {
+      id: input.reviewId,
+      status: "PENDING",
+      attemptCount: input.attempt,
+      executionLeaseToken: input.queueLeaseToken,
+      executionLeaseOwner: "QUEUE",
+    },
+    data: {
+      lastCompletedStage: "QUEUED",
+    },
+  });
+
+  if (result.count === 1) {
+    return "PENDING";
+  }
+
+  const review = await client.review.findUnique({
+    where: { id: input.reviewId },
+    select: {
+      status: true,
+      attemptCount: true,
+      executionLeaseToken: true,
+      executionLeaseOwner: true,
+      lastCompletedStage: true,
+    },
+  });
+
+  if (!review || review.attemptCount !== input.attempt) {
+    throw new ReviewStateConflictError(
+      `Review ${input.reviewId} dispatch acknowledgement lost its attempt`,
+    );
+  }
+
+  if (review.status !== "PENDING") {
+    return review.status;
+  }
+
+  if (
+    review.executionLeaseToken === input.queueLeaseToken &&
+    review.executionLeaseOwner === "QUEUE" &&
+    review.lastCompletedStage === "QUEUED"
+  ) {
+    return review.status;
+  }
+
+  throw new ReviewStateConflictError(
+    `Review ${input.reviewId} dispatch acknowledgement lost its queue lease`,
+  );
+}
+
+export async function retryFailedReviewExecution(
+  input: RetryFailedReviewExecutionInput,
+  client: ReviewExecutionClient = prisma,
+): Promise<{ attempt: number }> {
+  const nextAttempt = input.attempt + 1;
+  const result = await client.review.updateMany({
+    where: {
+      id: input.reviewId,
+      status: "FAILED",
+      attemptCount: input.attempt,
+      executionLeaseExpiresAt: null,
+      executionLeaseToken: null,
+      executionLeaseOwner: null,
+    },
+    data: {
+      status: "PENDING",
+      failureStage: null,
+      failureMessage: null,
+      lastCompletedStage: null,
+      attemptCount: nextAttempt,
+      executionLeaseExpiresAt: getQueueLeaseExpiration(input.now),
+      executionLeaseToken: input.queueLeaseToken,
+      executionLeaseOwner: "QUEUE",
+    },
+  });
+
+  if (result.count !== 1) {
+    throw new ReviewStateConflictError(
+      `Review ${input.reviewId} could not start a retry attempt`,
+    );
+  }
+
+  return { attempt: nextAttempt };
 }
 
 export async function renewReviewExecutionLease(

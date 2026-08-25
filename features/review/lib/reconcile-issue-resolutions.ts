@@ -40,7 +40,12 @@ export async function reconcileIssueResolutions(
   const { token, headOwner, headRepoName, baseRepositoryId, prNumber, beforeSha, afterSha } = params;
 
   const review = await prisma.review.findFirst({
-    where: { repositoryId: baseRepositoryId, prNumber, headSha: beforeSha },
+    where: {
+      repositoryId: baseRepositoryId,
+      prNumber,
+      headSha: beforeSha,
+      reviewType: "FULL_REVIEW",
+    },
     orderBy: { createdAt: "desc" },
   });
   if (!review) return { skipped: true, reason: "no_matching_review" };

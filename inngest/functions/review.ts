@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import prisma from "@/lib/db";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { inngest } from "../client";
@@ -34,6 +32,12 @@ import {
   unescapeGitPath,
 } from "@/lib/github/diff-parser";
 import type { LanguageCode } from "@/features/settings";
+import type { HReviewerEvents } from "../events";
+import {
+  claimReviewExecution,
+  renewReviewExecutionLease,
+  transitionReviewExecution,
+} from "@/features/review/lib/review-execution-state";
 
 const CONTEXT_BUILD_TIMEOUT_MS = 45_000;
 
@@ -71,15 +75,8 @@ type GenerateAiReviewStepResult = {
   structuredOutput: StructuredReviewOutput | null;
 };
 
-export type ReviewWorkerEventData = {
-  owner: string;
-  repo: string;
-  prNumber: number;
-  userId: string;
-  preferredLanguage?: string;
-  maxSuggestions?: number | null;
-  verificationEnabled?: boolean;
-};
+export type ReviewWorkerEventData =
+  HReviewerEvents["pr.review.requested"]["data"];
 
 export type ReviewWorkerStep = {
   run<T>(id: string, handler: () => Promise<T> | T): Promise<T>;
@@ -102,7 +99,45 @@ export type ReviewWorkerDependencies = {
   verifyReview: typeof verifyReview;
   detectRepeatIssues: typeof detectRepeatIssues;
   createTimeoutSignal(milliseconds: number): AbortSignal;
+  now(): Date;
 };
+
+type ClaimedReviewRequest = {
+  id: string;
+  attemptCount: number;
+  headSha: string;
+  githubAuthorId: string;
+  langCode: string;
+  maxSuggestions: number | null;
+  verificationEnabled: boolean;
+  repository: {
+    id: string;
+    owner: string;
+    name: string;
+    userId: string;
+  };
+  prNumber: number;
+};
+
+async function getBoundGithubToken(
+  dependencies: ReviewWorkerDependencies,
+  reviewRequest: ClaimedReviewRequest,
+): Promise<string> {
+  const account = await dependencies.prisma.account.findFirst({
+    where: {
+      accountId: reviewRequest.githubAuthorId,
+      userId: reviewRequest.repository.userId,
+      providerId: "github",
+    },
+    select: { accessToken: true },
+  });
+
+  if (!account?.accessToken) {
+    throw new Error("The persisted GitHub account binding is unavailable");
+  }
+
+  return account.accessToken;
+}
 
 /**
  * AbortSignal.timeout() 발화 여부.
@@ -258,36 +293,132 @@ export function createGenerateReviewHandler(
   dependencies: ReviewWorkerDependencies,
 ): ReviewWorkerHandler {
   return async ({ event, step }) => {
-    const { owner, repo, prNumber, userId, preferredLanguage = "en", maxSuggestions = null, verificationEnabled = false } = event.data;
-
-    // ── Step 1: PR 데이터 + 크기 정보 가져오기 ──
-    const fetchResult = await step.run("fetch-pr-data", async () => {
-      const account = await dependencies.prisma.account.findFirst({
-        where: {
-          userId,
-          providerId: "github",
+    const { reviewId, attempt } = event.data;
+    const { leaseToken } = await step.run("claim-review", () =>
+      claimReviewExecution(
+        { reviewId, attempt, now: dependencies.now() },
+        dependencies.prisma,
+      ),
+    );
+    const reviewRequest = await step.run("load-review-request", async () => {
+      const review = await dependencies.prisma.review.findUnique({
+        where: { id: reviewId },
+        select: {
+          id: true,
+          attemptCount: true,
+          headSha: true,
+          githubAuthorId: true,
+          langCode: true,
+          maxSuggestions: true,
+          verificationEnabled: true,
+          prNumber: true,
+          repository: {
+            select: {
+              id: true,
+              owner: true,
+              name: true,
+              userId: true,
+            },
+          },
         },
       });
 
-      if (!account?.accessToken) {
-        throw new Error("Github access token not found");
+      if (
+        !review ||
+        !review.headSha ||
+        !review.githubAuthorId ||
+        review.attemptCount !== attempt
+      ) {
+        throw new Error("Claimed review request data is incomplete");
       }
 
-      const data = await dependencies.getPullRequestDiff({
-        token: account.accessToken,
-        owner,
-        repo,
-        prNumber,
-      });
-
-      return { ...data, token: account.accessToken };
+      return {
+        ...review,
+        headSha: review.headSha,
+        githubAuthorId: review.githubAuthorId,
+      } satisfies ClaimedReviewRequest;
     });
+    const owner = reviewRequest.repository.owner;
+    const repo = reviewRequest.repository.name;
+    const prNumber = reviewRequest.prNumber;
+    const userId = reviewRequest.repository.userId;
+    const preferredLanguage = reviewRequest.langCode;
+    const maxSuggestions = reviewRequest.maxSuggestions;
+    const verificationEnabled = reviewRequest.verificationEnabled;
+
+    // ── Step 1: PR 데이터 + 크기 정보 가져오기 ──
+    const fetchResult = await step.run("fetch-pr-data", async () => {
+      await renewReviewExecutionLease(
+        {
+          reviewId,
+          attempt,
+          leaseToken,
+          leaseOwner: "WORKER",
+          allowedStatuses: ["RUNNING"],
+          now: dependencies.now(),
+        },
+        dependencies.prisma,
+      );
+
+      try {
+        const token = await getBoundGithubToken(dependencies, reviewRequest);
+        const data = await dependencies.getPullRequestDiff({
+          token,
+          owner,
+          repo,
+          prNumber,
+        });
+
+        if (data.headSha !== reviewRequest.headSha) {
+          await transitionReviewExecution(
+            {
+              reviewId,
+              attempt,
+              leaseToken,
+              leaseOwner: "WORKER",
+              now: dependencies.now(),
+              from: ["RUNNING"],
+              to: "FAILED",
+              failure: {
+                stage: "FETCH",
+                message: "The pull request head changed before review execution.",
+              },
+            },
+            dependencies.prisma,
+          );
+          return null;
+        }
+
+        return data;
+      } catch {
+        await transitionReviewExecution(
+          {
+            reviewId,
+            attempt,
+            leaseToken,
+            leaseOwner: "WORKER",
+            now: dependencies.now(),
+            from: ["RUNNING"],
+            to: "FAILED",
+            failure: {
+              stage: "FETCH",
+              message: "Pull request data could not be fetched.",
+            },
+          },
+          dependencies.prisma,
+        );
+        return null;
+      }
+    });
+
+    if (!fetchResult) {
+      return { success: true };
+    }
 
     const {
       diff: rawDiff,
       title,
       description,
-      token,
       additions,
       deletions,
       changedFiles,
@@ -334,6 +465,17 @@ export function createGenerateReviewHandler(
     // ── Step 3: deterministic context + AI 리뷰 생성 ──
     // 같은 step ID와 반환 shape를 유지해 배포 전 memoized run과 호환한다.
     const aiStepResult: unknown = await step.run("generate-ai-review", async () => {
+      await renewReviewExecutionLease(
+        {
+          reviewId,
+          attempt,
+          leaseToken,
+          leaseOwner: "WORKER",
+          allowedStatuses: ["RUNNING"],
+          now: dependencies.now(),
+        },
+        dependencies.prisma,
+      );
       let deterministicContext = createEmptyDeterministicPrContext(headSha);
 
       if (!deterministicContextEnabled) {
@@ -364,6 +506,10 @@ export function createGenerateReviewHandler(
         });
       } else {
         try {
+          const token = await getBoundGithubToken(
+            dependencies,
+            reviewRequest,
+          );
           deterministicContext = await dependencies.buildDeterministicPrContext({
             token,
             owner: headRepository.owner,
@@ -685,6 +831,18 @@ export function createGenerateReviewHandler(
     const verification = await step.run("verify-findings", async (): Promise<VerificationResult | null> => {
       if (!verificationEnabled || !validatedStructuredOutput) return null;
 
+      await renewReviewExecutionLease(
+        {
+          reviewId,
+          attempt,
+          leaseToken,
+          leaseOwner: "WORKER",
+          allowedStatuses: ["RUNNING"],
+          now: dependencies.now(),
+        },
+        dependencies.prisma,
+      );
+
       const { issues, suggestions } = validatedStructuredOutput;
       if (issues.length === 0 && suggestions.length === 0) {
         return { status: "verified", issueVerdicts: [], suggestionVerdicts: [] };
@@ -693,7 +851,9 @@ export function createGenerateReviewHandler(
       try {
         return await dependencies.verifyReview({ diff, issues, suggestions, langCode });
       } catch (error) {
-        console.warn("Review verification failed, continuing unverified:", error);
+        console.warn("Review verification failed, continuing unverified", {
+          error: getSafeExternalErrorSummary(error),
+        });
         return { status: "skipped", issueVerdicts: [], suggestionVerdicts: [] };
       }
     });
@@ -727,27 +887,64 @@ export function createGenerateReviewHandler(
       const issues = finalOutput?.issues ?? [];
       if (issues.length === 0) return [];
 
-      const repository = await dependencies.prisma.repository.findFirst({
-        where: { owner, name: repo },
-      });
-      if (!repository) return [];
+      await renewReviewExecutionLease(
+        {
+          reviewId,
+          attempt,
+          leaseToken,
+          leaseOwner: "WORKER",
+          allowedStatuses: ["RUNNING"],
+          now: dependencies.now(),
+        },
+        dependencies.prisma,
+      );
 
       try {
         return await dependencies.detectRepeatIssues({
           issues,
           userId,
-          repositoryId: repository.id,
+          repositoryId: reviewRequest.repository.id,
           prNumber,
         });
       } catch (error) {
-        console.warn("Repeat detection failed, continuing without badges:", error);
+        console.warn("Repeat detection failed, continuing without badges", {
+          error: getSafeExternalErrorSummary(error),
+        });
         return [];
       }
     });
 
+    await step.run("mark-review-posting", () =>
+      transitionReviewExecution(
+        {
+          reviewId,
+          attempt,
+          leaseToken,
+          leaseOwner: "WORKER",
+          now: dependencies.now(),
+          from: ["RUNNING"],
+          to: "POSTING",
+          lastCompletedStage: "VERIFIED",
+        },
+        dependencies.prisma,
+      ),
+    );
+
     // ── Step 6: GitHub에 리뷰 게시 ──
     // IMPORTANT: postedAsReview는 반드시 step.run()의 반환값으로 캡처해야 한다.
     const postedAsReview = await step.run("post-review", async () => {
+      await renewReviewExecutionLease(
+        {
+          reviewId,
+          attempt,
+          leaseToken,
+          leaseOwner: "WORKER",
+          allowedStatuses: ["POSTING"],
+          now: dependencies.now(),
+        },
+        dependencies.prisma,
+      );
+      const token = await getBoundGithubToken(dependencies, reviewRequest);
       const suggestions = finalOutput?.suggestions ?? [];
       const issues = finalOutput?.issues ?? [];
       const issueCount = issues.length;
@@ -775,7 +972,9 @@ export function createGenerateReviewHandler(
           });
           return true;
         } catch (error) {
-          console.warn("PR Review API failed, falling back to comment:", error);
+          console.warn("PR Review API failed, falling back to comment", {
+            error: getSafeExternalErrorSummary(error),
+          });
           await dependencies.postReviewComment(token, owner, repo, prNumber, finalReview);
           return false;
         }
@@ -792,6 +991,19 @@ export function createGenerateReviewHandler(
       if (!verified) return false;
       if (countExcluded(verified) === 0) return false;
 
+      await renewReviewExecutionLease(
+        {
+          reviewId,
+          attempt,
+          leaseToken,
+          leaseOwner: "WORKER",
+          allowedStatuses: ["POSTING"],
+          now: dependencies.now(),
+        },
+        dependencies.prisma,
+      );
+      const token = await getBoundGithubToken(dependencies, reviewRequest);
+
       const body = buildVerificationReviewBody({
         rejectedIssues: verified.rejectedIssues,
         rejectedSuggestions: verified.rejectedSuggestions,
@@ -804,23 +1016,27 @@ export function createGenerateReviewHandler(
         await dependencies.postVerificationReview({ token, owner, repo, prNumber, headSha, body });
         return true;
       } catch (error) {
-        console.warn("Verification review entry failed (main review was already posted):", error);
+        console.warn(
+          "Verification review entry failed after the main review was posted",
+          { error: getSafeExternalErrorSummary(error) },
+        );
         return false;
       }
     });
 
     // ── Step 7: DB에 리뷰 저장 ──
     await step.run("save-review", async () => {
-      const repository = await dependencies.prisma.repository.findFirst({
-        where: {
-          owner,
-          name: repo,
+      await renewReviewExecutionLease(
+        {
+          reviewId,
+          attempt,
+          leaseToken,
+          leaseOwner: "WORKER",
+          allowedStatuses: ["POSTING"],
+          now: dependencies.now(),
         },
-      });
-
-      if (!repository) {
-        throw new Error("Repository not found");
-      }
+        dependencies.prisma,
+      );
 
       const issueCount = finalOutput?.issues?.length ?? 0;
       const suggestionCount = finalOutput?.suggestions?.length ?? 0;
@@ -833,12 +1049,10 @@ export function createGenerateReviewHandler(
       const repeatsAligned = checkRepeatsAligned("save-review", issueCount, repeatAnnotations.length);
 
       await dependencies.prisma.$transaction(async (tx) => {
-        const createdReview = await tx.review.create({
+        await tx.review.update({
+          where: { id: reviewId },
           data: {
-            repositoryId: repository.id,
-            prNumber,
             prTitle: title,
-            prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
             review: finalReview,
             reviewData: finalOutput
               ? (() => {
@@ -872,25 +1086,8 @@ export function createGenerateReviewHandler(
                 })()
               : Prisma.DbNull,
             langCode,
-            reviewType: "FULL_REVIEW",
             maxSuggestions,
             verificationEnabled,
-            requestKey: `legacy-runtime:${randomUUID()}`,
-            requestSource: "LEGACY",
-            reviewMode: "FULL",
-            status: "COMPLETED",
-            failureStage: null,
-            failureMessage: null,
-            lastCompletedStage: null,
-            attemptCount: 1,
-            executionLeaseExpiresAt: null,
-            executionLeaseToken: null,
-            executionLeaseOwner: null,
-            githubMainReviewId: null,
-            githubMainPostedAt: null,
-            githubAuthorId: null,
-            artifactLookupMissedAt: null,
-            trialCreditState: "NOT_APPLICABLE",
             headSha,
           },
         });
@@ -898,7 +1095,7 @@ export function createGenerateReviewHandler(
         if (finalOutput?.suggestions?.length) {
           await tx.suggestion.createMany({
             data: finalOutput.suggestions.map((s) => ({
-              reviewId: createdReview.id,
+              reviewId,
               filePath: s.file,
               lineNumber: s.line,
               beforeCode: s.before,
@@ -915,7 +1112,7 @@ export function createGenerateReviewHandler(
             data: finalOutput.issues.map((issue, index) => {
               const annotation = repeatsAligned ? repeatAnnotations[index] : undefined;
               return {
-                reviewId: createdReview.id,
+                reviewId,
                 userId,
                 filePath: issue.file,
                 lineNumber: issue.line,
@@ -931,6 +1128,20 @@ export function createGenerateReviewHandler(
             }),
           });
         }
+
+        await transitionReviewExecution(
+          {
+            reviewId,
+            attempt,
+            leaseToken,
+            leaseOwner: "WORKER",
+            now: dependencies.now(),
+            from: ["POSTING"],
+            to: "COMPLETED",
+            lastCompletedStage: "PERSISTED",
+          },
+          tx,
+        );
       });
 
       // postedAsReview 참조로 Inngest replay 경고 방지
@@ -953,6 +1164,7 @@ const defaultReviewWorkerDependencies: ReviewWorkerDependencies = {
   verifyReview,
   detectRepeatIssues,
   createTimeoutSignal: AbortSignal.timeout,
+  now: () => new Date(),
 };
 
 export const generateReview = inngest.createFunction(

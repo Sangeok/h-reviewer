@@ -24,10 +24,22 @@ function createDependencies(
   return {
     verifySignature: vi.fn(() => true),
     queueReview: vi.fn<GithubWebhookHandlerDependencies["queueReview"]>(
-      async () => ({ success: true, message: "Review Queued" }),
+      async () => ({
+        success: true,
+        message: "Review Queued",
+        reviewId: "review-1",
+        requestKey: "review-request-1",
+        status: "PENDING",
+      }),
     ),
     queueSummary: vi.fn<GithubWebhookHandlerDependencies["queueSummary"]>(
-      async () => ({ success: true, message: "Summary Queued" }),
+      async () => ({
+        success: true,
+        message: "Summary Queued",
+        reviewId: "summary-1",
+        requestKey: "summary-request-1",
+        status: "PENDING",
+      }),
     ),
     handleSynchronize: vi.fn<
       GithubWebhookHandlerDependencies["handleSynchronize"]
@@ -233,6 +245,28 @@ describe("createGithubWebhookHandler", () => {
     expect(dependencies.queueSummary).not.toHaveBeenCalled();
     expect(dependencies.handleSynchronize).not.toHaveBeenCalled();
     expect(dependencies.finalizeMergedPullRequest).not.toHaveBeenCalled();
+  });
+
+  it("treats factual review rejection as processed instead of an operational retry", async () => {
+    const dependencies = createDependencies({
+      queueReview: vi.fn<GithubWebhookHandlerDependencies["queueReview"]>(
+        async () => ({
+          success: false,
+          message: "The pull request is closed",
+          reason: "pr_not_reviewable",
+        }),
+      ),
+    });
+    const handler = createGithubWebhookHandler(dependencies);
+
+    const response = await handler(
+      createInput("pull_request", createPullRequestPayload("opened")),
+    );
+
+    expect(response).toEqual({
+      status: 200,
+      body: { message: "The pull request is closed" },
+    });
   });
 });
 

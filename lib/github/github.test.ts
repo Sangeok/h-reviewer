@@ -33,6 +33,7 @@ vi.mock("@/lib/db", () => ({
 import {
   getFileContent,
   getPullRequestDiff,
+  getPullRequestSnapshot,
   getRepositoryFileTree,
 } from "./github";
 
@@ -50,6 +51,7 @@ function createPullRequest(overrides: PullRequestOverrides = {}) {
 
   return {
     title: "Stable PR",
+    html_url: "https://github.com/base-owner/base-repo/pull/7",
     body: "Description",
     additions: 4,
     deletions: 2,
@@ -179,6 +181,50 @@ describe("getPullRequestDiff", () => {
     });
 
     expect(result.headRepository).toBeNull();
+  });
+});
+
+describe("getPullRequestSnapshot", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("normalizes one canonical metadata request without diff media", async () => {
+    octokitMocks.pullsGet.mockResolvedValue({ data: createPullRequest() });
+
+    const result = await getPullRequestSnapshot({
+      token: "token",
+      owner: "base-owner",
+      repo: "base-repo",
+      prNumber: 7,
+    });
+
+    expect(result).toEqual({
+      title: "Stable PR",
+      url: "https://github.com/base-owner/base-repo/pull/7",
+      headSha: "head-sha",
+      state: "open",
+      merged: false,
+    });
+    expect(octokitMocks.pullsGet).toHaveBeenCalledOnce();
+    expect(octokitMocks.pullsGet).toHaveBeenCalledWith({
+      owner: "base-owner",
+      repo: "base-repo",
+      pull_number: 7,
+    });
+  });
+
+  it("does not hide snapshot API failures", async () => {
+    octokitMocks.pullsGet.mockRejectedValue(new Error("GitHub unavailable"));
+
+    await expect(
+      getPullRequestSnapshot({
+        token: "token",
+        owner: "base-owner",
+        repo: "base-repo",
+        prNumber: 7,
+      }),
+    ).rejects.toThrow("GitHub unavailable");
   });
 });
 

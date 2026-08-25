@@ -1,12 +1,12 @@
 # HReviewer 개인 리뷰 코치 P0 구현 상세 계획
 
-> 상태: **T01-T02 완료 — T03 NEXT; T09 generation target 결정 완료, lifecycle·품질 release gate 유지**
+> 상태: **T01-T03 완료 — T04 NEXT; T09 generation target 결정 완료, lifecycle·품질 release gate 유지**
 >
 > 기준일: <code>2026-08-25</code>
 >
 > 코드 기준: <code>f165cd2a06c966c97385c190259a8045be8c3c96</code>
 >
-> 재조정 기준: <code>2026-08-25 Asia/Seoul</code>. 직접 source bundle은 이 문서, 상위 로드맵(<code>SHA-256 d411f776b5bc142683a905e82d79141a140f5fee5275958df60e73f3d616322d</code>), 기존 RAG 제거 평가(<code>SHA-256 8cba9e2b3a358ff162d0880e4f11647bfe5ff014a317606b84699a7024aa0601</code>)다.
+> 재조정 기준: <code>2026-08-25 Asia/Seoul</code>. 직접 source bundle은 이 문서, 상위 로드맵(<code>SHA-256 041c92324fb784db0e42a640edbfa726143d5847d739a6717af3ecb33a7e74a6</code>), 기존 RAG 제거 평가(<code>SHA-256 8cba9e2b3a358ff162d0880e4f11647bfe5ff014a317606b84699a7024aa0601</code>)다.
 >
 > candidate inventory는 <code>git ls-files -- app components features inngest lib prisma scripts package.json package-lock.json vitest.config.ts tsconfig.json next.config.ts eslint.config.mjs .gitignore</code> 결과를 ordinal 정렬하고 각 repository-relative path를 LF로 연결한 뒤 마지막 LF를 붙인 UTF-8 bytes다. 기준 commit에서 <code>207</code>개, <code>SHA-256 af1d20b65a4c91ec73affb68b04f3f7deec6173c83d255787982f3cf61534c97</code>이며 task 시작 시 같은 방식으로 다시 계산한다.
 >
@@ -971,9 +971,11 @@ TSX discovery는 React DOM server renderer를 사용하는 status badge smoke te
 - 생성: <code>features/ai/actions/review-pull-request.test.ts</code>
 - 수정: <code>features/ai/actions/generate-pr-summary.ts</code>
 - 생성: <code>features/ai/actions/generate-pr-summary.test.ts</code>
+- 수정: <code>features/ai/index.ts</code>
 - 수정: <code>features/ai/types/index.ts</code>
 - 수정: <code>features/ai/lib/get-repository-with-token.ts</code>
 - 수정: <code>features/payment/lib/subscription.ts</code>
+- 수정: <code>features/review/constants/index.ts</code>
 - 수정: <code>app/api/webhooks/github/github-webhook-handler.ts</code>
 - 수정: <code>app/api/webhooks/github/github-webhook-handler.test.ts</code>
 - 수정: <code>lib/github/github.ts</code>
