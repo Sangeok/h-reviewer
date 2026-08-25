@@ -69,6 +69,39 @@ type GenerateAiReviewStepResult = {
   structuredOutput: StructuredReviewOutput | null;
 };
 
+export type ReviewWorkerEventData = {
+  owner: string;
+  repo: string;
+  prNumber: number;
+  userId: string;
+  preferredLanguage?: string;
+  maxSuggestions?: number | null;
+  verificationEnabled?: boolean;
+};
+
+export type ReviewWorkerStep = {
+  run<T>(id: string, handler: () => Promise<T> | T): Promise<T>;
+};
+
+export type ReviewWorkerHandler = (input: {
+  event: { data: ReviewWorkerEventData };
+  step: ReviewWorkerStep;
+}) => Promise<{ success: true }>;
+
+export type ReviewWorkerDependencies = {
+  prisma: typeof prisma;
+  getPullRequestDiff: typeof getPullRequestDiff;
+  postReviewComment: typeof postReviewComment;
+  postPRReviewWithSuggestions: typeof postPRReviewWithSuggestions;
+  postVerificationReview: typeof postVerificationReview;
+  buildDeterministicPrContext: typeof buildDeterministicPrContext;
+  generateText: typeof generateText;
+  createGeneratorModel: typeof google;
+  verifyReview: typeof verifyReview;
+  detectRepeatIssues: typeof detectRepeatIssues;
+  createTimeoutSignal(milliseconds: number): AbortSignal;
+};
+
 /**
  * AbortSignal.timeout() 발화 여부.
  *
@@ -219,15 +252,15 @@ function checkRepeatsAligned(
   return checkLengthAlignment(scope, "repeatAnnotations", expected, actual, { allowEmpty: true });
 }
 
-export const generateReview = inngest.createFunction(
-  { id: "generate-review" },
-  { event: "pr.review.requested" },
-  async ({ event, step }) => {
+export function createGenerateReviewHandler(
+  dependencies: ReviewWorkerDependencies,
+): ReviewWorkerHandler {
+  return async ({ event, step }) => {
     const { owner, repo, prNumber, userId, preferredLanguage = "en", maxSuggestions = null, verificationEnabled = false } = event.data;
 
     // ── Step 1: PR 데이터 + 크기 정보 가져오기 ──
     const fetchResult = await step.run("fetch-pr-data", async () => {
-      const account = await prisma.account.findFirst({
+      const account = await dependencies.prisma.account.findFirst({
         where: {
           userId,
           providerId: "github",
@@ -238,7 +271,7 @@ export const generateReview = inngest.createFunction(
         throw new Error("Github access token not found");
       }
 
-      const data = await getPullRequestDiff({
+      const data = await dependencies.getPullRequestDiff({
         token: account.accessToken,
         owner,
         repo,
@@ -329,14 +362,14 @@ export const generateReview = inngest.createFunction(
         });
       } else {
         try {
-          deterministicContext = await buildDeterministicPrContext({
+          deterministicContext = await dependencies.buildDeterministicPrContext({
             token,
             owner: headRepository.owner,
             repo: headRepository.repo,
             headSha,
             diff,
             sizeMode,
-            signal: AbortSignal.timeout(CONTEXT_BUILD_TIMEOUT_MS),
+            signal: dependencies.createTimeoutSignal(CONTEXT_BUILD_TIMEOUT_MS),
           });
 
           const sourceCounts = {
@@ -394,11 +427,11 @@ export const generateReview = inngest.createFunction(
           maxSuggestions,
         });
 
-        const { experimental_output } = await generateText({
-          model: google(GENERATOR_MODEL_ID),
+        const { experimental_output } = await dependencies.generateText({
+          model: dependencies.createGeneratorModel(GENERATOR_MODEL_ID),
           experimental_output: Output.object({ schema: structuredReviewSchema }),
           prompt,
-          abortSignal: AbortSignal.timeout(AI_GENERATION_TIMEOUT_MS),
+          abortSignal: dependencies.createTimeoutSignal(AI_GENERATION_TIMEOUT_MS),
         });
 
         if (experimental_output) {
@@ -447,10 +480,10 @@ export const generateReview = inngest.createFunction(
         });
         // 구조화가 이미 예산을 상당히 태웠을 수 있어 폴백은 짧은 상한을 쓴다
         // (maxDuration 합산 근거는 AI_FALLBACK_TIMEOUT_MS 주석 참조).
-        const { text } = await generateText({
-          model: google(GENERATOR_MODEL_ID),
+        const { text } = await dependencies.generateText({
+          model: dependencies.createGeneratorModel(GENERATOR_MODEL_ID),
           prompt: fallbackPrompt,
-          abortSignal: AbortSignal.timeout(AI_FALLBACK_TIMEOUT_MS),
+          abortSignal: dependencies.createTimeoutSignal(AI_FALLBACK_TIMEOUT_MS),
         });
 
         return { rawReview: text, structuredOutput: null };
@@ -656,7 +689,7 @@ export const generateReview = inngest.createFunction(
       }
 
       try {
-        return await verifyReview({ diff, issues, suggestions, langCode });
+        return await dependencies.verifyReview({ diff, issues, suggestions, langCode });
       } catch (error) {
         console.warn("Review verification failed, continuing unverified:", error);
         return { status: "skipped", issueVerdicts: [], suggestionVerdicts: [] };
@@ -692,13 +725,13 @@ export const generateReview = inngest.createFunction(
       const issues = finalOutput?.issues ?? [];
       if (issues.length === 0) return [];
 
-      const repository = await prisma.repository.findFirst({
+      const repository = await dependencies.prisma.repository.findFirst({
         where: { owner, name: repo },
       });
       if (!repository) return [];
 
       try {
-        return await detectRepeatIssues({
+        return await dependencies.detectRepeatIssues({
           issues,
           userId,
           repositoryId: repository.id,
@@ -734,18 +767,18 @@ export const generateReview = inngest.createFunction(
 
       if (hasInlineContent) {
         try {
-          await postPRReviewWithSuggestions({
+          await dependencies.postPRReviewWithSuggestions({
             token, owner, repo, prNumber, reviewBody: finalReview,
             suggestions, issues: issuesWithRepeat, headSha, langCode,
           });
           return true;
         } catch (error) {
           console.warn("PR Review API failed, falling back to comment:", error);
-          await postReviewComment(token, owner, repo, prNumber, finalReview);
+          await dependencies.postReviewComment(token, owner, repo, prNumber, finalReview);
           return false;
         }
       } else {
-        await postReviewComment(token, owner, repo, prNumber, finalReview);
+        await dependencies.postReviewComment(token, owner, repo, prNumber, finalReview);
         return false;
       }
     });
@@ -766,7 +799,7 @@ export const generateReview = inngest.createFunction(
       if (body === null) return false;
 
       try {
-        await postVerificationReview({ token, owner, repo, prNumber, headSha, body });
+        await dependencies.postVerificationReview({ token, owner, repo, prNumber, headSha, body });
         return true;
       } catch (error) {
         console.warn("Verification review entry failed (main review was already posted):", error);
@@ -776,7 +809,7 @@ export const generateReview = inngest.createFunction(
 
     // ── Step 7: DB에 리뷰 저장 ──
     await step.run("save-review", async () => {
-      const repository = await prisma.repository.findFirst({
+      const repository = await dependencies.prisma.repository.findFirst({
         where: {
           owner,
           name: repo,
@@ -797,7 +830,7 @@ export const generateReview = inngest.createFunction(
         checkLengthAlignment("save-review", "keptSuggestionVerdicts", suggestionCount, verified.keptSuggestionVerdicts.length);
       const repeatsAligned = checkRepeatsAligned("save-review", issueCount, repeatAnnotations.length);
 
-      await prisma.$transaction(async (tx) => {
+      await dependencies.prisma.$transaction(async (tx) => {
         const createdReview = await tx.review.create({
           data: {
             repositoryId: repository.id,
@@ -886,5 +919,25 @@ export const generateReview = inngest.createFunction(
     });
 
     return { success: true };
-  },
+  };
+}
+
+const defaultReviewWorkerDependencies: ReviewWorkerDependencies = {
+  prisma,
+  getPullRequestDiff,
+  postReviewComment,
+  postPRReviewWithSuggestions,
+  postVerificationReview,
+  buildDeterministicPrContext,
+  generateText,
+  createGeneratorModel: google,
+  verifyReview,
+  detectRepeatIssues,
+  createTimeoutSignal: AbortSignal.timeout,
+};
+
+export const generateReview = inngest.createFunction(
+  { id: "generate-review" },
+  { event: "pr.review.requested" },
+  createGenerateReviewHandler(defaultReviewWorkerDependencies),
 );

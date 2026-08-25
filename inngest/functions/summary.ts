@@ -6,15 +6,40 @@ import { google } from "@ai-sdk/google";
 import { stripFencedCodeBlocks, GENERATOR_MODEL_ID } from "@/features/ai";
 import { getLanguageName, isValidLanguageCode } from "@/features/settings";
 
-export const generateSummary = inngest.createFunction(
-  { id: "generate-summary" },
-  { event: "pr.summary.requested" },
-  async ({ event, step }) => {
+export type SummaryWorkerEventData = {
+  owner: string;
+  repo: string;
+  prNumber: number;
+  userId: string;
+  preferredLanguage?: string;
+};
+
+export type SummaryWorkerStep = {
+  run<T>(id: string, handler: () => Promise<T> | T): Promise<T>;
+};
+
+export type SummaryWorkerHandler = (input: {
+  event: { data: SummaryWorkerEventData };
+  step: SummaryWorkerStep;
+}) => Promise<{ success: true }>;
+
+export type SummaryWorkerDependencies = {
+  prisma: typeof prisma;
+  getPullRequestDiff: typeof getPullRequestDiff;
+  postReviewComment: typeof postReviewComment;
+  generateText: typeof generateText;
+  createGeneratorModel: typeof google;
+};
+
+export function createGenerateSummaryHandler(
+  dependencies: SummaryWorkerDependencies,
+): SummaryWorkerHandler {
+  return async ({ event, step }) => {
     const { owner, repo, prNumber, userId, preferredLanguage = "en" } = event.data;
 
     // Fetch PR data
     const { diff, title, description, token } = await step.run("fetch-pr-data", async () => {
-      const account = await prisma.account.findFirst({
+      const account = await dependencies.prisma.account.findFirst({
         where: {
           userId,
           providerId: "github",
@@ -25,7 +50,12 @@ export const generateSummary = inngest.createFunction(
         throw new Error("Github access token not found");
       }
 
-      const data = await getPullRequestDiff({ token: account.accessToken, owner, repo, prNumber });
+      const data = await dependencies.getPullRequestDiff({
+        token: account.accessToken,
+        owner,
+        repo,
+        prNumber,
+      });
 
       return { ...data, token: account.accessToken };
     });
@@ -72,8 +102,8 @@ export const generateSummary = inngest.createFunction(
         ${diff}
         \`\`\``;
 
-      const { text } = await generateText({
-        model: google(GENERATOR_MODEL_ID),
+      const { text } = await dependencies.generateText({
+        model: dependencies.createGeneratorModel(GENERATOR_MODEL_ID),
         prompt,
       });
 
@@ -83,12 +113,19 @@ export const generateSummary = inngest.createFunction(
 
     // Step 3: Post comment to GitHub
     await step.run("post-comment", async () => {
-      await postReviewComment(token, owner, repo, prNumber, summary, { title: "AI PR Summary" });
+      await dependencies.postReviewComment(
+        token,
+        owner,
+        repo,
+        prNumber,
+        summary,
+        { title: "AI PR Summary" },
+      );
     });
 
     // Step 4: Save to database
     await step.run("save-summary", async () => {
-      const repository = await prisma.repository.findFirst({
+      const repository = await dependencies.prisma.repository.findFirst({
         where: { owner, name: repo },
       });
 
@@ -96,7 +133,7 @@ export const generateSummary = inngest.createFunction(
         throw new Error("Repository not found");
       }
 
-      await prisma.review.create({
+      await dependencies.prisma.review.create({
         data: {
           repositoryId: repository.id,
           prNumber,
@@ -110,5 +147,19 @@ export const generateSummary = inngest.createFunction(
     });
 
     return { success: true };
-  }
+  };
+}
+
+const defaultSummaryWorkerDependencies: SummaryWorkerDependencies = {
+  prisma,
+  getPullRequestDiff,
+  postReviewComment,
+  generateText,
+  createGeneratorModel: google,
+};
+
+export const generateSummary = inngest.createFunction(
+  { id: "generate-summary" },
+  { event: "pr.summary.requested" },
+  createGenerateSummaryHandler(defaultSummaryWorkerDependencies),
 );
