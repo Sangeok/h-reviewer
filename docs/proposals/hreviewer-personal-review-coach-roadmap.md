@@ -1,6 +1,6 @@
 # HReviewer 개인 코드 리뷰 코치 실행 제안서
 
-> 상태: **Proposed — 다음 task T02**
+> 상태: **Proposed — T02 완료·T03 NEXT**
 >
 > 작성일: `2026-08-17`
 >
@@ -110,7 +110,7 @@ HReviewer가 먼저 이겨야 하는 지점은 다음 세 가지다.
 
 - 한 구현 주기와 한 PR에서는 **하나의 task만** 수행한다. 같은 파일을 후속 task도 수정하더라도 현재 task의 완료 조건에 필요한 동작만 변경한다.
 - 상태는 `NEXT`, `WAITING`, `IN_PROGRESS`, `BLOCKED`, `COMPLETED`만 사용한다.
-- `NEXT` 또는 `IN_PROGRESS`는 전체 로드맵에서 하나만 존재한다. 현재 `NEXT`는 T02다.
+- `NEXT` 또는 `IN_PROGRESS`는 전체 로드맵에서 하나만 존재한다. 현재 `NEXT` task는 T03이다.
 - task를 시작할 때 상태를 `NEXT -> IN_PROGRESS`로 바꾸고, 현재 코드의 실제 owner, public API, import consumer, 테스트와 생성 artifact를 다시 inventory한다.
 - 완료 조건과 섹션 15의 검증을 모두 통과해야 `COMPLETED`로 바꿀 수 있다. 실패한 검증이나 미결정 사항이 있으면 `BLOCKED`로 기록하고 다음 task를 열지 않는다.
 - 완료 시 바로 다음 task만 `WAITING -> NEXT`로 바꾼다. 후속 task의 구현을 현재 task로 당겨오지 않는다.
@@ -126,8 +126,8 @@ HReviewer가 먼저 이겨야 하는 지점은 다음 세 가지다.
 | 순서 | Task | 단계 | 상태 | 목표 주차 | 직전 완료 gate |
 | ---: | --- | --- | --- | --- | --- |
 | 1 | T01. 파이프라인 기준선과 테스트 하네스 | P0 | `COMPLETED` | 1주차 | 없음 |
-| 2 | T02. Review 실행 상태와 webhook delivery 영속화 | P0 | `NEXT` | 1주차 | T01 |
-| 3 | T03. 단일 리뷰 요청 coordinator | P0 | `WAITING` | 1주차 | T02 |
+| 2 | T02. Review 실행 상태와 webhook delivery 영속화 | P0 | `COMPLETED` | 1주차 | T01 |
+| 3 | T03. 단일 리뷰 요청 coordinator | P0 | `NEXT` | 1주차 | T02 |
 | 4 | T04. GitHub webhook idempotency | P0 | `WAITING` | 1주차 | T03 |
 | 5 | T05. 명령 권한 검사와 `review` 라우팅 | P0 | `WAITING` | 1주차 | T04 |
 | 6 | T06. head supersede, debounce, stale-post 방지 | P0 | `WAITING` | 2주차 | T05 |
@@ -182,6 +182,7 @@ task를 `COMPLETED`로 바꿀 때 아래 형식의 행을 이 표에 추가한�
 | Task | 완료일 | 변경 경로 | migration·env | 자동 검증 | 수동·외부 검증 | 남은 위험 | 다음 task |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | T01 | 2026-08-25 | <code>vitest.config.ts</code>, <code>app/api/webhooks/github/route.ts</code>, <code>app/api/webhooks/github/github-webhook-handler.ts</code>, <code>app/api/webhooks/github/github-webhook-handler.test.ts</code>, <code>app/api/webhooks/github/route.test.ts</code>, <code>inngest/functions/review.ts</code>, <code>inngest/functions/review.test.ts</code>, <code>inngest/functions/summary.ts</code>, <code>inngest/functions/summary.test.ts</code>, <code>features/review/ui/parts/review-status-badge.test.tsx</code>, <code>docs/proposals/hreviewer-personal-review-coach-p0-implementation-plan.md</code>, <code>docs/proposals/hreviewer-personal-review-coach-roadmap.md</code> | migration·env 변경 없음 | T01 전용 17개 통과; 전체 135개 통과·1개 환경 의존 calibration 스킵; lint 오류 0개·기존 경고 1개; typecheck·build 통과 | 실제 GitHub·Google AI 요청 없음; 외부 경계를 주입한 fixture로 검증 | 현재 결함인 <code>review</code> command 미dispatch는 T05, delivery 미영속화는 T04, 실행 상태 schema는 T02 소유로 의도적으로 보존; 목표 주차는 재산정 없이 유지 | T02 |
+| T02 | 2026-08-25 | <code>prisma/schema.prisma</code>, <code>prisma/migrations/20260825110650_add_review_execution_state/migration.sql</code>, <code>features/review/lib/review-execution-state.ts</code>와 단위·migration integration 테스트, <code>features/review/constants/index.ts</code>, <code>features/review/types/index.ts</code>, review badge·card·detail과 테스트, 현재 Review create 3개 경로와 worker 테스트 2개, <code>lib/test/create-test-prisma-client.ts</code>와 테스트, <code>scripts/prepare-p0-test-database.mjs</code>, 두 proposal 문서 | schema와 migration 생성; 추적 env 파일 변경 없음; 로컬에서 운영·개발 URL과 다른 전용 Neon <code>hreviewer_test</code> database의 Direct connection을 사용했고 secret은 기록하지 않음 | 전체 180개 통과·환경 의존 calibration 1개 스킵; T02 PostgreSQL migration integration 2개 통과; lint 오류 0개·기존 경고 1개; typecheck·build·Prisma format/validate/generate 통과; 생성 client 18개 파일과 신규 enum·model·field 확인; production <code>legacy-runtime:</code> write 정확히 3개 | 준비 script가 전용 test database의 <code>public</code> schema에 전체 17개 migration을 적용하고 current schema·migration table·필수 table을 확인; 이전 status cast/backfill, 미지 status guard rollback, NOT NULL·UNIQUE를 격리 schema에서 검증; T02 migration 적용 1건·필수 table 3개·잔여 integration schema 0개를 재확인; 실제 GitHub·Google AI·production 요청 없음 | T02 enum migration은 T03·T07 runtime 변경과 함께 P0 cutover gate 전 production에 배포하지 않음; request coordinator는 T03 소유 | T03 |
 
 ## 7. P0 — 신뢰성과 첫 경험
 
@@ -237,7 +238,7 @@ FAILED --retryable + explicit retry--> PENDING
 FAILED --marker-confirmed reconciliation--> COMPLETED
 ```
 
-<code>FAILED -> COMPLETED</code>는 T07 reconciler가 persisted body와 main marker를 모두 확인한 경우에만 허용한다.
+T02의 초기 helper는 현재 lease가 있는 실행의 전이와 <code>PENDING -> RUNNING</code> claim만 구현한다. terminal lease를 지운 뒤 새 attempt·QUEUE lease를 원자적으로 만드는 <code>FAILED -> PENDING</code> retry는 T03이, persisted body와 main marker를 확인하는 <code>FAILED -> COMPLETED</code> 복구는 T07이 각각 helper와 테스트를 확장한다. T02에서 이 두 전이를 임시 token 재사용이나 fence 생략으로 선반영하지 않는다.
 
 ### T03. 단일 리뷰 요청 coordinator
 

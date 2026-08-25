@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import prisma from "@/lib/db";
 import { inngest } from "../client";
 import { getPullRequestDiff, postReviewComment } from "@/lib/github/github";
@@ -141,7 +143,22 @@ export function createGenerateSummaryHandler(
           prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
           review: summary,
           reviewType: "SUMMARY", // Summary 타입 명시
-          status: "completed",
+          requestKey: `legacy-runtime:${randomUUID()}`,
+          requestSource: "LEGACY",
+          reviewMode: "FULL",
+          status: "COMPLETED",
+          failureStage: null,
+          failureMessage: null,
+          lastCompletedStage: null,
+          attemptCount: 1,
+          executionLeaseExpiresAt: null,
+          executionLeaseToken: null,
+          executionLeaseOwner: null,
+          githubMainReviewId: null,
+          githubMainPostedAt: null,
+          githubAuthorId: null,
+          artifactLookupMissedAt: null,
+          trialCreditState: "NOT_APPLICABLE",
         },
       });
     });

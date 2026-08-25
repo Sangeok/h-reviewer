@@ -100,15 +100,18 @@ describe("createGenerateSummaryHandler", () => {
       { title: "AI PR Summary" },
     );
     expect(reviewCreate).toHaveBeenCalledWith({
-      data: {
+      data: expect.objectContaining({
         repositoryId: "repository-1",
         prNumber: 42,
         prTitle: "Improve docs",
         prUrl: "https://github.com/octo/sample/pull/42",
         review: "Generated summary",
         reviewType: "SUMMARY",
-        status: "completed",
-      },
+        requestSource: "LEGACY",
+        reviewMode: "FULL",
+        status: "COMPLETED",
+        trialCreditState: "NOT_APPLICABLE",
+      }),
     });
   });
 });
