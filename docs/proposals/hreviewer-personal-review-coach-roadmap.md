@@ -1,6 +1,6 @@
 # HReviewer 개인 코드 리뷰 코치 실행 제안서
 
-> 상태: **Proposed — T04 완료·T05 NEXT**
+> 상태: **Proposed — T05 완료·T06 NEXT**
 >
 > 작성일: `2026-08-17`
 >
@@ -110,7 +110,7 @@ HReviewer가 먼저 이겨야 하는 지점은 다음 세 가지다.
 
 - 한 구현 주기와 한 PR에서는 **하나의 task만** 수행한다. 같은 파일을 후속 task도 수정하더라도 현재 task의 완료 조건에 필요한 동작만 변경한다.
 - 상태는 `NEXT`, `WAITING`, `IN_PROGRESS`, `BLOCKED`, `COMPLETED`만 사용한다.
-- `NEXT` 또는 `IN_PROGRESS`는 전체 로드맵에서 하나만 존재한다. 현재 active task는 `NEXT` 상태의 T05다.
+- `NEXT` 또는 `IN_PROGRESS`는 전체 로드맵에서 하나만 존재한다. 현재 active task는 `NEXT` 상태의 T06이다.
 - task를 시작할 때 상태를 `NEXT -> IN_PROGRESS`로 바꾸고, 현재 코드의 실제 owner, public API, import consumer, 테스트와 생성 artifact를 다시 inventory한다.
 - 완료 조건과 섹션 15의 검증을 모두 통과해야 `COMPLETED`로 바꿀 수 있다. 실패한 검증이나 미결정 사항이 있으면 `BLOCKED`로 기록하고 다음 task를 열지 않는다.
 - 완료 시 바로 다음 task만 `WAITING -> NEXT`로 바꾼다. 후속 task의 구현을 현재 task로 당겨오지 않는다.
@@ -129,8 +129,8 @@ HReviewer가 먼저 이겨야 하는 지점은 다음 세 가지다.
 | 2 | T02. Review 실행 상태와 webhook delivery 영속화 | P0 | `COMPLETED` | 1주차 | T01 |
 | 3 | T03. 단일 리뷰 요청 coordinator | P0 | `COMPLETED` | 1주차 | T02 |
 | 4 | T04. GitHub webhook idempotency | P0 | `COMPLETED` | 1주차 | T03 |
-| 5 | T05. 명령 권한 검사와 `review` 라우팅 | P0 | `NEXT` | 1주차 | T04 |
-| 6 | T06. head supersede, debounce, stale-post 방지 | P0 | `WAITING` | 2주차 | T05 |
+| 5 | T05. 명령 권한 검사와 `review` 라우팅 | P0 | `COMPLETED` | 1주차 | T04 |
+| 6 | T06. head supersede, debounce, stale-post 방지 | P0 | `NEXT` | 2주차 | T05 |
 | 7 | T07. 실패 복구와 lossless GitHub 게시 | P0 | `WAITING` | 2주차 | T06 |
 | 8 | T08. 무료 5회 체험과 상품 UI 정합성 | P0 | `WAITING` | 2주차 | T07 |
 | 9 | T09. generation 모델 마이그레이션·품질 평가와 P0 release gate | P0 | `WAITING` | 2주차 | T08 |
@@ -185,6 +185,7 @@ task를 `COMPLETED`로 바꿀 때 아래 형식의 행을 이 표에 추가한�
 | T02 | 2026-08-25 | <code>prisma/schema.prisma</code>, <code>prisma/migrations/20260825110650_add_review_execution_state/migration.sql</code>, <code>features/review/lib/review-execution-state.ts</code>와 단위·migration integration 테스트, <code>features/review/constants/index.ts</code>, <code>features/review/types/index.ts</code>, review badge·card·detail과 테스트, 현재 Review create 3개 경로와 worker 테스트 2개, <code>lib/test/create-test-prisma-client.ts</code>와 테스트, <code>scripts/prepare-p0-test-database.mjs</code>, 두 proposal 문서 | schema와 migration 생성; 추적 env 파일 변경 없음; 로컬에서 운영·개발 URL과 다른 전용 Neon <code>hreviewer_test</code> database의 Direct connection을 사용했고 secret은 기록하지 않음 | 전체 180개 통과·환경 의존 calibration 1개 스킵; T02 PostgreSQL migration integration 2개 통과; lint 오류 0개·기존 경고 1개; typecheck·build·Prisma format/validate/generate 통과; 생성 client 18개 파일과 신규 enum·model·field 확인; production <code>legacy-runtime:</code> write 정확히 3개 | 준비 script가 전용 test database의 <code>public</code> schema에 전체 17개 migration을 적용하고 current schema·migration table·필수 table을 확인; 이전 status cast/backfill, 미지 status guard rollback, NOT NULL·UNIQUE를 격리 schema에서 검증; T02 migration 적용 1건·필수 table 3개·잔여 integration schema 0개를 재확인; 실제 GitHub·Google AI·production 요청 없음 | T02 enum migration은 T03·T07 runtime 변경과 함께 P0 cutover gate 전 production에 배포하지 않음; request coordinator는 T03 소유 | T03 |
 | T03 | 2026-08-25 | <code>features/review/lib/review-request.ts</code>와 단위·PostgreSQL integration 테스트, typed <code>inngest/events.ts</code>·client, review execution dispatch/retry helper, 두 AI action·webhook composition·두 worker와 테스트, GitHub snapshot·repository/account binding, FULL_REVIEW reconciliation selector, subscription legacy entitlement 제거, 두 proposal 문서 | migration·schema·추적 env 변경 없음; 전용 Neon <code>hreviewer_test</code> Direct connection을 기존 ignored <code>.env.local</code>에서만 사용하고 secret은 기록하지 않음 | T03 전용 78개 통과; 전체 210개 통과·환경 의존 4개 스킵; T02+T03 PostgreSQL gate 3개 통과; lint 오류 0개·기존 경고 1개; typecheck·production build 통과; legacy Review create·<code>legacy-runtime:</code>·<code>incrementReviewCount</code>·<code>canCreateReview</code> 검색 0건 | 준비 script가 전용 database의 <code>public</code> schema와 17개 migration·필수 table을 재확인; 실제 PostgreSQL의 동일 request key 동시 호출이 Review 1개·event 1개로 수렴; 실제 GitHub·Inngest Cloud·Google AI·production DB 요청 없음 | T03의 Inngest event·step 결과 변경은 기존 run과 병행 배포하지 않으며 T09 cutover drain gate 전 production에 승격하지 않음; delivery lease·redelivery idempotency는 T04 소유 | T04 |
 | T04 | 2026-08-25 | <code>lib/github/github-webhook-delivery.ts</code>와 단위·PostgreSQL integration 테스트, <code>features/review/lib/review-request.ts</code>와 단위·integration 테스트, AI action transport type·전달 테스트, route-private webhook handler·route 테스트, 두 proposal 문서 | migration·schema·추적 env 변경 없음; 기존 ignored <code>.env.local</code>의 전용 Neon <code>hreviewer_test</code> Direct connection만 사용하고 secret은 기록하지 않음 | T04 전용 53개 통과; 전체 232개 통과·환경 의존 6개 스킵; T02-T04 PostgreSQL gate 5개 통과; lint 오류 0개·기존 경고 1개; typecheck·production build 통과 | 준비 script가 전용 database의 <code>public</code> schema와 17개 migration·필수 table을 재확인; delivery 동시 acquire가 정확히 1개 owner로 수렴하고 Review create+delivery bind의 lease 실패 rollback을 검증; 실제 GitHub redelivery·write, Inngest Cloud, Google AI, production DB 요청은 실행하지 않음 | GitHub UI/API manual redelivery fixture는 Approval-after이며 자동 redelivery scheduler는 P0 범위 밖; collaborator 권한과 <code>review</code> command 라우팅은 T05 소유 | T05 |
+| T05 | 2026-08-25 | <code>features/ai/utils/command-parser.ts</code>와 신규 parser 테스트, AI command·review action type 및 source 전달 테스트, <code>lib/github/github.ts</code>의 collaborator permission helper와 테스트, route-private webhook handler와 테스트, 두 proposal 문서 | migration·schema·추적 env 변경 없음; 기존 ignored <code>.env.local</code>의 전용 Neon <code>hreviewer_test</code> Direct connection만 사용하고 secret은 기록하지 않음 | T05 전용 79개 통과; 전체 272개 통과·환경 의존 6개 스킵; T02-T05 PostgreSQL gate 5개 통과; lint 오류 0개·기존 경고 1개; typecheck·production build 통과 | 준비 script가 전용 database의 <code>public</code> schema와 17개 migration·필수 table을 재확인; GitHub legacy permission의 maintain→write·triage→read 계약, 404 무권한과 transient 실패 전파를 fixture로 검증; 실제 GitHub issue comment·permission·write, Inngest Cloud, Google AI, production DB 요청은 실행하지 않음 | 실제 public PR의 write/read 사용자 comment와 GitHub permission endpoint를 잇는 수동 fixture는 Approval-after; debounce·supersede·stale head 방지는 T06 소유 | T06 |
 
 ## 7. P0 — 신뢰성과 첫 경험
 
@@ -296,12 +297,14 @@ T02의 초기 helper는 현재 lease가 있는 실행의 전이와 <code>PENDING
 - issue comment의 GitHub login을 파싱한다.
 - 저장소 collaborator permission을 조회해 `write` 또는 `admin` 권한만 허용한다. GitHub의 `maintain` 역할은 API의 legacy `write` 권한으로 처리한다.
 - `@hreviewer review`를 전체 리뷰 요청 coordinator로 연결한다.
+- 자동 `opened`·`synchronize` review는 `requestSource=AUTOMATIC`, 수동 `@hreviewer review`는 `requestSource=COMMAND`를 명시적으로 전달해 최초 요청 출처를 보존한다.
 - `@hreviewer summary`도 같은 권한과 request-key 중복 정책을 적용한다.
 - malformed, unauthorized, unsupported command는 구분된 결과를 반환하고 AI event를 만들지 않는다.
 
 완료 조건:
 
 - authorized `review`가 Review row와 event를 한 번 만든다.
+- 자동 review와 수동 `review`가 각각 `AUTOMATIC`, `COMMAND` request source로 coordinator에 전달된다.
 - unauthorized public comment는 Review row, event, 크레딧 사용을 만들지 않는다.
 - parser가 반환하는 모든 command type은 dispatch branch 또는 명시적 unsupported 응답을 가진다.
 

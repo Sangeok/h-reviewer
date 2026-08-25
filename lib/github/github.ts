@@ -32,6 +32,65 @@ export function createOctokitClient(token: string): Octokit {
   return new Octokit({ auth: token });
 }
 
+export type RepositoryBasePermission = "admin" | "write" | "read" | "none";
+
+export type GetRepositoryPermissionForUserInput = {
+  token: string;
+  owner: string;
+  repo: string;
+  username: string;
+};
+
+function getHttpStatus(error: unknown): number | undefined {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof error.status === "number"
+  ) {
+    return error.status;
+  }
+
+  return undefined;
+}
+
+export async function getRepositoryPermissionForUser(
+  input: GetRepositoryPermissionForUserInput,
+): Promise<RepositoryBasePermission> {
+  const { token, owner, repo, username } = input;
+  const octokit = createOctokitClient(token);
+
+  try {
+    const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({
+      owner,
+      repo,
+      username,
+    });
+
+    switch (data.permission) {
+      case "admin":
+      case "write":
+      case "read":
+      case "none":
+        return data.permission;
+      default:
+        throw new Error("GitHub returned an unsupported repository permission");
+    }
+  } catch (error) {
+    if (getHttpStatus(error) === 404) {
+      return "none";
+    }
+
+    throw error;
+  }
+}
+
+export function canRunReviewCommand(
+  permission: RepositoryBasePermission,
+): boolean {
+  return permission === "write" || permission === "admin";
+}
+
 export async function fetchUserContribution(token: string, username: string) {
   const octokit = createOctokitClient(token);
 

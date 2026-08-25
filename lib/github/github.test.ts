@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const octokitMocks = vi.hoisted(() => ({
   pullsGet: vi.fn(),
+  reposGetCollaboratorPermissionLevel: vi.fn(),
   reposGetCommit: vi.fn(),
   reposGetContent: vi.fn(),
   gitGetTree: vi.fn(),
@@ -12,6 +13,8 @@ vi.mock("octokit", () => ({
     rest = {
       pulls: { get: octokitMocks.pullsGet },
       repos: {
+        getCollaboratorPermissionLevel:
+          octokitMocks.reposGetCollaboratorPermissionLevel,
         getCommit: octokitMocks.reposGetCommit,
         getContent: octokitMocks.reposGetContent,
       },
@@ -31,9 +34,11 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import {
+  canRunReviewCommand,
   getFileContent,
   getPullRequestDiff,
   getPullRequestSnapshot,
+  getRepositoryPermissionForUser,
   getRepositoryFileTree,
 } from "./github";
 
@@ -83,6 +88,114 @@ function queuePullRequestAttempt(
     .mockResolvedValueOnce({ data: diff })
     .mockResolvedValueOnce({ data: after });
 }
+
+describe("repository command permission", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ["admin", "admin"],
+    ["write", "write"],
+    ["read", "read"],
+    ["none", "none"],
+    ["maintain", "write"],
+    ["triage", "read"],
+  ] as const)(
+    "normalizes the %s role through GitHub's legacy %s permission",
+    async (roleName, permission) => {
+      octokitMocks.reposGetCollaboratorPermissionLevel.mockResolvedValue({
+        data: { permission, role_name: roleName },
+      });
+
+      await expect(
+        getRepositoryPermissionForUser({
+          token: "token",
+          owner: "octo",
+          repo: "sample",
+          username: "contributor",
+        }),
+      ).resolves.toBe(permission);
+      expect(
+        octokitMocks.reposGetCollaboratorPermissionLevel,
+      ).toHaveBeenCalledWith({
+        owner: "octo",
+        repo: "sample",
+        username: "contributor",
+      });
+    },
+  );
+
+  it("treats a 404 as no repository permission", async () => {
+    octokitMocks.reposGetCollaboratorPermissionLevel.mockRejectedValue({
+      status: 404,
+    });
+
+    await expect(
+      getRepositoryPermissionForUser({
+        token: "token",
+        owner: "octo",
+        repo: "sample",
+        username: "outsider",
+      }),
+    ).resolves.toBe("none");
+  });
+
+  it.each([401, 403, 429, 500])(
+    "propagates a transient or authentication HTTP %s error",
+    async (status) => {
+      const error = { status };
+      octokitMocks.reposGetCollaboratorPermissionLevel.mockRejectedValue(error);
+
+      await expect(
+        getRepositoryPermissionForUser({
+          token: "token",
+          owner: "octo",
+          repo: "sample",
+          username: "contributor",
+        }),
+      ).rejects.toBe(error);
+    },
+  );
+
+  it("propagates network failures", async () => {
+    const error = new Error("network unavailable");
+    octokitMocks.reposGetCollaboratorPermissionLevel.mockRejectedValue(error);
+
+    await expect(
+      getRepositoryPermissionForUser({
+        token: "token",
+        owner: "octo",
+        repo: "sample",
+        username: "contributor",
+      }),
+    ).rejects.toBe(error);
+  });
+
+  it("rejects an unexpected permission instead of silently authorizing it", async () => {
+    octokitMocks.reposGetCollaboratorPermissionLevel.mockResolvedValue({
+      data: { permission: "custom", role_name: "custom" },
+    });
+
+    await expect(
+      getRepositoryPermissionForUser({
+        token: "token",
+        owner: "octo",
+        repo: "sample",
+        username: "contributor",
+      }),
+    ).rejects.toThrow("unsupported repository permission");
+  });
+
+  it.each([
+    ["admin", true],
+    ["write", true],
+    ["read", false],
+    ["none", false],
+  ] as const)("authorizes %s permission: %s", (permission, expected) => {
+    expect(canRunReviewCommand(permission)).toBe(expected);
+  });
+});
 
 describe("getPullRequestDiff", () => {
   beforeEach(() => {

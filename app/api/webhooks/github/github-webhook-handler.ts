@@ -2,9 +2,11 @@ import crypto from "node:crypto";
 
 import {
   generatePRSummary,
+  getRepositoryWithToken,
   parseCommand,
   reviewPullRequest,
   type GeneratePRSummaryResult,
+  type ReviewPullRequestInput,
   type ReviewPullRequestResult,
 } from "@/features/ai";
 import { reconcileIssueResolutions } from "@/features/review/lib/reconcile-issue-resolutions";
@@ -14,6 +16,11 @@ import {
 } from "@/features/review/lib/review-request";
 import { reconcileNativeSuggestions } from "@/features/suggestion/lib/reconcile-native-suggestions";
 import prisma from "@/lib/db";
+import {
+  canRunReviewCommand,
+  getRepositoryPermissionForUser,
+  type RepositoryBasePermission,
+} from "@/lib/github";
 import {
   acquireGithubWebhookDelivery,
   completeGithubWebhookDelivery,
@@ -67,6 +74,7 @@ export type GithubWebhookHandlerDependencies = {
   failDelivery: typeof failGithubWebhookDelivery;
   queueReview(
     input: PullRequestIdentity & {
+      requestSource: ReviewPullRequestInput["requestSource"];
       transportBinding: GithubWebhookTransportBinding;
     },
   ): Promise<ReviewPullRequestResult>;
@@ -75,6 +83,9 @@ export type GithubWebhookHandlerDependencies = {
       transportBinding: GithubWebhookTransportBinding;
     },
   ): Promise<GeneratePRSummaryResult>;
+  getCommandPermission(
+    input: { owner: string; repo: string; username: string },
+  ): Promise<RepositoryBasePermission>;
   resumeRequest(requestKey: string): Promise<CreateReviewRequestResult>;
   handleSynchronize(input: SynchronizeInput): Promise<SynchronizeResult>;
   finalizeMergedPullRequest(input: PullRequestIdentity): Promise<void>;
@@ -113,6 +124,23 @@ function parsePrNumber(value: unknown): number | null {
   }
 
   return null;
+}
+
+function parsePositiveInteger(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    return null;
+  }
+
+  return value;
+}
+
+function parseNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+  return normalizedValue.length > 0 ? normalizedValue : null;
 }
 
 function parseHeadRepository(body: Record<string, unknown>): {
@@ -310,6 +338,15 @@ function createDefaultDependencies(): GithubWebhookHandlerDependencies {
     failDelivery: failGithubWebhookDelivery,
     queueReview: (input) => reviewPullRequest(input),
     queueSummary: (input) => generatePRSummary(input),
+    getCommandPermission: async ({ owner, repo, username }) => {
+      const { accessToken } = await getRepositoryWithToken({ owner, repo });
+      return getRepositoryPermissionForUser({
+        token: accessToken,
+        owner,
+        repo,
+        username,
+      });
+    },
     resumeRequest: (requestKey) => resumeReviewRequest(requestKey),
     handleSynchronize,
     finalizeMergedPullRequest,
@@ -343,6 +380,40 @@ function createOperationalFailureResult(
       code: "REQUEST_DISPATCH_FAILED",
       message: "The review request could not be dispatched.",
     },
+  };
+}
+
+function createQueuedRequestResult(input: {
+  requestKind: "Review" | "Summary";
+  fullName: string;
+  prNumber: number;
+  result: ReviewPullRequestResult | GeneratePRSummaryResult;
+}): EventProcessingResult {
+  const { requestKind, fullName, prNumber, result } = input;
+  const requestKey = getResultRequestKey(result);
+
+  if (!result.success) {
+    if (result.reason !== "internal_error") {
+      console.info(
+        `${requestKind} skipped for ${fullName} #${prNumber}: ${result.message}`,
+      );
+      return {
+        response: { status: 200, body: { message: result.message } },
+        ...(requestKey === undefined ? {} : { requestKey }),
+      };
+    }
+
+    console.error(`${requestKind} queueing failed for ${fullName} #${prNumber}`);
+    return createOperationalFailureResult(
+      { status: 500, body: { error: result.message } },
+      requestKey,
+    );
+  }
+
+  console.log(`${requestKind} queued for ${fullName} #${prNumber}`);
+  return {
+    response: { status: 200, body: { message: "Event Processed" } },
+    requestKey: result.requestKey,
   };
 }
 
@@ -408,38 +479,15 @@ async function processGithubEvent(input: {
 
       const reviewResult = await dependencies.queueReview({
         ...pullRequestIdentity,
+        requestSource: "AUTOMATIC",
         transportBinding,
       });
-      const requestKey = getResultRequestKey(reviewResult);
-
-      if (!reviewResult.success) {
-        if (reviewResult.reason !== "internal_error") {
-          console.info(
-            `Review skipped for ${fullName} #${identity.prNumber}: ${reviewResult.message}`,
-          );
-          return {
-            response: {
-              status: 200,
-              body: { message: reviewResult.message },
-            },
-            ...(requestKey === undefined ? {} : { requestKey }),
-          };
-        }
-
-        console.error(
-          `Review queueing failed for ${fullName} #${identity.prNumber}`,
-        );
-        return createOperationalFailureResult(
-          { status: 500, body: { error: reviewResult.message } },
-          requestKey,
-        );
-      }
-
-      console.log(`Review queued for ${fullName} #${identity.prNumber}`);
-      return {
-        response: { status: 200, body: { message: "Event Processed" } },
-        requestKey: reviewResult.requestKey,
-      };
+      return createQueuedRequestResult({
+        requestKind: "Review",
+        fullName,
+        prNumber: identity.prNumber,
+        result: reviewResult,
+      });
     }
 
     if (action === "closed") {
@@ -474,6 +522,13 @@ async function processGithubEvent(input: {
     }
 
     const commentBody = isRecord(comment) ? comment["body"] : undefined;
+    const commentId = parsePositiveInteger(
+      isRecord(comment) ? comment["id"] : undefined,
+    );
+    const commentUser = isRecord(comment) ? comment["user"] : undefined;
+    const commentAuthorLogin = parseNonEmptyString(
+      isRecord(commentUser) ? commentUser["login"] : undefined,
+    );
     const repoInfo = parseRepoFullName(
       isRecord(repository) ? repository["full_name"] : undefined,
     );
@@ -481,7 +536,13 @@ async function processGithubEvent(input: {
       isRecord(issue) ? issue["number"] : undefined,
     );
 
-    if (typeof commentBody !== "string" || !repoInfo || prNumber === null) {
+    if (
+      typeof commentBody !== "string" ||
+      commentId === null ||
+      commentAuthorLogin === null ||
+      !repoInfo ||
+      prNumber === null
+    ) {
       return {
         response: {
           status: 200,
@@ -492,48 +553,67 @@ async function processGithubEvent(input: {
 
     const command = parseCommand(commentBody);
 
-    if (command?.type === "summary") {
-      const summaryResult = await dependencies.queueSummary({
-        owner: repoInfo.owner,
-        repo: repoInfo.repo,
-        prNumber,
-        transportBinding,
-      });
-      const requestKey = getResultRequestKey(summaryResult);
-
-      if (!summaryResult.success) {
-        if (summaryResult.reason !== "internal_error") {
-          console.info(
-            `Summary skipped for ${repoInfo.fullName} #${prNumber}: ${summaryResult.message}`,
-          );
-          return {
-            response: {
-              status: 200,
-              body: { message: summaryResult.message },
-            },
-            ...(requestKey === undefined ? {} : { requestKey }),
-          };
-        }
-
-        console.error(
-          `Summary queueing failed for ${repoInfo.fullName} #${prNumber}`,
-        );
-        return createOperationalFailureResult(
-          { status: 500, body: { error: summaryResult.message } },
-          requestKey,
-        );
-      }
-
-      console.log(`Summary queued for ${repoInfo.fullName} #${prNumber}`);
+    if (command === null) {
       return {
-        response: { status: 200, body: { message: "Event Processed" } },
-        requestKey: summaryResult.requestKey,
+        response: {
+          status: 200,
+          body: { message: "Ignored: no HReviewer command" },
+        },
       };
     }
 
-    return {
-      response: { status: 200, body: { message: "Event Processed" } },
-    };
+    if (command.type === "unsupported") {
+      return {
+        response: {
+          status: 200,
+          body: { message: "Unsupported HReviewer command" },
+        },
+      };
+    }
+
+    const permission = await dependencies.getCommandPermission({
+      owner: repoInfo.owner,
+      repo: repoInfo.repo,
+      username: commentAuthorLogin,
+    });
+
+    if (!canRunReviewCommand(permission)) {
+      return {
+        response: {
+          status: 200,
+          body: { message: "Unauthorized HReviewer command" },
+        },
+      };
+    }
+
+    if (command.type === "review") {
+      const reviewResult = await dependencies.queueReview({
+        owner: repoInfo.owner,
+        repo: repoInfo.repo,
+        prNumber,
+        requestSource: "COMMAND",
+        transportBinding,
+      });
+      return createQueuedRequestResult({
+        requestKind: "Review",
+        fullName: repoInfo.fullName,
+        prNumber,
+        result: reviewResult,
+      });
+    }
+
+    const summaryResult = await dependencies.queueSummary({
+      owner: repoInfo.owner,
+      repo: repoInfo.repo,
+      prNumber,
+      transportBinding,
+    });
+    return createQueuedRequestResult({
+      requestKind: "Summary",
+      fullName: repoInfo.fullName,
+      prNumber,
+      result: summaryResult,
+    });
   }
 
   return { response: { status: 200, body: { message: "Ignored" } } };

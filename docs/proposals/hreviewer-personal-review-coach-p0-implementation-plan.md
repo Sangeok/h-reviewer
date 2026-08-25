@@ -1,14 +1,14 @@
 # HReviewer 개인 리뷰 코치 P0 구현 상세 계획
 
-> 상태: **T01-T04 완료 — T05 NEXT; T09 generation target 결정 완료, lifecycle·품질 release gate 유지**
+> 상태: **T01-T05 완료 — T06 NEXT; T09 generation target 결정 완료, lifecycle·품질 release gate 유지**
 >
 > 기준일: <code>2026-08-25</code>
 >
-> 코드 기준: <code>6e1b4219e557dbda973da28381019c2e7c1b07c7</code>
+> 코드 기준: <code>3d792ea890809283bdf3efd0d9060ca958af2a3e</code>
 >
-> 재조정 기준: <code>2026-08-25 Asia/Seoul</code>. 직접 source bundle은 이 문서, 상위 로드맵(<code>SHA-256 7206b86b35f4c25ba1b15d1852caaf43c039d3c6d5f5e243a9b4435a4257e390</code>), 기존 RAG 제거 평가(<code>SHA-256 8cba9e2b3a358ff162d0880e4f11647bfe5ff014a317606b84699a7024aa0601</code>)다.
+> 재조정 기준: <code>2026-08-25 Asia/Seoul</code>. 직접 source bundle은 이 문서, 상위 로드맵(<code>SHA-256 215d234db131976921815fcf60b4d604a01e29e66f96a7b76213aa7d7eeeb31b</code>), 기존 RAG 제거 평가(<code>SHA-256 eabb894aa36a1d6bdeac72c8dd1cbad88788bda64ee3a8e69c4b90f2dbd72b0a</code>)다.
 >
-> candidate inventory는 <code>git ls-files -- app components features inngest lib prisma scripts package.json package-lock.json vitest.config.ts tsconfig.json next.config.ts eslint.config.mjs .gitignore</code> 결과를 ordinal 정렬하고 각 repository-relative path를 LF로 연결한 뒤 마지막 LF를 붙인 UTF-8 bytes다. T04 시작 commit에서 <code>224</code>개, <code>SHA-256 a5ddcdbab178a860e7182ed940a80f1463ccdf68ff2ac49365060ae2befbfc80</code>이며 task 시작 시 같은 방식으로 다시 계산한다.
+> candidate inventory는 <code>git ls-files -- app components features inngest lib prisma scripts package.json package-lock.json vitest.config.ts tsconfig.json next.config.ts eslint.config.mjs .gitignore</code> 결과를 ordinal 정렬하고 각 repository-relative path를 LF로 연결한 뒤 마지막 LF를 붙인 UTF-8 bytes다. T05 시작 commit에서 <code>227</code>개, <code>SHA-256 45276bdd6c8cafa44cd8affc82fc7d46dcefda6fb824c01bd2ed3efa19d7f3da</code>이며 task 시작 시 같은 방식으로 다시 계산한다.
 >
 > 상위 문서: [HReviewer 개인 코드 리뷰 코치 실행 제안서](./hreviewer-personal-review-coach-roadmap.md)
 >
@@ -499,8 +499,12 @@ export type PullRequestIdentityInput = {
   transportBinding?: GithubWebhookTransportBinding;
 };
 
+export type ReviewPullRequestInput = PullRequestIdentityInput & {
+  requestSource: "AUTOMATIC" | "COMMAND";
+};
+
 export async function reviewPullRequest(
-  input: PullRequestIdentityInput,
+  input: ReviewPullRequestInput,
 ): Promise<ReviewPullRequestResult>;
 
 export async function generatePRSummary(
@@ -1136,7 +1140,10 @@ event handler 결과가 Review request라면 handler가 delivery row ID와 lease
 
 - 수정: <code>features/ai/utils/command-parser.ts</code>
 - 수정: <code>features/ai/types/index.ts</code>
+- 수정: <code>features/ai/index.ts</code>
 - 생성: <code>features/ai/utils/command-parser.test.ts</code>
+- 수정: <code>features/ai/actions/review-pull-request.ts</code>
+- 수정: <code>features/ai/actions/review-pull-request.test.ts</code>
 - 수정: <code>lib/github/github.ts</code>
 - 수정: <code>lib/github/github.test.ts</code>
 - 수정: <code>app/api/webhooks/github/github-webhook-handler.ts</code>
@@ -1176,7 +1183,7 @@ permission endpoint의 404는 권한 없음으로 처리한다. 401, 403, 429, 5
 3. command가 아니면 ignored로 종료한다.
 4. repository owner의 저장된 GitHub token으로 author permission을 조회한다.
 5. read/none이면 <code>200</code> unauthorized 결과를 반환하고 delivery는 PROCESSED로 끝낸다.
-6. write/admin이면 review 또는 summary를 <code>createReviewRequest()</code>로 dispatch한다.
+6. write/admin이면 review 또는 summary를 <code>createReviewRequest()</code>로 dispatch한다. <code>pull_request/opened</code>·<code>synchronize</code>의 review action input은 <code>requestSource=AUTOMATIC</code>, issue comment의 review command input은 <code>requestSource=COMMAND</code>를 명시하며 action이 이를 coordinator에 그대로 전달한다.
 
 P0의 <code>@hreviewer review</code>는 <code>FULL_REVIEW/FULL/nonce=default</code>다. 같은 head의 기존 자동 review가 있으면 그 row를 반환하며 재생성하지 않는다. 명시적 rerun은 P3의 <code>review full</code>이 comment ID nonce로 제공한다.
 
@@ -1188,6 +1195,7 @@ P0의 <code>@hreviewer review</code>는 <code>FULL_REVIEW/FULL/nonce=default</co
 - permission API transient error에서 event 0회, delivery FAILED
 - unauthorized에서 Review, event, credit reservation 0회
 - parser가 반환하는 review와 summary가 모두 dispatch branch를 가짐
+- 자동 review와 수동 review command가 각각 <code>AUTOMATIC</code>, <code>COMMAND</code> source를 action과 coordinator에 전달하고 같은 head의 semantic request key는 공유함
 - malformed comment author와 unsupported command가 명시적 결과를 가짐
 
 ### T06. head supersede, debounce, stale-post 방지
@@ -2222,7 +2230,7 @@ secret 값과 account balance는 기록하지 않는다.
 | D03 | 첫 webhook delete 성공, 후속 GitHub/DB 실패 | transaction rollback과 보상 | Repository·Review 유지, 성공 표시 0 | 0 | 실제 삭제한 hook만 재생성; 보상 실패면 RECOVERY_REQUIRED |
 | G01 | 다른 GitHub user가 같은 marker 게시 | artifact lookup | Review/credit 변화 없음 | 0 | trusted artifact 0 |
 | A01 | public PR, read user | review command | Review/credit 없음 | 0 | 0 |
-| A02 | public PR, write user | review command | Review 1 | 1 | 0 |
+| A02 | public PR, write user | review command | Review 1, requestSource COMMAND | 1 | 0 |
 
 테스트에서는 GitHub, Inngest Cloud, Google AI, Polar, production DB를 호출하지 않는다.
 
@@ -2278,7 +2286,7 @@ boundary 규칙:
 | T02 | <code>npx.cmd vitest run features/review/lib/review-execution-state.test.ts features/review/ui/parts/review-status-badge.test.tsx features/review/ui/parts/review-card.test.tsx features/review/ui/review-detail.test.tsx</code>와 Prisma validate/generate |
 | T03 | <code>npx.cmd vitest run features/review/lib/review-request.test.ts features/review/lib/review-execution-state.test.ts features/review/lib/reconcile-issue-resolutions.test.ts features/suggestion/lib/reconcile-native-suggestions.test.ts features/ai/actions/review-pull-request.test.ts features/ai/actions/generate-pr-summary.test.ts app/api/webhooks/github/github-webhook-handler.test.ts inngest/functions/review.test.ts inngest/functions/summary.test.ts lib/github/github.test.ts</code> |
 | T04 | <code>npx.cmd vitest run lib/github/github-webhook-delivery.test.ts features/review/lib/review-request.test.ts features/ai/actions/review-pull-request.test.ts features/ai/actions/generate-pr-summary.test.ts app/api/webhooks/github/github-webhook-handler.test.ts app/api/webhooks/github/route.test.ts</code> |
-| T05 | <code>npx.cmd vitest run features/ai/utils/command-parser.test.ts lib/github/github.test.ts app/api/webhooks/github/github-webhook-handler.test.ts</code> |
+| T05 | <code>npx.cmd vitest run features/ai/utils/command-parser.test.ts features/ai/actions/review-pull-request.test.ts lib/github/github.test.ts app/api/webhooks/github/github-webhook-handler.test.ts</code> |
 | T06 | <code>npx.cmd vitest run app/api/inngest/route.test.ts inngest/functions/schedule-automatic-review.test.ts features/review/lib/review-request.test.ts inngest/functions/review.test.ts inngest/functions/summary.test.ts lib/github/github.test.ts</code> |
 | T07 | <code>npx.cmd vitest run app/api/inngest/route.test.ts features/review/lib/review-artifact-marker.test.ts lib/github/github-artifact-body.test.ts lib/github/github-review-artifacts.test.ts lib/github/github.test.ts features/review/lib/pr-review.test.ts features/ai/lib/review-formatter.test.ts features/ai/lib/suggestion-format.test.ts features/review/lib/review-execution-state.test.ts features/review/lib/review-request.test.ts features/review/actions/retry-review.test.ts features/review/lib/retry-review-request.test.ts features/review/ui/review-detail.test.tsx features/review/ui/parts/review-retry-button.test.tsx features/review/ui/parts/structured-review-body.test.tsx inngest/functions/reconcile-stale-review-executions.test.ts inngest/functions/review.test.ts inngest/functions/summary.test.ts</code> |
 | T08 | <code>npx.cmd vitest run features/payment/lib/review-trial.test.ts features/repository/lib/repository-disconnect.test.ts features/settings/actions/index.test.ts features/review/lib/review-execution-state.test.ts features/review/lib/review-request.test.ts features/review/lib/retry-review-request.test.ts features/review/actions/retry-review.test.ts features/ai/actions/review-pull-request.test.ts app/api/webhooks/github/github-webhook-handler.test.ts inngest/functions/reconcile-stale-review-executions.test.ts features/payment/actions/config.test.ts features/payment/ui/parts/plan-card.test.tsx features/payment/ui/parts/usage-card.test.tsx lib/github/github.test.ts</code> |
