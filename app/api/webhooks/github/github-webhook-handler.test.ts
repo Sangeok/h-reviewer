@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,12 +18,29 @@ const PULL_REQUEST_IDENTITY = {
   repo: "sample",
   prNumber: 42,
 } as const;
+const NOW = new Date("2026-08-25T00:00:00.000Z");
+const TRANSPORT_BINDING = {
+  kind: "GITHUB_WEBHOOK",
+  deliveryRowId: "delivery-row-1",
+  leaseToken: "delivery-lease-1",
+} as const;
 
 function createDependencies(
   overrides: Partial<GithubWebhookHandlerDependencies> = {},
 ): GithubWebhookHandlerDependencies {
   return {
     verifySignature: vi.fn(() => true),
+    acquireDelivery: vi.fn<
+      GithubWebhookHandlerDependencies["acquireDelivery"]
+    >(async () => ({
+      kind: "acquired",
+      deliveryRowId: TRANSPORT_BINDING.deliveryRowId,
+      leaseToken: TRANSPORT_BINDING.leaseToken,
+      attempt: 1,
+      requestKey: null,
+    })),
+    completeDelivery: vi.fn(async () => undefined),
+    failDelivery: vi.fn(async () => undefined),
     queueReview: vi.fn<GithubWebhookHandlerDependencies["queueReview"]>(
       async () => ({
         success: true,
@@ -41,10 +59,19 @@ function createDependencies(
         status: "PENDING",
       }),
     ),
+    resumeRequest: vi.fn<
+      GithubWebhookHandlerDependencies["resumeRequest"]
+    >(async (requestKey) => ({
+      kind: "existing",
+      reviewId: "review-1",
+      requestKey,
+      status: "PENDING",
+    })),
     handleSynchronize: vi.fn<
       GithubWebhookHandlerDependencies["handleSynchronize"]
     >(async () => ({ type: "continue" })),
     finalizeMergedPullRequest: vi.fn(async () => undefined),
+    now: vi.fn(() => NOW),
     ...overrides,
   };
 }
@@ -93,8 +120,23 @@ describe("createGithubWebhookHandler", () => {
     });
     expect(dependencies.queueReview).toHaveBeenCalledOnce();
     expect(dependencies.queueReview).toHaveBeenCalledWith(
-      PULL_REQUEST_IDENTITY,
+      { ...PULL_REQUEST_IDENTITY, transportBinding: TRANSPORT_BINDING },
     );
+    expect(dependencies.acquireDelivery).toHaveBeenCalledWith({
+      deliveryId: "delivery-1",
+      payloadSha256: createHash("sha256")
+        .update(JSON.stringify(createPullRequestPayload("opened")))
+        .digest("hex"),
+      event: "pull_request",
+      action: "opened",
+      now: NOW,
+    });
+    expect(dependencies.completeDelivery).toHaveBeenCalledWith({
+      deliveryRowId: TRANSPORT_BINDING.deliveryRowId,
+      leaseToken: TRANSPORT_BINDING.leaseToken,
+      requestKey: "review-request-1",
+      now: NOW,
+    });
     expect(dependencies.handleSynchronize).not.toHaveBeenCalled();
   });
 
@@ -221,7 +263,7 @@ describe("createGithubWebhookHandler", () => {
 
     expect(dependencies.queueSummary).toHaveBeenCalledOnce();
     expect(dependencies.queueSummary).toHaveBeenCalledWith(
-      PULL_REQUEST_IDENTITY,
+      { ...PULL_REQUEST_IDENTITY, transportBinding: TRANSPORT_BINDING },
     );
     expect(dependencies.queueReview).not.toHaveBeenCalled();
   });
@@ -241,6 +283,7 @@ describe("createGithubWebhookHandler", () => {
       body: { error: "Invalid signature" },
     });
     expect(dependencies.verifySignature).toHaveBeenCalledOnce();
+    expect(dependencies.acquireDelivery).not.toHaveBeenCalled();
     expect(dependencies.queueReview).not.toHaveBeenCalled();
     expect(dependencies.queueSummary).not.toHaveBeenCalled();
     expect(dependencies.handleSynchronize).not.toHaveBeenCalled();
@@ -267,6 +310,201 @@ describe("createGithubWebhookHandler", () => {
       status: 200,
       body: { message: "The pull request is closed" },
     });
+    expect(dependencies.completeDelivery).toHaveBeenCalledOnce();
+    expect(dependencies.failDelivery).not.toHaveBeenCalled();
+  });
+
+  it("checks the delivery header only after a valid signature", async () => {
+    const dependencies = createDependencies();
+    const handler = createGithubWebhookHandler(dependencies);
+    const input = createInput(
+      "pull_request",
+      createPullRequestPayload("opened"),
+    );
+    input.deliveryId = null;
+
+    const response = await handler(input);
+
+    expect(response).toEqual({
+      status: 400,
+      body: { error: "Missing x-github-delivery header" },
+    });
+    expect(dependencies.verifySignature).toHaveBeenCalledOnce();
+    expect(dependencies.acquireDelivery).not.toHaveBeenCalled();
+  });
+
+  it("does not acquire a delivery before a signed payload parses", async () => {
+    const dependencies = createDependencies();
+    const handler = createGithubWebhookHandler(dependencies);
+    const input = createInput("pull_request", {});
+    input.rawBody = "{";
+
+    const response = await handler(input);
+
+    expect(response).toEqual({
+      status: 500,
+      body: { error: "Error processing webhook" },
+    });
+    expect(dependencies.acquireDelivery).not.toHaveBeenCalled();
+    expect(dependencies.queueReview).not.toHaveBeenCalled();
+  });
+
+  it("returns processed for a completed duplicate without replaying side effects", async () => {
+    const dependencies = createDependencies({
+      acquireDelivery: vi.fn<
+        GithubWebhookHandlerDependencies["acquireDelivery"]
+      >(async () => ({ kind: "processed" })),
+    });
+    const handler = createGithubWebhookHandler(dependencies);
+
+    const response = await handler(
+      createInput("pull_request", createPullRequestPayload("synchronize")),
+    );
+
+    expect(response).toEqual({
+      status: 200,
+      body: { message: "Event already processed" },
+    });
+    expect(dependencies.queueReview).not.toHaveBeenCalled();
+    expect(dependencies.handleSynchronize).not.toHaveBeenCalled();
+    expect(dependencies.completeDelivery).not.toHaveBeenCalled();
+  });
+
+  it("returns accepted for an actively processing duplicate", async () => {
+    const dependencies = createDependencies({
+      acquireDelivery: vi.fn<
+        GithubWebhookHandlerDependencies["acquireDelivery"]
+      >(async () => ({ kind: "processing" })),
+    });
+    const handler = createGithubWebhookHandler(dependencies);
+
+    const response = await handler(
+      createInput("pull_request", createPullRequestPayload("opened")),
+    );
+
+    expect(response).toEqual({
+      status: 202,
+      body: { message: "Event processing" },
+    });
+    expect(dependencies.queueReview).not.toHaveBeenCalled();
+  });
+
+  it("fails a delivery with the bound request key after confirmed dispatch failure", async () => {
+    const dependencies = createDependencies({
+      queueReview: vi.fn<GithubWebhookHandlerDependencies["queueReview"]>(
+        async () => ({
+          success: false,
+          message: "The review request could not be dispatched.",
+          reason: "internal_error",
+          reviewId: "review-1",
+          requestKey: "review-request-1",
+          status: "FAILED",
+          failureStage: "QUEUE",
+        }),
+      ),
+    });
+    const handler = createGithubWebhookHandler(dependencies);
+
+    const response = await handler(
+      createInput("pull_request", createPullRequestPayload("opened")),
+    );
+
+    expect(response.status).toBe(500);
+    expect(dependencies.failDelivery).toHaveBeenCalledWith({
+      deliveryRowId: TRANSPORT_BINDING.deliveryRowId,
+      leaseToken: TRANSPORT_BINDING.leaseToken,
+      requestKey: "review-request-1",
+      errorCode: "REQUEST_DISPATCH_FAILED",
+      errorMessage: "The review request could not be dispatched.",
+    });
+    expect(dependencies.completeDelivery).not.toHaveBeenCalled();
+  });
+
+  it("resumes an already bound request without re-running event handlers", async () => {
+    const dependencies = createDependencies({
+      acquireDelivery: vi.fn<
+        GithubWebhookHandlerDependencies["acquireDelivery"]
+      >(async () => ({
+          kind: "acquired",
+          deliveryRowId: TRANSPORT_BINDING.deliveryRowId,
+          leaseToken: TRANSPORT_BINDING.leaseToken,
+          attempt: 2,
+          requestKey: "review-request-1",
+        })),
+    });
+    const handler = createGithubWebhookHandler(dependencies);
+
+    const response = await handler(
+      createInput("pull_request", createPullRequestPayload("synchronize")),
+    );
+
+    expect(response).toEqual({
+      status: 200,
+      body: { message: "Event Processed" },
+    });
+    expect(dependencies.resumeRequest).toHaveBeenCalledWith(
+      "review-request-1",
+    );
+    expect(dependencies.queueReview).not.toHaveBeenCalled();
+    expect(dependencies.handleSynchronize).not.toHaveBeenCalled();
+    expect(dependencies.completeDelivery).toHaveBeenCalledWith({
+      deliveryRowId: TRANSPORT_BINDING.deliveryRowId,
+      leaseToken: TRANSPORT_BINDING.leaseToken,
+      requestKey: "review-request-1",
+      now: NOW,
+    });
+  });
+
+  it("fails safely when a bound delivery no longer has its review", async () => {
+    const dependencies = createDependencies({
+      acquireDelivery: vi.fn<
+        GithubWebhookHandlerDependencies["acquireDelivery"]
+      >(async () => ({
+        kind: "acquired",
+        deliveryRowId: TRANSPORT_BINDING.deliveryRowId,
+        leaseToken: TRANSPORT_BINDING.leaseToken,
+        attempt: 2,
+        requestKey: "missing-request",
+      })),
+      resumeRequest: vi.fn(async () => {
+        throw { code: "DELIVERY_REQUEST_NOT_FOUND" };
+      }),
+    });
+    const handler = createGithubWebhookHandler(dependencies);
+
+    const response = await handler(
+      createInput("pull_request", createPullRequestPayload("opened")),
+    );
+
+    expect(response).toEqual({
+      status: 500,
+      body: {
+        error: "The review request bound to this delivery was not found.",
+      },
+    });
+    expect(dependencies.failDelivery).toHaveBeenCalledWith({
+      deliveryRowId: TRANSPORT_BINDING.deliveryRowId,
+      leaseToken: TRANSPORT_BINDING.leaseToken,
+      requestKey: "missing-request",
+      errorCode: "DELIVERY_REQUEST_NOT_FOUND",
+      errorMessage: "The review request bound to this delivery was not found.",
+    });
+    expect(dependencies.queueReview).not.toHaveBeenCalled();
+  });
+
+  it("marks ping and ignored events processed after acquiring their delivery", async () => {
+    const dependencies = createDependencies();
+    const handler = createGithubWebhookHandler(dependencies);
+
+    await expect(handler(createInput("ping", {}))).resolves.toEqual({
+      status: 200,
+      body: { message: "Pong" },
+    });
+    await expect(handler(createInput("unknown", {}))).resolves.toEqual({
+      status: 200,
+      body: { message: "Ignored" },
+    });
+    expect(dependencies.completeDelivery).toHaveBeenCalledTimes(2);
   });
 });
 

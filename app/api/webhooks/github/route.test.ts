@@ -47,4 +47,25 @@ describe("POST /api/webhooks/github", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ message: "Event Processed" });
   });
+
+  it("preserves the handler status and JSON body for an active delivery", async () => {
+    handleGithubWebhook.mockResolvedValue({
+      status: 202,
+      body: { message: "Event processing" },
+    });
+    const request = new NextRequest("http://localhost/api/webhooks/github", {
+      method: "POST",
+      headers: {
+        "x-github-event": "pull_request",
+        "x-github-delivery": "delivery-123",
+        "x-hub-signature-256": "sha256=signature",
+      },
+      body: JSON.stringify({ action: "opened" }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({ message: "Event processing" });
+  });
 });

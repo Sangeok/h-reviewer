@@ -6,8 +6,17 @@ import { REVIEW_QUEUE_LEASE_MS } from "@/features/review/constants";
 import { getUserLanguageByUserId } from "@/features/settings";
 import { inngest } from "@/inngest/client";
 import prisma from "@/lib/db";
-import type { ReviewStatus } from "@/lib/generated/prisma/enums";
+import type {
+  ReviewExecutionLeaseOwner,
+  ReviewExecutionStage,
+  ReviewFailureStage,
+  ReviewStatus,
+} from "@/lib/generated/prisma/enums";
 import { getPullRequestSnapshot } from "@/lib/github/github";
+import {
+  bindGithubWebhookDeliveryRequest,
+  type GithubWebhookTransportBinding,
+} from "@/lib/github/github-webhook-delivery";
 
 import {
   acknowledgeReviewDispatch,
@@ -25,6 +34,7 @@ export type CreateReviewRequestInput = {
   requestSource: "AUTOMATIC" | "COMMAND";
   nonce?: string;
   dispatchMode: "DIRECT" | "DEBOUNCED";
+  transportBinding?: GithubWebhookTransportBinding;
 };
 
 export type CreateReviewRequestResult =
@@ -82,6 +92,7 @@ export type ReviewRequestDependencies = {
   getPullRequestSnapshot: typeof getPullRequestSnapshot;
   getUserLanguageByUserId: typeof getUserLanguageByUserId;
   getUserTier: typeof getUserTier;
+  bindGithubWebhookDeliveryRequest: typeof bindGithubWebhookDeliveryRequest;
   sendEvent(event: ReviewRequestEvent): Promise<unknown>;
   now(): Date;
 };
@@ -94,10 +105,24 @@ type FactualReview = {
   repositoryId: string;
   prNumber: number;
   reviewType: "FULL_REVIEW" | "SUMMARY";
+  lastCompletedStage: ReviewExecutionStage | null;
+  failureStage: ReviewFailureStage | null;
+  executionLeaseExpiresAt: Date | null;
+  executionLeaseToken: string | null;
+  executionLeaseOwner: ReviewExecutionLeaseOwner | null;
 };
 
 const DEFAULT_NONCE = "default";
 const DISPATCH_FAILURE_MESSAGE = "The review request could not be dispatched.";
+
+export class ReviewRequestRecoveryError extends Error {
+  readonly code = "DELIVERY_REQUEST_NOT_FOUND";
+
+  constructor(requestKey: string) {
+    super(`No review exists for delivery request key ${requestKey}`);
+    this.name = "ReviewRequestRecoveryError";
+  }
+}
 
 function getQueueLeaseExpiration(now: Date): Date {
   return new Date(now.getTime() + REVIEW_QUEUE_LEASE_MS);
@@ -213,11 +238,11 @@ function createReviewRequestEvent(input: {
 }
 
 async function findFactualReview(
-  reviewId: string,
+  where: { id: string } | { requestKey: string },
   dependencies: ReviewRequestDependencies,
 ): Promise<FactualReview | null> {
   return dependencies.prisma.review.findUnique({
-    where: { id: reviewId },
+    where,
     select: {
       id: true,
       requestKey: true,
@@ -226,6 +251,11 @@ async function findFactualReview(
       repositoryId: true,
       prNumber: true,
       reviewType: true,
+      lastCompletedStage: true,
+      failureStage: true,
+      executionLeaseExpiresAt: true,
+      executionLeaseToken: true,
+      executionLeaseOwner: true,
     },
   });
 }
@@ -274,7 +304,7 @@ async function finalizeDispatch(input: {
       }
 
       const factualReview = await findFactualReview(
-        input.review.id,
+        { id: input.review.id },
         input.dependencies,
       );
 
@@ -320,6 +350,7 @@ const defaultReviewRequestDependencies: ReviewRequestDependencies = {
   getPullRequestSnapshot,
   getUserLanguageByUserId,
   getUserTier,
+  bindGithubWebhookDeliveryRequest,
   sendEvent: (event) => inngest.send(event),
   now: () => new Date(),
 };
@@ -377,8 +408,8 @@ export async function createReviewRequest(
   let createdReview: FactualReview;
 
   try {
-    createdReview = await dependencies.prisma.$transaction((client) =>
-      client.review.create({
+    createdReview = await dependencies.prisma.$transaction(async (client) => {
+      const review = await client.review.create({
         data: {
           repositoryId: repository.id,
           prNumber: input.prNumber,
@@ -415,9 +446,27 @@ export async function createReviewRequest(
           repositoryId: true,
           prNumber: true,
           reviewType: true,
+          lastCompletedStage: true,
+          failureStage: true,
+          executionLeaseExpiresAt: true,
+          executionLeaseToken: true,
+          executionLeaseOwner: true,
         },
-      }),
-    );
+      });
+
+      if (input.transportBinding) {
+        await dependencies.bindGithubWebhookDeliveryRequest(
+          {
+            deliveryRowId: input.transportBinding.deliveryRowId,
+            leaseToken: input.transportBinding.leaseToken,
+            requestKey: review.requestKey,
+          },
+          client,
+        );
+      }
+
+      return review;
+    });
   } catch (error) {
     if (!isRequestKeyUniqueConflict(error)) {
       throw error;
@@ -433,12 +482,31 @@ export async function createReviewRequest(
         repositoryId: true,
         prNumber: true,
         reviewType: true,
+        lastCompletedStage: true,
+        failureStage: true,
+        executionLeaseExpiresAt: true,
+        executionLeaseToken: true,
+        executionLeaseOwner: true,
       },
     });
 
     if (!existingReview) {
       throw new ReviewStateConflictError(
         `Request key ${requestKey} conflicted without an existing review`,
+      );
+    }
+
+    const transportBinding = input.transportBinding;
+    if (transportBinding) {
+      await dependencies.prisma.$transaction((client) =>
+        dependencies.bindGithubWebhookDeliveryRequest(
+          {
+            deliveryRowId: transportBinding.deliveryRowId,
+            leaseToken: transportBinding.leaseToken,
+            requestKey: existingReview.requestKey,
+          },
+          client,
+        ),
       );
     }
 
@@ -470,7 +538,7 @@ export async function retryReviewRequest(
   reviewId: string,
   dependencies: ReviewRequestDependencies = defaultReviewRequestDependencies,
 ): Promise<CreateReviewRequestResult> {
-  const review = await findFactualReview(reviewId, dependencies);
+  const review = await findFactualReview({ id: reviewId }, dependencies);
 
   if (!review || review.status !== "FAILED") {
     throw new ReviewStateConflictError(
@@ -499,6 +567,127 @@ export async function retryReviewRequest(
     event: createReviewRequestEvent({
       reviewId,
       attempt,
+      reviewType: review.reviewType,
+      repositoryId: review.repositoryId,
+      prNumber: review.prNumber,
+      dispatchMode: "DIRECT",
+    }),
+    resultKind: "existing",
+    dependencies,
+  });
+}
+
+export async function resumeReviewRequest(
+  requestKey: string,
+  dependencies: ReviewRequestDependencies = defaultReviewRequestDependencies,
+): Promise<CreateReviewRequestResult> {
+  let review = await findFactualReview({ requestKey }, dependencies);
+
+  if (!review) {
+    throw new ReviewRequestRecoveryError(requestKey);
+  }
+
+  if (review.status === "FAILED" && review.failureStage === "QUEUE") {
+    return retryReviewRequest(review.id, dependencies);
+  }
+
+  if (
+    review.status !== "PENDING" ||
+    review.lastCompletedStage === "QUEUED"
+  ) {
+    return {
+      kind: "existing",
+      reviewId: review.id,
+      requestKey: review.requestKey,
+      status: review.status,
+    };
+  }
+
+  const now = dependencies.now();
+  let queueLeaseToken = review.executionLeaseToken;
+
+  if (
+    !queueLeaseToken ||
+    review.executionLeaseOwner !== "QUEUE" ||
+    review.executionLeaseExpiresAt === null
+  ) {
+    throw new ReviewStateConflictError(
+      `Review ${review.id} has no resumable queue fence`,
+    );
+  }
+
+  if (review.executionLeaseExpiresAt <= now) {
+    const renewedQueueLeaseToken = randomUUID();
+    const renewed = await dependencies.prisma.review.updateMany({
+      where: {
+        id: review.id,
+        status: "PENDING",
+        attemptCount: review.attemptCount,
+        executionLeaseToken: queueLeaseToken,
+        executionLeaseOwner: "QUEUE",
+        executionLeaseExpiresAt: { lte: now },
+        OR: [
+          { lastCompletedStage: null },
+          { lastCompletedStage: { not: "QUEUED" } },
+        ],
+      },
+      data: {
+        executionLeaseToken: renewedQueueLeaseToken,
+        executionLeaseExpiresAt: getQueueLeaseExpiration(now),
+      },
+    });
+
+    if (renewed.count === 1) {
+      queueLeaseToken = renewedQueueLeaseToken;
+      review = {
+        ...review,
+        executionLeaseToken: renewedQueueLeaseToken,
+        executionLeaseExpiresAt: getQueueLeaseExpiration(now),
+      };
+    } else {
+      const factualReview = await findFactualReview(
+        { id: review.id },
+        dependencies,
+      );
+
+      if (!factualReview) {
+        throw new ReviewRequestRecoveryError(requestKey);
+      }
+
+      if (
+        factualReview.status !== "PENDING" ||
+        factualReview.lastCompletedStage === "QUEUED"
+      ) {
+        return {
+          kind: "existing",
+          reviewId: factualReview.id,
+          requestKey: factualReview.requestKey,
+          status: factualReview.status,
+        };
+      }
+
+      if (
+        !factualReview.executionLeaseToken ||
+        factualReview.executionLeaseOwner !== "QUEUE" ||
+        factualReview.executionLeaseExpiresAt === null ||
+        factualReview.executionLeaseExpiresAt <= now
+      ) {
+        throw new ReviewStateConflictError(
+          `Review ${review.id} queue lease renewal lost its fence`,
+        );
+      }
+
+      review = factualReview;
+      queueLeaseToken = factualReview.executionLeaseToken;
+    }
+  }
+
+  return finalizeDispatch({
+    review,
+    queueLeaseToken,
+    event: createReviewRequestEvent({
+      reviewId: review.id,
+      attempt: review.attemptCount,
       reviewType: review.reviewType,
       repositoryId: review.repositoryId,
       prNumber: review.prNumber,
