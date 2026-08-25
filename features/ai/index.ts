@@ -36,6 +36,7 @@ export type {
   GeneratePRSummaryResult,
   PRCommand,
   PullRequestIdentityInput,
+  ReviewPullRequestInput,
   ReviewPullRequestResult,
   ReviewRequestFailureReason,
   ReviewRequestMetadata,

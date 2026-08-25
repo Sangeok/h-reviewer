@@ -26,6 +26,7 @@ describe("reviewPullRequest", () => {
       owner: "octo",
       repo: "sample",
       prNumber: 42,
+      requestSource: "AUTOMATIC",
       transportBinding: {
         kind: "GITHUB_WEBHOOK",
         deliveryRowId: "delivery-row-1",
@@ -56,6 +57,32 @@ describe("reviewPullRequest", () => {
     });
   });
 
+  it("preserves a command request source when delegating", async () => {
+    reviewRequestMocks.createReviewRequest.mockResolvedValue({
+      kind: "created",
+      reviewId: "review-1",
+      requestKey: "request-1",
+      status: "PENDING",
+    });
+
+    await reviewPullRequest({
+      owner: "octo",
+      repo: "sample",
+      prNumber: 42,
+      requestSource: "COMMAND",
+    });
+
+    expect(reviewRequestMocks.createReviewRequest).toHaveBeenCalledWith({
+      owner: "octo",
+      repo: "sample",
+      prNumber: 42,
+      reviewType: "FULL_REVIEW",
+      reviewMode: "FULL",
+      requestSource: "COMMAND",
+      dispatchMode: "DIRECT",
+    });
+  });
+
   it("does not report a confirmed dispatch failure as queued", async () => {
     reviewRequestMocks.createReviewRequest.mockResolvedValue({
       kind: "dispatch-failed",
@@ -67,7 +94,12 @@ describe("reviewPullRequest", () => {
     });
 
     await expect(
-      reviewPullRequest({ owner: "octo", repo: "sample", prNumber: 42 }),
+      reviewPullRequest({
+        owner: "octo",
+        repo: "sample",
+        prNumber: 42,
+        requestSource: "AUTOMATIC",
+      }),
     ).resolves.toMatchObject({
       success: false,
       reason: "internal_error",
@@ -88,7 +120,12 @@ describe("reviewPullRequest", () => {
     });
 
     await expect(
-      reviewPullRequest({ owner: "octo", repo: "sample", prNumber: 42 }),
+      reviewPullRequest({
+        owner: "octo",
+        repo: "sample",
+        prNumber: 42,
+        requestSource: "AUTOMATIC",
+      }),
     ).resolves.toMatchObject({ success: false, reason, status });
   });
 
@@ -106,7 +143,12 @@ describe("reviewPullRequest", () => {
     });
 
     await expect(
-      reviewPullRequest({ owner: "octo", repo: "sample", prNumber: 42 }),
+      reviewPullRequest({
+        owner: "octo",
+        repo: "sample",
+        prNumber: 42,
+        requestSource: "AUTOMATIC",
+      }),
     ).resolves.toMatchObject({ success: true, message, status });
   });
 });

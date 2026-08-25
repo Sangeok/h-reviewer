@@ -59,6 +59,9 @@ function createDependencies(
         status: "PENDING",
       }),
     ),
+    getCommandPermission: vi.fn<
+      GithubWebhookHandlerDependencies["getCommandPermission"]
+    >(async () => "write"),
     resumeRequest: vi.fn<
       GithubWebhookHandlerDependencies["resumeRequest"]
     >(async (requestKey) => ({
@@ -101,6 +104,23 @@ function createPullRequestPayload(
   };
 }
 
+function createIssueCommentPayload(
+  body: string,
+  commentOverrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    action: "created",
+    repository: { full_name: "octo/sample" },
+    issue: { number: 42, pull_request: { url: "fixture" } },
+    comment: {
+      id: 1001,
+      body,
+      user: { login: "contributor" },
+      ...commentOverrides,
+    },
+  };
+}
+
 describe("createGithubWebhookHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -120,7 +140,11 @@ describe("createGithubWebhookHandler", () => {
     });
     expect(dependencies.queueReview).toHaveBeenCalledOnce();
     expect(dependencies.queueReview).toHaveBeenCalledWith(
-      { ...PULL_REQUEST_IDENTITY, transportBinding: TRANSPORT_BINDING },
+      {
+        ...PULL_REQUEST_IDENTITY,
+        requestSource: "AUTOMATIC",
+        transportBinding: TRANSPORT_BINDING,
+      },
     );
     expect(dependencies.acquireDelivery).toHaveBeenCalledWith({
       deliveryId: "delivery-1",
@@ -165,6 +189,11 @@ describe("createGithubWebhookHandler", () => {
       headRepoName: "sample-fork",
     });
     expect(dependencies.queueReview).toHaveBeenCalledOnce();
+    expect(dependencies.queueReview).toHaveBeenCalledWith({
+      ...PULL_REQUEST_IDENTITY,
+      requestSource: "AUTOMATIC",
+      transportBinding: TRANSPORT_BINDING,
+    });
   });
 
   it("skips queueing when synchronize is an HReviewer commit", async () => {
@@ -248,24 +277,180 @@ describe("createGithubWebhookHandler", () => {
     expect(dependencies.finalizeMergedPullRequest).not.toHaveBeenCalled();
   });
 
-  it("dispatches summary but preserves the current ignored review command", async () => {
+  it("dispatches an authorized summary command", async () => {
     const dependencies = createDependencies();
     const handler = createGithubWebhookHandler(dependencies);
-    const payload = (command: string) => ({
-      action: "created",
-      repository: { full_name: "octo/sample" },
-      issue: { number: 42, pull_request: { url: "fixture" } },
-      comment: { body: command },
+
+    const response = await handler(
+      createInput(
+        "issue_comment",
+        createIssueCommentPayload("@hreviewer summary"),
+      ),
+    );
+
+    expect(response).toEqual({
+      status: 200,
+      body: { message: "Event Processed" },
     });
-
-    await handler(createInput("issue_comment", payload("@hreviewer summary")));
-    await handler(createInput("issue_comment", payload("@hreviewer review")));
-
+    expect(dependencies.getCommandPermission).toHaveBeenCalledWith({
+      owner: PULL_REQUEST_IDENTITY.owner,
+      repo: PULL_REQUEST_IDENTITY.repo,
+      username: "contributor",
+    });
     expect(dependencies.queueSummary).toHaveBeenCalledOnce();
     expect(dependencies.queueSummary).toHaveBeenCalledWith(
       { ...PULL_REQUEST_IDENTITY, transportBinding: TRANSPORT_BINDING },
     );
     expect(dependencies.queueReview).not.toHaveBeenCalled();
+  });
+
+  it("dispatches an authorized review command with its command source", async () => {
+    const dependencies = createDependencies();
+    const handler = createGithubWebhookHandler(dependencies);
+
+    const response = await handler(
+      createInput(
+        "issue_comment",
+        createIssueCommentPayload("@hreviewer review"),
+      ),
+    );
+
+    expect(response).toEqual({
+      status: 200,
+      body: { message: "Event Processed" },
+    });
+    expect(dependencies.queueReview).toHaveBeenCalledWith({
+      ...PULL_REQUEST_IDENTITY,
+      requestSource: "COMMAND",
+      transportBinding: TRANSPORT_BINDING,
+    });
+    expect(dependencies.queueSummary).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["@hreviewer review", "read"],
+    ["@hreviewer review", "none"],
+    ["@hreviewer summary", "read"],
+    ["@hreviewer summary", "none"],
+  ] as const)(
+    "returns an explicit unauthorized result for %s with %s permission",
+    async (command, permission) => {
+      const dependencies = createDependencies({
+        getCommandPermission: vi.fn(async () => permission),
+      });
+      const handler = createGithubWebhookHandler(dependencies);
+
+      const response = await handler(
+        createInput(
+          "issue_comment",
+          createIssueCommentPayload(command),
+        ),
+      );
+
+      expect(response).toEqual({
+        status: 200,
+        body: { message: "Unauthorized HReviewer command" },
+      });
+      expect(dependencies.queueReview).not.toHaveBeenCalled();
+      expect(dependencies.queueSummary).not.toHaveBeenCalled();
+      expect(dependencies.completeDelivery).toHaveBeenCalledOnce();
+      expect(dependencies.failDelivery).not.toHaveBeenCalled();
+    },
+  );
+
+  it("fails the delivery when the permission lookup has a transient error", async () => {
+    const dependencies = createDependencies({
+      getCommandPermission: vi.fn(async () => {
+        throw new Error("GitHub unavailable");
+      }),
+    });
+    const handler = createGithubWebhookHandler(dependencies);
+
+    const response = await handler(
+      createInput(
+        "issue_comment",
+        createIssueCommentPayload("@hreviewer summary"),
+      ),
+    );
+
+    expect(response).toEqual({
+      status: 500,
+      body: { error: "Error processing webhook" },
+    });
+    expect(dependencies.queueReview).not.toHaveBeenCalled();
+    expect(dependencies.queueSummary).not.toHaveBeenCalled();
+    expect(dependencies.completeDelivery).not.toHaveBeenCalled();
+    expect(dependencies.failDelivery).toHaveBeenCalledWith({
+      deliveryRowId: TRANSPORT_BINDING.deliveryRowId,
+      leaseToken: TRANSPORT_BINDING.leaseToken,
+      errorCode: "WEBHOOK_PROCESSING_FAILED",
+      errorMessage: "Error processing webhook",
+    });
+  });
+
+  it.each([
+    ["missing comment ID", { id: undefined }],
+    ["invalid comment ID", { id: 0 }],
+    ["missing author", { user: undefined }],
+    ["blank author login", { user: { login: "   " } }],
+  ])("returns an explicit malformed result for %s", async (_name, overrides) => {
+    const dependencies = createDependencies();
+    const handler = createGithubWebhookHandler(dependencies);
+
+    const response = await handler(
+      createInput(
+        "issue_comment",
+        createIssueCommentPayload("@hreviewer review", overrides),
+      ),
+    );
+
+    expect(response).toEqual({
+      status: 200,
+      body: { message: "Ignored: malformed issue_comment payload" },
+    });
+    expect(dependencies.getCommandPermission).not.toHaveBeenCalled();
+    expect(dependencies.queueReview).not.toHaveBeenCalled();
+    expect(dependencies.queueSummary).not.toHaveBeenCalled();
+  });
+
+  it("returns an explicit unsupported result without checking permission", async () => {
+    const dependencies = createDependencies();
+    const handler = createGithubWebhookHandler(dependencies);
+
+    const response = await handler(
+      createInput(
+        "issue_comment",
+        createIssueCommentPayload("@hreviewer review full"),
+      ),
+    );
+
+    expect(response).toEqual({
+      status: 200,
+      body: { message: "Unsupported HReviewer command" },
+    });
+    expect(dependencies.getCommandPermission).not.toHaveBeenCalled();
+    expect(dependencies.queueReview).not.toHaveBeenCalled();
+    expect(dependencies.queueSummary).not.toHaveBeenCalled();
+  });
+
+  it("ignores a non-command without checking permission", async () => {
+    const dependencies = createDependencies();
+    const handler = createGithubWebhookHandler(dependencies);
+
+    const response = await handler(
+      createInput(
+        "issue_comment",
+        createIssueCommentPayload("Looks good to me"),
+      ),
+    );
+
+    expect(response).toEqual({
+      status: 200,
+      body: { message: "Ignored: no HReviewer command" },
+    });
+    expect(dependencies.getCommandPermission).not.toHaveBeenCalled();
+    expect(dependencies.queueReview).not.toHaveBeenCalled();
+    expect(dependencies.queueSummary).not.toHaveBeenCalled();
   });
 
   it("verifies an invalid signature once and performs no side effects", async () => {
