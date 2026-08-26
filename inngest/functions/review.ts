@@ -38,6 +38,7 @@ import {
   renewReviewExecutionLease,
   transitionReviewExecution,
 } from "@/features/review/lib/review-execution-state";
+import { assertCurrentReviewHead } from "@/features/review/lib/review-head-guard";
 
 const CONTEXT_BUILD_TIMEOUT_MS = 45_000;
 
@@ -98,6 +99,7 @@ export type ReviewWorkerDependencies = {
   createGeneratorModel: typeof google;
   verifyReview: typeof verifyReview;
   detectRepeatIssues: typeof detectRepeatIssues;
+  assertCurrentReviewHead: typeof assertCurrentReviewHead;
   createTimeoutSignal(milliseconds: number): AbortSignal;
   now(): Date;
 };
@@ -137,6 +139,33 @@ async function getBoundGithubToken(
   }
 
   return account.accessToken;
+}
+
+async function assertAndRenewCurrentReviewHead(input: {
+  dependencies: ReviewWorkerDependencies;
+  reviewRequest: ClaimedReviewRequest;
+  attempt: number;
+  leaseToken: string;
+  allowedStatuses: readonly ("RUNNING" | "POSTING")[];
+}): Promise<void> {
+  await input.dependencies.assertCurrentReviewHead({
+    reviewId: input.reviewRequest.id,
+    attempt: input.attempt,
+    leaseToken: input.leaseToken,
+    expectedHeadSha: input.reviewRequest.headSha,
+    allowedStatuses: input.allowedStatuses,
+  });
+  await renewReviewExecutionLease(
+    {
+      reviewId: input.reviewRequest.id,
+      attempt: input.attempt,
+      leaseToken: input.leaseToken,
+      leaseOwner: "WORKER",
+      allowedStatuses: input.allowedStatuses,
+      now: input.dependencies.now(),
+    },
+    input.dependencies.prisma,
+  );
 }
 
 /**
@@ -369,26 +398,6 @@ export function createGenerateReviewHandler(
           prNumber,
         });
 
-        if (data.headSha !== reviewRequest.headSha) {
-          await transitionReviewExecution(
-            {
-              reviewId,
-              attempt,
-              leaseToken,
-              leaseOwner: "WORKER",
-              now: dependencies.now(),
-              from: ["RUNNING"],
-              to: "FAILED",
-              failure: {
-                stage: "FETCH",
-                message: "The pull request head changed before review execution.",
-              },
-            },
-            dependencies.prisma,
-          );
-          return null;
-        }
-
         return data;
       } catch {
         await transitionReviewExecution(
@@ -465,17 +474,13 @@ export function createGenerateReviewHandler(
     // ── Step 3: deterministic context + AI 리뷰 생성 ──
     // 같은 step ID와 반환 shape를 유지해 배포 전 memoized run과 호환한다.
     const aiStepResult: unknown = await step.run("generate-ai-review", async () => {
-      await renewReviewExecutionLease(
-        {
-          reviewId,
-          attempt,
-          leaseToken,
-          leaseOwner: "WORKER",
-          allowedStatuses: ["RUNNING"],
-          now: dependencies.now(),
-        },
-        dependencies.prisma,
-      );
+      await assertAndRenewCurrentReviewHead({
+        dependencies,
+        reviewRequest,
+        attempt,
+        leaseToken,
+        allowedStatuses: ["RUNNING"],
+      });
       let deterministicContext = createEmptyDeterministicPrContext(headSha);
 
       if (!deterministicContextEnabled) {
@@ -933,17 +938,6 @@ export function createGenerateReviewHandler(
     // ── Step 6: GitHub에 리뷰 게시 ──
     // IMPORTANT: postedAsReview는 반드시 step.run()의 반환값으로 캡처해야 한다.
     const postedAsReview = await step.run("post-review", async () => {
-      await renewReviewExecutionLease(
-        {
-          reviewId,
-          attempt,
-          leaseToken,
-          leaseOwner: "WORKER",
-          allowedStatuses: ["POSTING"],
-          now: dependencies.now(),
-        },
-        dependencies.prisma,
-      );
       const token = await getBoundGithubToken(dependencies, reviewRequest);
       const suggestions = finalOutput?.suggestions ?? [];
       const issues = finalOutput?.issues ?? [];
@@ -964,16 +958,39 @@ export function createGenerateReviewHandler(
       const inlineIssues = issuesWithRepeat.filter(i => i.file !== null && i.line !== null);
       const hasInlineContent = suggestions.length > 0 || inlineIssues.length > 0;
 
+      await assertAndRenewCurrentReviewHead({
+        dependencies,
+        reviewRequest,
+        attempt,
+        leaseToken,
+        allowedStatuses: ["POSTING"],
+      });
+
       if (hasInlineContent) {
         try {
           await dependencies.postPRReviewWithSuggestions({
             token, owner, repo, prNumber, reviewBody: finalReview,
             suggestions, issues: issuesWithRepeat, headSha, langCode,
+            beforeInlinePost: () =>
+              assertAndRenewCurrentReviewHead({
+                dependencies,
+                reviewRequest,
+                attempt,
+                leaseToken,
+                allowedStatuses: ["POSTING"],
+              }),
           });
           return true;
         } catch (error) {
           console.warn("PR Review API failed, falling back to comment", {
             error: getSafeExternalErrorSummary(error),
+          });
+          await assertAndRenewCurrentReviewHead({
+            dependencies,
+            reviewRequest,
+            attempt,
+            leaseToken,
+            allowedStatuses: ["POSTING"],
           });
           await dependencies.postReviewComment(token, owner, repo, prNumber, finalReview);
           return false;
@@ -991,17 +1008,6 @@ export function createGenerateReviewHandler(
       if (!verified) return false;
       if (countExcluded(verified) === 0) return false;
 
-      await renewReviewExecutionLease(
-        {
-          reviewId,
-          attempt,
-          leaseToken,
-          leaseOwner: "WORKER",
-          allowedStatuses: ["POSTING"],
-          now: dependencies.now(),
-        },
-        dependencies.prisma,
-      );
       const token = await getBoundGithubToken(dependencies, reviewRequest);
 
       const body = buildVerificationReviewBody({
@@ -1013,6 +1019,13 @@ export function createGenerateReviewHandler(
       if (body === null) return false;
 
       try {
+        await assertAndRenewCurrentReviewHead({
+          dependencies,
+          reviewRequest,
+          attempt,
+          leaseToken,
+          allowedStatuses: ["POSTING"],
+        });
         await dependencies.postVerificationReview({ token, owner, repo, prNumber, headSha, body });
         return true;
       } catch (error) {
@@ -1163,12 +1176,27 @@ const defaultReviewWorkerDependencies: ReviewWorkerDependencies = {
   createGeneratorModel: google,
   verifyReview,
   detectRepeatIssues,
+  assertCurrentReviewHead,
   createTimeoutSignal: AbortSignal.timeout,
   now: () => new Date(),
 };
 
 export const generateReview = inngest.createFunction(
-  { id: "generate-review" },
+  {
+    id: "generate-review",
+    concurrency: {
+      key: "event.data.debounceKey",
+      limit: 1,
+    },
+    cancelOn: [
+      {
+        event: "pr.review.superseded",
+        if:
+          "async.data.reviewId == event.data.reviewId && " +
+          "async.data.attempt == event.data.attempt",
+      },
+    ],
+  },
   { event: "pr.review.requested" },
   createGenerateReviewHandler(defaultReviewWorkerDependencies),
 );

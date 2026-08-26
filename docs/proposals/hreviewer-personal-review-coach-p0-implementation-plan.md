@@ -1,14 +1,14 @@
 # HReviewer 개인 리뷰 코치 P0 구현 상세 계획
 
-> 상태: **T01-T05 완료 — T06 NEXT; T09 generation target 결정 완료, lifecycle·품질 release gate 유지**
+> 상태: **T01-T06 완료 — T07 NEXT; T09 generation target 결정 완료, lifecycle·품질 release gate 유지**
 >
 > 기준일: <code>2026-08-25</code>
 >
-> 코드 기준: <code>3d792ea890809283bdf3efd0d9060ca958af2a3e</code>
+> 코드 기준: <code>897ffec8cb64d3dc1c3071e8edd161210b0d336e</code>
 >
-> 재조정 기준: <code>2026-08-25 Asia/Seoul</code>. 직접 source bundle은 이 문서, 상위 로드맵(<code>SHA-256 215d234db131976921815fcf60b4d604a01e29e66f96a7b76213aa7d7eeeb31b</code>), 기존 RAG 제거 평가(<code>SHA-256 eabb894aa36a1d6bdeac72c8dd1cbad88788bda64ee3a8e69c4b90f2dbd72b0a</code>)다.
+> 재조정 기준: <code>2026-08-26 Asia/Seoul</code>. 직접 source bundle은 이 문서, 상위 로드맵(<code>SHA-256 777735cad6fb7bf62336eaaf154e3a61351c0936b8f944594b2e37c751d3c990</code>), 기존 RAG 제거 평가(<code>SHA-256 eabb894aa36a1d6bdeac72c8dd1cbad88788bda64ee3a8e69c4b90f2dbd72b0a</code>)다.
 >
-> candidate inventory는 <code>git ls-files -- app components features inngest lib prisma scripts package.json package-lock.json vitest.config.ts tsconfig.json next.config.ts eslint.config.mjs .gitignore</code> 결과를 ordinal 정렬하고 각 repository-relative path를 LF로 연결한 뒤 마지막 LF를 붙인 UTF-8 bytes다. T05 시작 commit에서 <code>227</code>개, <code>SHA-256 45276bdd6c8cafa44cd8affc82fc7d46dcefda6fb824c01bd2ed3efa19d7f3da</code>이며 task 시작 시 같은 방식으로 다시 계산한다.
+> candidate inventory는 <code>git ls-files -- app components features inngest lib prisma scripts package.json package-lock.json vitest.config.ts tsconfig.json next.config.ts eslint.config.mjs .gitignore</code> 결과를 ordinal 정렬하고 각 repository-relative path를 LF로 연결한 뒤 마지막 LF를 붙인 UTF-8 bytes다. T06 시작 commit에서 <code>228</code>개, <code>SHA-256 e8b0117fd649acb79445d2e5704649f15470f9c502fac6be2f7db57a00f8f5d9</code>이며 task 시작 시 같은 방식으로 다시 계산한다.
 >
 > 상위 문서: [HReviewer 개인 코드 리뷰 코치 실행 제안서](./hreviewer-personal-review-coach-roadmap.md)
 >
@@ -1208,6 +1208,13 @@ P0의 <code>@hreviewer review</code>는 <code>FULL_REVIEW/FULL/nonce=default</co
 - 생성: <code>app/api/inngest/route.test.ts</code>
 - 수정: <code>features/review/lib/review-request.ts</code>
 - 수정: <code>features/review/lib/review-request.test.ts</code>
+- 수정: <code>features/review/lib/review-request.integration.test.ts</code>
+- 생성: <code>features/review/lib/review-head-guard.ts</code>
+- 생성: <code>features/review/lib/review-head-guard.test.ts</code>
+- 수정: <code>features/review/lib/pr-review.ts</code>
+- 생성: <code>features/review/lib/pr-review.test.ts</code>
+- 수정: <code>features/ai/actions/review-pull-request.ts</code>
+- 수정: <code>features/ai/actions/review-pull-request.test.ts</code>
 - 수정: <code>inngest/functions/review.ts</code>
 - 수정: <code>inngest/functions/review.test.ts</code>
 - 수정: <code>inngest/functions/summary.ts</code>
@@ -2287,7 +2294,7 @@ boundary 규칙:
 | T03 | <code>npx.cmd vitest run features/review/lib/review-request.test.ts features/review/lib/review-execution-state.test.ts features/review/lib/reconcile-issue-resolutions.test.ts features/suggestion/lib/reconcile-native-suggestions.test.ts features/ai/actions/review-pull-request.test.ts features/ai/actions/generate-pr-summary.test.ts app/api/webhooks/github/github-webhook-handler.test.ts inngest/functions/review.test.ts inngest/functions/summary.test.ts lib/github/github.test.ts</code> |
 | T04 | <code>npx.cmd vitest run lib/github/github-webhook-delivery.test.ts features/review/lib/review-request.test.ts features/ai/actions/review-pull-request.test.ts features/ai/actions/generate-pr-summary.test.ts app/api/webhooks/github/github-webhook-handler.test.ts app/api/webhooks/github/route.test.ts</code> |
 | T05 | <code>npx.cmd vitest run features/ai/utils/command-parser.test.ts features/ai/actions/review-pull-request.test.ts lib/github/github.test.ts app/api/webhooks/github/github-webhook-handler.test.ts</code> |
-| T06 | <code>npx.cmd vitest run app/api/inngest/route.test.ts inngest/functions/schedule-automatic-review.test.ts features/review/lib/review-request.test.ts inngest/functions/review.test.ts inngest/functions/summary.test.ts lib/github/github.test.ts</code> |
+| T06 | <code>npx.cmd vitest run app/api/inngest/route.test.ts inngest/functions/schedule-automatic-review.test.ts features/review/lib/review-request.test.ts features/review/lib/review-head-guard.test.ts features/review/lib/pr-review.test.ts features/ai/actions/review-pull-request.test.ts inngest/functions/review.test.ts inngest/functions/summary.test.ts lib/github/github.test.ts</code> |
 | T07 | <code>npx.cmd vitest run app/api/inngest/route.test.ts features/review/lib/review-artifact-marker.test.ts lib/github/github-artifact-body.test.ts lib/github/github-review-artifacts.test.ts lib/github/github.test.ts features/review/lib/pr-review.test.ts features/ai/lib/review-formatter.test.ts features/ai/lib/suggestion-format.test.ts features/review/lib/review-execution-state.test.ts features/review/lib/review-request.test.ts features/review/actions/retry-review.test.ts features/review/lib/retry-review-request.test.ts features/review/ui/review-detail.test.tsx features/review/ui/parts/review-retry-button.test.tsx features/review/ui/parts/structured-review-body.test.tsx inngest/functions/reconcile-stale-review-executions.test.ts inngest/functions/review.test.ts inngest/functions/summary.test.ts</code> |
 | T08 | <code>npx.cmd vitest run features/payment/lib/review-trial.test.ts features/repository/lib/repository-disconnect.test.ts features/settings/actions/index.test.ts features/review/lib/review-execution-state.test.ts features/review/lib/review-request.test.ts features/review/lib/retry-review-request.test.ts features/review/actions/retry-review.test.ts features/ai/actions/review-pull-request.test.ts app/api/webhooks/github/github-webhook-handler.test.ts inngest/functions/reconcile-stale-review-executions.test.ts features/payment/actions/config.test.ts features/payment/ui/parts/plan-card.test.tsx features/payment/ui/parts/usage-card.test.tsx lib/github/github.test.ts</code> |
 | T09 | 아래 network-free preflight, quality/repeat/calibration test와 calibration source contract를 먼저 실행한 뒤, 승인 후 섹션 T09의 strict model availability wrapper와 capture/score 명령을 실행 |

@@ -35,7 +35,13 @@ function createStepRecorder(): {
 
 function createDependencies() {
   const state = {
-    status: "PENDING" as "PENDING" | "RUNNING" | "POSTING" | "COMPLETED" | "FAILED",
+    status: "PENDING" as
+      | "PENDING"
+      | "RUNNING"
+      | "POSTING"
+      | "COMPLETED"
+      | "FAILED"
+      | "SUPERSEDED",
     attemptCount: 1,
     executionLeaseToken: "queue-token" as string | null,
     executionLeaseOwner: "QUEUE" as "QUEUE" | "WORKER" | null,
@@ -116,6 +122,7 @@ function createDependencies() {
   const postReviewComment = vi.fn(async () => {
     operationOrder.push("post");
   });
+  const assertCurrentReviewHead = vi.fn(async () => undefined);
   reviewUpdate.mockImplementation(async () => {
     operationOrder.push("save");
     return { id: "summary-1" };
@@ -144,6 +151,7 @@ function createDependencies() {
     createGeneratorModel: vi.fn(
       () => "generator-model",
     ) as unknown as SummaryWorkerDependencies["createGeneratorModel"],
+    assertCurrentReviewHead,
     now: () => NOW,
   };
 
@@ -155,6 +163,7 @@ function createDependencies() {
       accountFindFirst,
       getPullRequestDiff,
       postReviewComment,
+      assertCurrentReviewHead,
       reviewUpdate,
     },
   };
@@ -208,30 +217,50 @@ describe("createGenerateSummaryHandler", () => {
     });
   });
 
-  it("fails before posting when the fetched head no longer matches", async () => {
+  it("supersedes before generation without posting", async () => {
     const { dependencies, state, mocks } = createDependencies();
-    mocks.getPullRequestDiff.mockResolvedValue({
-      title: "Improve docs",
-      diff: "+documentation",
-      description: "Documents behavior",
-      additions: 1,
-      deletions: 0,
-      changedFiles: 1,
-      baseSha: "base-sha",
-      headSha: "new-head-sha",
-      headBranch: "docs",
-      headRepository: null,
-      state: "open",
-      merged: false,
+    mocks.assertCurrentReviewHead.mockImplementation(async () => {
+      state.status = "SUPERSEDED";
+      state.executionLeaseToken = null;
+      state.executionLeaseOwner = null;
+      state.executionLeaseExpiresAt = null;
+      throw new Error("superseded");
     });
     const recorder = createStepRecorder();
 
-    await createGenerateSummaryHandler(dependencies)({
-      event: { data: SUMMARY_EVENT_DATA },
-      step: recorder.step,
-    });
+    await expect(
+      createGenerateSummaryHandler(dependencies)({
+        event: { data: SUMMARY_EVENT_DATA },
+        step: recorder.step,
+      }),
+    ).rejects.toThrow("superseded");
 
-    expect(state).toMatchObject({ status: "FAILED", failureStage: "FETCH" });
+    expect(state.status).toBe("SUPERSEDED");
+    expect(mocks.postReviewComment).not.toHaveBeenCalled();
+    expect(mocks.reviewUpdate).not.toHaveBeenCalled();
+  });
+
+  it("supersedes on the post guard without issuing a GitHub comment", async () => {
+    const { dependencies, state, mocks } = createDependencies();
+    mocks.assertCurrentReviewHead
+      .mockResolvedValueOnce(undefined)
+      .mockImplementationOnce(async () => {
+        state.status = "SUPERSEDED";
+        state.executionLeaseToken = null;
+        state.executionLeaseOwner = null;
+        state.executionLeaseExpiresAt = null;
+        throw new Error("superseded before post");
+      });
+    const recorder = createStepRecorder();
+
+    await expect(
+      createGenerateSummaryHandler(dependencies)({
+        event: { data: SUMMARY_EVENT_DATA },
+        step: recorder.step,
+      }),
+    ).rejects.toThrow("superseded before post");
+
+    expect(state.status).toBe("SUPERSEDED");
     expect(mocks.postReviewComment).not.toHaveBeenCalled();
     expect(mocks.reviewUpdate).not.toHaveBeenCalled();
   });

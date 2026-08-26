@@ -62,7 +62,13 @@ const STRUCTURED_REVIEW: StructuredReviewOutput = {
 };
 
 type WorkerState = {
-  status: "PENDING" | "RUNNING" | "POSTING" | "COMPLETED" | "FAILED";
+  status:
+    | "PENDING"
+    | "RUNNING"
+    | "POSTING"
+    | "COMPLETED"
+    | "FAILED"
+    | "SUPERSEDED";
   attemptCount: number;
   executionLeaseToken: string | null;
   executionLeaseOwner: "QUEUE" | "WORKER" | null;
@@ -98,6 +104,7 @@ function createDependencies(): {
     accountFindFirst: ReturnType<typeof vi.fn>;
     postReviewComment: ReturnType<typeof vi.fn>;
     postPRReviewWithSuggestions: ReturnType<typeof vi.fn>;
+    assertCurrentReviewHead: ReturnType<typeof vi.fn>;
     reviewUpdate: ReturnType<typeof vi.fn>;
     suggestionCreateMany: ReturnType<typeof vi.fn>;
   };
@@ -188,6 +195,7 @@ function createDependencies(): {
   const getPullRequestDiff = vi.fn(async () => PULL_REQUEST_DIFF);
   const postReviewComment = vi.fn(async () => undefined);
   const postPRReviewWithSuggestions = vi.fn(async () => undefined);
+  const assertCurrentReviewHead = vi.fn(async () => undefined);
   const dependencies: ReviewWorkerDependencies = {
     prisma: prismaMock as unknown as ReviewWorkerDependencies["prisma"],
     getPullRequestDiff,
@@ -204,6 +212,7 @@ function createDependencies(): {
     ) as unknown as ReviewWorkerDependencies["createGeneratorModel"],
     verifyReview: vi.fn(),
     detectRepeatIssues: vi.fn(async () => []),
+    assertCurrentReviewHead,
     createTimeoutSignal: () => new AbortController().signal,
     now: () => NOW,
   };
@@ -217,6 +226,7 @@ function createDependencies(): {
       accountFindFirst,
       postReviewComment,
       postPRReviewWithSuggestions,
+      assertCurrentReviewHead,
       reviewUpdate,
       suggestionCreateMany,
     },
@@ -316,20 +326,44 @@ describe("createGenerateReviewHandler", () => {
     expect(mocks.postReviewComment).toHaveBeenCalledOnce();
   });
 
-  it("fails at FETCH without external post when the persisted head differs", async () => {
+  it("supersedes before generation without an external post", async () => {
     const { dependencies, state, mocks } = createDependencies();
-    mocks.getPullRequestDiff.mockResolvedValue({
-      ...PULL_REQUEST_DIFF,
-      headSha: "new-head-sha",
+    mocks.assertCurrentReviewHead.mockImplementation(async () => {
+      state.status = "SUPERSEDED";
+      state.executionLeaseToken = null;
+      state.executionLeaseOwner = null;
+      state.executionLeaseExpiresAt = null;
+      throw new Error("superseded");
     });
 
-    const { stepIds } = await runReviewHandler(dependencies);
+    await expect(runReviewHandler(dependencies)).rejects.toThrow("superseded");
 
-    expect(stepIds).toEqual(["claim-review", "load-review-request", "fetch-pr-data"]);
-    expect(state).toMatchObject({ status: "FAILED", failureStage: "FETCH" });
+    expect(state).toMatchObject({ status: "SUPERSEDED" });
     expect(mocks.generateText).not.toHaveBeenCalled();
     expect(mocks.postReviewComment).not.toHaveBeenCalled();
     expect(mocks.postPRReviewWithSuggestions).not.toHaveBeenCalled();
+  });
+
+  it("supersedes on the post guard without issuing a GitHub post", async () => {
+    const { dependencies, state, mocks } = createDependencies();
+    mocks.generateText.mockResolvedValue({ experimental_output: STRUCTURED_REVIEW });
+    mocks.assertCurrentReviewHead
+      .mockResolvedValueOnce(undefined)
+      .mockImplementationOnce(async () => {
+        state.status = "SUPERSEDED";
+        state.executionLeaseToken = null;
+        state.executionLeaseOwner = null;
+        state.executionLeaseExpiresAt = null;
+        throw new Error("superseded before post");
+      });
+
+    await expect(runReviewHandler(dependencies)).rejects.toThrow(
+      "superseded before post",
+    );
+
+    expect(state.status).toBe("SUPERSEDED");
+    expect(mocks.postPRReviewWithSuggestions).not.toHaveBeenCalled();
+    expect(mocks.postReviewComment).not.toHaveBeenCalled();
   });
 
   it("does not use another GitHub account when the persisted binding is absent", async () => {

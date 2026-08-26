@@ -15,7 +15,8 @@ export async function reviewPullRequest(
       reviewType: "FULL_REVIEW",
       reviewMode: "FULL",
       requestSource,
-      dispatchMode: "DIRECT",
+      dispatchMode:
+        requestSource === "AUTOMATIC" ? "DEBOUNCED" : "DIRECT",
     });
 
     if (result.kind === "rejected") {

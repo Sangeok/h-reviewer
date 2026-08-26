@@ -27,6 +27,7 @@ interface PostPRReviewParams {
   issues: RepeatAnnotatedIssue[];
   headSha: string;
   langCode: LanguageCode;
+  beforeInlinePost(): Promise<void>;
 }
 
 /**
@@ -40,7 +41,18 @@ interface PostPRReviewParams {
  * 따라서 suggestions 먼저 포스팅 → issues 별도 포스팅(실패 허용) 전략을 사용한다.
  */
 export async function postPRReviewWithSuggestions(params: PostPRReviewParams): Promise<void> {
-  const { token, owner, repo, prNumber, reviewBody, suggestions, issues, headSha, langCode } = params;
+  const {
+    token,
+    owner,
+    repo,
+    prNumber,
+    reviewBody,
+    suggestions,
+    issues,
+    headSha,
+    langCode,
+    beforeInlinePost,
+  } = params;
   const labels = ISSUE_FIELD_LABELS[langCode];
   const octokit = createOctokitClient(token);
 
@@ -89,6 +101,7 @@ export async function postPRReviewWithSuggestions(params: PostPRReviewParams): P
   // ⚠️ line-specific issues(file+line)는 review body에 미포함 — 2차 호출 실패 시 유실됨
   // general issues(line: null)만 review body 테이블에 포함되어 보존됨
   if (issueComments.length > 0) {
+    await beforeInlinePost();
     try {
       await octokit.rest.pulls.createReview({
         owner,

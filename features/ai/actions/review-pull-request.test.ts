@@ -46,7 +46,7 @@ describe("reviewPullRequest", () => {
       reviewType: "FULL_REVIEW",
       reviewMode: "FULL",
       requestSource: "AUTOMATIC",
-      dispatchMode: "DIRECT",
+      dispatchMode: "DEBOUNCED",
     });
     expect(result).toEqual({
       success: true,

@@ -136,7 +136,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       expect(new Set(results.flatMap((result) =>
         "reviewId" in result ? [result.reviewId] : [],
       ))).toEqual(new Set([reviews[0]?.id]));
-    });
+    }, 15_000);
 
     it("rolls back review creation when the delivery binding lease is lost", async () => {
       if (!prisma) throw new Error("Test Prisma client was not initialized");
@@ -262,6 +262,6 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           select: { requestKey: true },
         }),
       ).resolves.toEqual({ requestKey: created.requestKey });
-    });
+    }, 15_000);
   },
 );

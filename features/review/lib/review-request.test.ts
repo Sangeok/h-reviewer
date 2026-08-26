@@ -21,12 +21,14 @@ type FakeReview = {
   repositoryId: string;
   prNumber: number;
   reviewType: "FULL_REVIEW" | "SUMMARY";
+  headSha: string | null;
   executionLeaseToken: string | null;
   executionLeaseOwner: "QUEUE" | "WORKER" | "RECONCILER" | null;
   executionLeaseExpiresAt: Date | null;
   lastCompletedStage: string | null;
   failureStage: string | null;
   failureMessage: string | null;
+  githubMainPostedAt: Date | null;
   createData: Record<string, unknown>;
 };
 
@@ -53,17 +55,55 @@ function createRequestHarness(): {
         repositoryId: String(data.repositoryId),
         prNumber: Number(data.prNumber),
         reviewType: data.reviewType as FakeReview["reviewType"],
+        headSha: typeof data.headSha === "string" ? data.headSha : null,
         executionLeaseToken: String(data.executionLeaseToken),
         executionLeaseOwner: data.executionLeaseOwner as FakeReview["executionLeaseOwner"],
         executionLeaseExpiresAt: data.executionLeaseExpiresAt as Date,
         lastCompletedStage: null,
         failureStage: null,
         failureMessage: null,
+        githubMainPostedAt: null,
         createData: data,
       };
       reviews.push(review);
       return review;
     }),
+    updateManyAndReturn: vi.fn(
+      async ({
+        where,
+        data,
+      }: {
+        where: Record<string, unknown>;
+        data: Record<string, unknown>;
+      }) => {
+        const statusFilter = where.status as { in: ReviewStatus[] };
+        const headFilter = where.headSha as { not: string };
+
+        const candidates = reviews
+          .filter(
+            (review) =>
+              review.repositoryId === where.repositoryId &&
+              review.prNumber === where.prNumber &&
+              review.reviewType === where.reviewType &&
+              review.headSha !== headFilter.not &&
+              statusFilter.in.includes(review.status) &&
+              review.githubMainPostedAt === null,
+          )
+          .sort((left, right) => left.id.localeCompare(right.id));
+
+        for (const review of candidates) {
+          review.status = data.status as ReviewStatus;
+          review.executionLeaseExpiresAt = null;
+          review.executionLeaseToken = null;
+          review.executionLeaseOwner = null;
+        }
+
+        return candidates.map((review) => ({
+          id: review.id,
+          attemptCount: review.attemptCount,
+        }));
+      },
+    ),
     findUnique: vi.fn(async ({ where }: { where: { id?: string; requestKey?: string } }) =>
       reviews.find(
         (review) =>
@@ -89,7 +129,10 @@ function createRequestHarness(): {
           (where.executionLeaseToken === undefined ||
             review.executionLeaseToken === where.executionLeaseToken) &&
           (where.executionLeaseOwner === undefined ||
-            review.executionLeaseOwner === where.executionLeaseOwner);
+            review.executionLeaseOwner === where.executionLeaseOwner) &&
+          (where.headSha === undefined || review.headSha === where.headSha) &&
+          (where.githubMainPostedAt === undefined ||
+            review.githubMainPostedAt === where.githubMainPostedAt);
 
         if (!review || !matches) return { count: 0 };
 
@@ -112,6 +155,9 @@ function createRequestHarness(): {
         }
         if ("failureMessage" in data) {
           review.failureMessage = data.failureMessage as string | null;
+        }
+        if ("githubMainPostedAt" in data) {
+          review.githubMainPostedAt = data.githubMainPostedAt as Date | null;
         }
         return { count: 1 };
       },
@@ -172,7 +218,7 @@ function createFullReviewInput() {
     reviewType: "FULL_REVIEW",
     reviewMode: "FULL",
     requestSource: "AUTOMATIC",
-    dispatchMode: "DIRECT",
+    dispatchMode: "DEBOUNCED",
   } as const;
 }
 
@@ -198,8 +244,8 @@ describe("review request coordinator", () => {
       trialCreditState: "NOT_APPLICABLE",
     });
     expect(sendEvent).toHaveBeenCalledWith({
-      id: "hreviewer:review-run:review-1:1",
-      name: "pr.review.requested",
+      id: "hreviewer:review-auto:review-1:1",
+      name: "pr.review.auto-requested",
       data: {
         reviewId: "review-1",
         attempt: 1,
@@ -225,6 +271,114 @@ describe("review request coordinator", () => {
     });
     expect(reviews).toHaveLength(1);
     expect(sendEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends manual review commands directly without the scheduler", async () => {
+    const { dependencies, sendEvent } = createRequestHarness();
+
+    await createReviewRequest(
+      {
+        ...createFullReviewInput(),
+        requestSource: "COMMAND",
+        dispatchMode: "DIRECT",
+      },
+      dependencies,
+    );
+
+    expect(sendEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "hreviewer:review-run:review-1:1",
+        name: "pr.review.requested",
+      }),
+    );
+  });
+
+  it("supersedes an older head and emits its exact transaction identity", async () => {
+    const {
+      dependencies,
+      reviews,
+      sendEvent,
+      getPullRequestSnapshot,
+    } = createRequestHarness();
+    await createReviewRequest(createFullReviewInput(), dependencies);
+    const oldReview = reviews[0];
+    if (!oldReview) throw new Error("Missing old review fixture");
+    oldReview.attemptCount = 2;
+    sendEvent.mockClear();
+    getPullRequestSnapshot.mockResolvedValue({
+      title: "Improve coordinator again",
+      url: "https://github.com/octo/sample/pull/42",
+      headSha: "head-sha-b",
+      state: "open",
+      merged: false,
+    });
+
+    await createReviewRequest(createFullReviewInput(), dependencies);
+
+    expect(reviews).toHaveLength(2);
+    expect(oldReview).toMatchObject({
+      status: "SUPERSEDED",
+      attemptCount: 2,
+      executionLeaseToken: null,
+      executionLeaseOwner: null,
+      executionLeaseExpiresAt: null,
+    });
+    expect(sendEvent).toHaveBeenNthCalledWith(1, {
+      id: "hreviewer:review-superseded:review-1:2",
+      name: "pr.review.superseded",
+      data: { reviewId: "review-1", attempt: 2 },
+    });
+    expect(sendEvent).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        id: "hreviewer:review-auto:review-2:1",
+        name: "pr.review.auto-requested",
+      }),
+    );
+  });
+
+  it("does not supersede another review type or a confirmed posting", async () => {
+    const {
+      dependencies,
+      reviews,
+      sendEvent,
+      getPullRequestSnapshot,
+    } = createRequestHarness();
+    await createReviewRequest(createFullReviewInput(), dependencies);
+    const confirmedFullReview = reviews[0];
+    if (!confirmedFullReview) throw new Error("Missing full review fixture");
+    confirmedFullReview.status = "POSTING";
+    confirmedFullReview.executionLeaseOwner = "WORKER";
+    confirmedFullReview.githubMainPostedAt = NOW;
+
+    await createReviewRequest(
+      {
+        ...createFullReviewInput(),
+        reviewType: "SUMMARY",
+        requestSource: "COMMAND",
+        dispatchMode: "DIRECT",
+      },
+      dependencies,
+    );
+    const summary = reviews[1];
+    if (!summary) throw new Error("Missing summary fixture");
+    sendEvent.mockClear();
+    getPullRequestSnapshot.mockResolvedValue({
+      title: "Improve coordinator again",
+      url: "https://github.com/octo/sample/pull/42",
+      headSha: "head-sha-b",
+      state: "open",
+      merged: false,
+    });
+
+    await createReviewRequest(createFullReviewInput(), dependencies);
+
+    expect(confirmedFullReview.status).toBe("POSTING");
+    expect(summary.status).toBe("PENDING");
+    expect(sendEvent).toHaveBeenCalledTimes(1);
+    expect(sendEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "pr.review.auto-requested" }),
+    );
   });
 
   it("binds a new and an existing semantic request inside their transactions", async () => {
@@ -300,6 +454,7 @@ describe("review request coordinator", () => {
         ...createFullReviewInput(),
         reviewType: "SUMMARY",
         requestSource: "COMMAND",
+        dispatchMode: "DIRECT",
       },
       dependencies,
     );

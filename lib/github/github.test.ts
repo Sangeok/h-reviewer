@@ -37,6 +37,7 @@ import {
   canRunReviewCommand,
   getFileContent,
   getPullRequestDiff,
+  getPullRequestHeadInfo,
   getPullRequestSnapshot,
   getRepositoryPermissionForUser,
   getRepositoryFileTree,
@@ -47,6 +48,8 @@ type PullRequestOverrides = {
   baseSha?: string;
   updatedAt?: string;
   headRepository?: { owner: string; repo: string } | null;
+  state?: string;
+  merged?: boolean;
 };
 
 function createPullRequest(overrides: PullRequestOverrides = {}) {
@@ -67,14 +70,15 @@ function createPullRequest(overrides: PullRequestOverrides = {}) {
       sha: overrides.headSha ?? "head-sha",
       ref: "feature-branch",
       repo: headRepository
-        ? {
+          ? {
             name: headRepository.repo,
             owner: { login: headRepository.owner },
+            full_name: `${headRepository.owner}/${headRepository.repo}`,
           }
         : null,
     },
-    state: "open",
-    merged: false,
+    state: overrides.state ?? "open",
+    merged: overrides.merged ?? false,
   };
 }
 
@@ -338,6 +342,73 @@ describe("getPullRequestSnapshot", () => {
         prNumber: 7,
       }),
     ).rejects.toThrow("GitHub unavailable");
+  });
+});
+
+describe("getPullRequestHeadInfo", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("normalizes head, lifecycle, and fork metadata from one API response", async () => {
+    octokitMocks.pullsGet.mockResolvedValue({
+      data: createPullRequest({
+        headSha: "fork-head",
+        headRepository: { owner: "contributor", repo: "sample-fork" },
+        state: "closed",
+        merged: true,
+      }),
+    });
+
+    await expect(
+      getPullRequestHeadInfo({
+        token: "token",
+        owner: "base-owner",
+        repo: "base-repo",
+        prNumber: 7,
+      }),
+    ).resolves.toEqual({
+      branch: "feature-branch",
+      headSha: "fork-head",
+      state: "closed",
+      merged: true,
+      headRepoOwner: "contributor",
+      headRepoName: "sample-fork",
+      isFork: true,
+    });
+  });
+
+  it("uses the base repository only when GitHub no longer returns a head repository", async () => {
+    octokitMocks.pullsGet.mockResolvedValue({
+      data: createPullRequest({ headRepository: null }),
+    });
+
+    await expect(
+      getPullRequestHeadInfo({
+        token: "token",
+        owner: "base-owner",
+        repo: "base-repo",
+        prNumber: 7,
+      }),
+    ).resolves.toMatchObject({
+      headRepoOwner: "base-owner",
+      headRepoName: "base-repo",
+      isFork: false,
+    });
+  });
+
+  it("does not hide head metadata API failures", async () => {
+    const apiError = new Error("GitHub unavailable");
+    octokitMocks.pullsGet.mockRejectedValue(apiError);
+
+    await expect(
+      getPullRequestHeadInfo({
+        token: "token",
+        owner: "base-owner",
+        repo: "base-repo",
+        prNumber: 7,
+      }),
+    ).rejects.toBe(apiError);
   });
 });
 
