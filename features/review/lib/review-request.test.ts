@@ -29,6 +29,8 @@ type FakeReview = {
   failureStage: string | null;
   failureMessage: string | null;
   githubMainPostedAt: Date | null;
+  review: string;
+  artifactLookupMissedAt: Date | null;
   createData: Record<string, unknown>;
 };
 
@@ -63,6 +65,8 @@ function createRequestHarness(): {
         failureStage: null,
         failureMessage: null,
         githubMainPostedAt: null,
+        review: typeof data.review === "string" ? data.review : "",
+        artifactLookupMissedAt: null,
         createData: data,
       };
       reviews.push(review);
@@ -538,6 +542,7 @@ describe("review request coordinator", () => {
     const review = reviews[0];
     if (!review) throw new Error("missing review fixture");
     review.status = "FAILED";
+    review.failureStage = "GENERATE";
     review.executionLeaseToken = null;
     review.executionLeaseOwner = null;
     review.executionLeaseExpiresAt = null;

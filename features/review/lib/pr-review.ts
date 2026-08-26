@@ -1,14 +1,31 @@
-import { createOctokitClient } from "@/lib/github/github";
-import type { CodeSuggestion, StructuredIssue, RepeatBadgeInfo } from "@/features/ai";
+import type {
+  CodeSuggestion,
+  RepeatBadgeInfo,
+  StructuredIssue,
+} from "@/features/ai";
 import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "@/features/ai";
 import { normalizeSuggestionExplanation } from "@/features/ai/lib/suggestion-format";
+import { GITHUB_POST_TIMEOUT_MS } from "@/features/review/constants";
+import {
+  ISSUE_FIELD_LABELS,
+  REPEAT_BADGE_LABELS,
+  VERIFICATION_LABELS,
+} from "@/shared/constants";
 import type { LanguageCode } from "@/shared/types/language";
-import { ISSUE_FIELD_LABELS, REPEAT_BADGE_LABELS, VERIFICATION_LABELS } from "@/shared/constants";
+import {
+  buildGithubArtifactBody,
+  GithubArtifactBodyBudgetError,
+} from "@/lib/github/github-artifact-body";
+import { createOctokitClient } from "@/lib/github/github";
+import type { PostedGithubArtifact } from "@/lib/github/github-review-artifacts";
 
 type RepeatAnnotatedIssue = StructuredIssue & {
   repeat?: RepeatBadgeInfo | null;
   verifierConfirmed?: boolean;
 };
+
+export type MarkedCodeSuggestion = CodeSuggestion & { marker: string };
+export type MarkedReviewIssue = RepeatAnnotatedIssue & { marker: string };
 
 interface ReviewComment {
   path: string;
@@ -17,115 +34,150 @@ interface ReviewComment {
   body: string;
 }
 
-interface PostPRReviewParams {
+export interface PostPRReviewParams {
   token: string;
   owner: string;
   repo: string;
   prNumber: number;
-  reviewBody: string;
-  suggestions: CodeSuggestion[];
-  issues: RepeatAnnotatedIssue[];
+  reviewContent: string;
+  mainMarker: string;
+  suggestions: MarkedCodeSuggestion[];
   headSha: string;
-  langCode: LanguageCode;
-  beforeInlinePost(): Promise<void>;
 }
 
-/**
- * PR Review API로 인라인 suggestion 코멘트를 포스팅한다.
- * 전체 리뷰 요약은 review body에, 개별 제안은 inline comment로.
- *
- * ⚠️ 분리 포스팅 전략:
- * inline issues를 suggestions와 같은 createReview() 호출에 넣으면,
- * AI가 diff 범위 밖 line number를 생성한 경우 전체 호출이 422로 실패하여 정상 suggestions까지 손실된다.
- * suggestions는 before 필드로 diff 정합성을 검증할 수 있지만, issues는 검증 수단이 없다.
- * 따라서 suggestions 먼저 포스팅 → issues 별도 포스팅(실패 허용) 전략을 사용한다.
- */
-export async function postPRReviewWithSuggestions(params: PostPRReviewParams): Promise<void> {
-  const {
-    token,
-    owner,
-    repo,
-    prNumber,
-    reviewBody,
-    suggestions,
-    issues,
-    headSha,
-    langCode,
-    beforeInlinePost,
-  } = params;
-  const labels = ISSUE_FIELD_LABELS[langCode];
-  const octokit = createOctokitClient(token);
+export interface PostInlineReviewIssuesInput {
+  token: string;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  issues: MarkedReviewIssue[];
+  headSha: string;
+  langCode: LanguageCode;
+  beforePost(): Promise<void>;
+}
 
-  // suggestion comments
-  const suggestionComments: ReviewComment[] = suggestions.map((s) => {
-    const beforeLineCount = s.before.split("\n").length;
-    const comment: ReviewComment = {
-      path: s.file,
-      line: s.line + beforeLineCount - 1,
-      body: formatSuggestionComment(s),
-    };
-    if (beforeLineCount > 1) {
-      comment.startLine = s.line;
+export interface PostVerificationReviewInput {
+  token: string;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  headSha: string;
+  content: string;
+  marker: string;
+}
+
+function parsePostedAt(value: string | null | undefined): Date {
+  if (!value) {
+    throw new Error("GitHub review response is missing its timestamp");
+  }
+  const postedAt = new Date(value);
+  if (Number.isNaN(postedAt.getTime())) {
+    throw new Error("GitHub review response has an invalid timestamp");
+  }
+  return postedAt;
+}
+
+function createGithubRequestSignal(): AbortSignal {
+  return AbortSignal.timeout(GITHUB_POST_TIMEOUT_MS);
+}
+
+/** Posts the primary PR review and native suggestions in one GitHub request. */
+export async function postPRReviewWithSuggestions(
+  input: PostPRReviewParams,
+): Promise<PostedGithubArtifact> {
+  const octokit = createOctokitClient(input.token);
+  const comments: ReviewComment[] = input.suggestions.flatMap((suggestion) => {
+    const beforeLineCount = suggestion.before.split("\n").length;
+    try {
+      return [
+        {
+          path: suggestion.file,
+          line: suggestion.line + beforeLineCount - 1,
+          ...(beforeLineCount > 1 ? { startLine: suggestion.line } : {}),
+          body: buildGithubArtifactBody({
+            content: formatSuggestionComment(suggestion),
+            marker: suggestion.marker,
+          }),
+        },
+      ];
+    } catch (error) {
+      if (!(error instanceof GithubArtifactBodyBudgetError)) throw error;
+      console.warn("Oversized native suggestion was omitted from GitHub inline posting", {
+        file: suggestion.file,
+        line: suggestion.line,
+      });
+      return [];
     }
-    return comment;
+  });
+  const body = buildGithubArtifactBody({
+    content: input.reviewContent,
+    marker: input.mainMarker,
+    title: "AI Code Review",
   });
 
-  // issue comments (file+line 둘 다 있는 issues만 inline comment로)
-  // file-level issues (line: null)는 review body 테이블에 포함됨
-  // ⚠️ type predicate 사용 — plain .filter()는 TypeScript narrowing 불가
-  const inlineIssues = issues.filter(
-    (i): i is RepeatAnnotatedIssue & { file: string; line: number } =>
-      i.file !== null && i.line !== null
-  );
-  const issueComments: ReviewComment[] = inlineIssues.map((i) => ({
-    path: i.file,
-    line: i.line,
-    body: formatIssueComment(i, labels, REPEAT_BADGE_LABELS[langCode], VERIFICATION_LABELS[langCode]),
-  }));
-
-  // 1차 호출: suggestions + review body (summary + general issues 테이블)
-  await octokit.rest.pulls.createReview({
-    owner,
-    repo,
-    pull_number: prNumber,
-    commit_id: headSha,
-    body: `## AI Code Review\n\n${reviewBody}\n\n---\n*Generated by HReviewer*`,
+  const { data } = await octokit.rest.pulls.createReview({
+    owner: input.owner,
+    repo: input.repo,
+    pull_number: input.prNumber,
+    commit_id: input.headSha,
+    body,
     event: "COMMENT",
-    comments: suggestionComments.map(({ startLine, ...c }) => ({
-      ...c,
+    comments: comments.map(({ startLine, ...comment }) => ({
+      ...comment,
       ...(startLine ? { start_line: startLine } : {}),
     })),
+    request: { signal: createGithubRequestSignal() },
   });
-
-  // 2차 호출: inline issues — 실패해도 suggestions에 영향 없음
-  // ⚠️ line-specific issues(file+line)는 review body에 미포함 — 2차 호출 실패 시 유실됨
-  // general issues(line: null)만 review body 테이블에 포함되어 보존됨
-  if (issueComments.length > 0) {
-    await beforeInlinePost();
-    try {
-      await octokit.rest.pulls.createReview({
-        owner,
-        repo,
-        pull_number: prNumber,
-        commit_id: headSha,
-        // body 필드 생략 — body: "" 사용 시 GitHub PR Conversation 탭에 빈 review entry 생성됨
-        event: "COMMENT",
-        // issueComments는 startLine이 없으므로 (single-line만) 직접 전달
-        comments: issueComments.map(({ body, path, line }) => ({
-          path,
-          line,
-          body,
-        })),
-      });
-    } catch (error) {
-      console.warn("Inline issue comments failed (suggestions were posted successfully):", error);
-    }
+  if (data.id === null || data.id === undefined) {
+    throw new Error("GitHub review response is missing its ID");
   }
+
+  return {
+    id: String(data.id),
+    kind: "pull-request-review",
+    commitId: data.commit_id ?? null,
+    postedAt: parsePostedAt(data.submitted_at),
+  };
+}
+
+/** Posts persisted line issues as a best-effort advisory batch. */
+export async function postInlineReviewIssues(
+  input: PostInlineReviewIssuesInput,
+): Promise<void> {
+  const inlineIssues = input.issues.filter(
+    (issue): issue is MarkedReviewIssue & { file: string; line: number } =>
+      issue.file !== null && issue.line !== null,
+  );
+  if (inlineIssues.length === 0) return;
+
+  await input.beforePost();
+  const labels = ISSUE_FIELD_LABELS[input.langCode];
+  const octokit = createOctokitClient(input.token);
+  await octokit.rest.pulls.createReview({
+    owner: input.owner,
+    repo: input.repo,
+    pull_number: input.prNumber,
+    commit_id: input.headSha,
+    event: "COMMENT",
+    comments: inlineIssues.map((issue) => ({
+      path: issue.file,
+      line: issue.line,
+      body: buildGithubArtifactBody({
+        content: formatIssueComment(
+          issue,
+          labels,
+          REPEAT_BADGE_LABELS[input.langCode],
+          VERIFICATION_LABELS[input.langCode],
+        ),
+        marker: issue.marker,
+      }),
+    })),
+    request: { signal: createGithubRequestSignal() },
+  });
 }
 
 function formatSuggestionComment(suggestion: CodeSuggestion): string {
   const explanation = normalizeSuggestionExplanation(suggestion.explanation);
-
   return `${SEVERITY_EMOJI[suggestion.severity]} **${suggestion.severity}**: ${explanation}
 
 \`\`\`suggestion
@@ -139,57 +191,67 @@ function formatIssueComment(
   repeatLabels: { badge: string; context: string },
   verificationLabels: { badge: string },
 ): string {
-  const sev = `${SEVERITY_EMOJI[issue.severity]} ${issue.severity}`;
-  const cat = `${CATEGORY_EMOJI[issue.category]} ${issue.category}`;
-
-  // 방어적 기본값 — in-flight resume + 빈 값 대응
+  const severity = `${SEVERITY_EMOJI[issue.severity]} ${issue.severity}`;
+  const category = `${CATEGORY_EMOJI[issue.category]} ${issue.category}`;
   const title = (issue.title ?? "").trim();
-  const rawBody = (issue.body ?? (issue as { description?: string }).description ?? "").trim();
+  const rawBody = (
+    issue.body ??
+    (issue as { description?: string }).description ??
+    ""
+  ).trim();
   const impact = (issue.impact ?? "").trim();
   const recommendation = (issue.recommendation ?? "").trim();
-
-  // 문장 경계 검사 + body 빈값 skip guard
-  const titleSuffix = title && rawBody.startsWith(title) ? rawBody.slice(title.length) : null;
+  const titleSuffix =
+    title && rawBody.startsWith(title) ? rawBody.slice(title.length) : null;
   const body =
-    titleSuffix !== null && (titleSuffix === "" || /^[.,:;—\-]/.test(titleSuffix))
-      ? titleSuffix.replace(/^[\s.,:;—\-]+/, "")
+    titleSuffix !== null &&
+    (titleSuffix === "" || /^[\s.,:;-]/.test(titleSuffix))
+      ? titleSuffix.replace(/^[\s.,:;-]+/, "")
       : rawBody;
+  const lines = [`### ${severity} · ${category}${title ? ` — ${title}` : ""}`];
 
-  const lines: string[] = [
-    `### ${sev} · ${cat}${title ? ` — ${title}` : ""}`,
-  ];
   if (issue.repeat) {
-    lines.push("", `> ⚠️ **${repeatLabels.badge}** — ${repeatLabels.context} ${issue.repeat.prUrl} (${issue.repeat.date})`);
+    lines.push(
+      "",
+      `> 🔁 **${repeatLabels.badge}** — ${repeatLabels.context} ${issue.repeat.prUrl} (${issue.repeat.date})`,
+    );
   }
   if (issue.verifierConfirmed) {
     lines.push("", `> ✅ **${verificationLabels.badge}**`);
   }
   if (body) lines.push("", body);
   if (impact) lines.push("", `**${labels.impact}:** ${impact}`);
-  if (recommendation) lines.push("", `**${labels.recommendation}:** ${recommendation}`);
+  if (recommendation) {
+    lines.push("", `**${labels.recommendation}:** ${recommendation}`);
+  }
   return lines.join("\n");
-  // SYNC:formatIssueBody — review-formatter.ts · structured-review-body.tsx 와 동일 로직 유지
 }
 
-/** 검수자 명의(동일 계정)의 body-only 리뷰 엔트리 게시.
- *  인라인 코멘트 없음 — body가 있는 review는 PR Conversation 탭에 별도 리뷰 카드로 나타난다
- *  (위 postPRReviewWithSuggestions 2차 호출의 "body 필드 생략" 주석과 동일 근거의 역방향 활용). */
-export async function postVerificationReview(params: {
-  token: string;
-  owner: string;
-  repo: string;
-  prNumber: number;
-  headSha: string;
-  body: string;
-}): Promise<void> {
-  const { token, owner, repo, prNumber, headSha, body } = params;
-  const octokit = createOctokitClient(token);
-  await octokit.rest.pulls.createReview({
-    owner,
-    repo,
-    pull_number: prNumber,
-    commit_id: headSha,
+export async function postVerificationReview(
+  input: PostVerificationReviewInput,
+): Promise<PostedGithubArtifact> {
+  const octokit = createOctokitClient(input.token);
+  const body = buildGithubArtifactBody({
+    content: input.content,
+    marker: input.marker,
+  });
+  const { data } = await octokit.rest.pulls.createReview({
+    owner: input.owner,
+    repo: input.repo,
+    pull_number: input.prNumber,
+    commit_id: input.headSha,
     body,
     event: "COMMENT",
+    request: { signal: createGithubRequestSignal() },
   });
+  if (data.id === null || data.id === undefined) {
+    throw new Error("GitHub review response is missing its ID");
+  }
+
+  return {
+    id: String(data.id),
+    kind: "pull-request-review",
+    commitId: data.commit_id ?? null,
+    postedAt: parsePostedAt(data.submitted_at),
+  };
 }

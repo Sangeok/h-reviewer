@@ -120,6 +120,8 @@ type FactualReview = {
   executionLeaseToken: string | null;
   executionLeaseOwner: ReviewExecutionLeaseOwner | null;
   githubMainPostedAt: Date | null;
+  review: string;
+  artifactLookupMissedAt: Date | null;
 };
 
 type SupersededReviewIdentity = {
@@ -273,6 +275,8 @@ async function findFactualReview(
       executionLeaseToken: true,
       executionLeaseOwner: true,
       githubMainPostedAt: true,
+      review: true,
+      artifactLookupMissedAt: true,
     },
   });
 }
@@ -521,6 +525,8 @@ export async function createReviewRequest(
           executionLeaseToken: true,
           executionLeaseOwner: true,
           githubMainPostedAt: true,
+          review: true,
+          artifactLookupMissedAt: true,
         },
       });
 
@@ -561,6 +567,8 @@ export async function createReviewRequest(
         executionLeaseToken: true,
         executionLeaseOwner: true,
         githubMainPostedAt: true,
+        review: true,
+        artifactLookupMissedAt: true,
       },
     });
 
@@ -619,7 +627,12 @@ export async function retryReviewRequest(
 ): Promise<CreateReviewRequestResult> {
   const review = await findFactualReview({ id: reviewId }, dependencies);
 
-  if (!review || review.status !== "FAILED") {
+  if (
+    !review ||
+    review.status !== "FAILED" ||
+    review.failureStage === null ||
+    review.failureStage === "LEGACY"
+  ) {
     throw new ReviewStateConflictError(
       `Review ${reviewId} is not available for retry`,
     );
@@ -627,6 +640,21 @@ export async function retryReviewRequest(
 
   const now = dependencies.now();
   const queueLeaseToken = randomUUID();
+  const isPersistedPostingRetry =
+    (review.failureStage === "POST" || review.failureStage === "RECONCILE") &&
+    review.review.trim().length > 0 &&
+    review.lastCompletedStage !== null &&
+    [
+      "PERSISTED",
+      "MAIN_POSTED",
+      "INLINE_POSTED",
+      "VERIFICATION_POSTED",
+    ].includes(review.lastCompletedStage);
+  const postingRecovery = isPersistedPostingRetry
+    ? review.failureStage === "POST"
+      ? "LOOKUP_ONLY"
+      : "REPOST_CONFIRMED_ABSENT"
+    : undefined;
   const { attempt } = await dependencies.prisma.$transaction((client) =>
     retryFailedReviewExecution(
       {
@@ -634,6 +662,8 @@ export async function retryReviewRequest(
         attempt: review.attemptCount,
         queueLeaseToken,
         now,
+        preservePersistedStage: isPersistedPostingRetry,
+        postingRecovery,
       },
       client,
     ),

@@ -77,7 +77,7 @@ describe("formatStructuredReviewToMarkdown — 결론 줄", () => {
 });
 
 describe("formatStructuredReviewToMarkdown — 발견된 문제점", () => {
-  it("file+line 이슈는 한 줄 요약으로 렌더하고 전문은 본문에 넣지 않는다", () => {
+  it("file+line 이슈도 위치와 전문을 main body에 보존한다", () => {
     const md = formatStructuredReviewToMarkdown(
       makeOutput({
         issues: [
@@ -86,8 +86,10 @@ describe("formatStructuredReviewToMarkdown — 발견된 문제점", () => {
       }),
       "ko",
     );
-    expect(md).toContain("`lib/db.ts:15` — 널 체크 누락");
-    expect(md).not.toContain("워커 점유"); // impact 전문은 인라인 코멘트 몫
+    expect(md).toContain("`lib/db.ts:15` - 널 체크 누락");
+    expect(md).toContain("지적 본문");
+    expect(md).toContain("워커 점유");
+    expect(md).toContain("권장 조치");
     expect(md).toContain("발견된 문제점 (1)");
     expect(md).toContain("1:1");
   });

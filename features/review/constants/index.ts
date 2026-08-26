@@ -10,3 +10,7 @@ export const REVIEW_PREVIEW_MAX_CHARS = 300;
 export const REVIEW_QUEUE_LEASE_MS = 30 * 60 * 1000;
 
 export const REVIEW_EXECUTION_LEASE_MS = 15 * 60 * 1000;
+
+export const GITHUB_POST_TIMEOUT_MS = 60 * 1000;
+
+export const GITHUB_ARTIFACT_ABSENCE_GRACE_MS = 10 * 60 * 1000;

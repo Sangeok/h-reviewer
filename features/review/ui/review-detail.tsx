@@ -13,6 +13,7 @@ import type { StoredReviewData } from "@/features/ai";
 import type { LanguageCode } from "@/shared/types/language";
 import { StructuredReviewBody } from "./parts/structured-review-body";
 import { VerificationPanel } from "./parts/verification-panel";
+import { ReviewRetryButton } from "./parts/review-retry-button";
 import {
   getReviewStatusPresentation,
   ReviewStatusBadge,
@@ -87,6 +88,7 @@ export default function ReviewDetail({
                     : "Retry is unavailable for this legacy failure."}
                 </p>
               )}
+              {isRetryableFailure && <ReviewRetryButton reviewId={review.id} />}
             </div>
           ) : structuredData ? (
             <StructuredReviewBody
