@@ -7,6 +7,7 @@ import {
   renewReviewExecutionLease,
   transitionReviewExecution,
 } from "@/features/review/lib/review-execution-state";
+import { assertCurrentReviewHead } from "@/features/review/lib/review-head-guard";
 import { getLanguageName, isValidLanguageCode } from "@/features/settings";
 import prisma from "@/lib/db";
 import { getPullRequestDiff, postReviewComment } from "@/lib/github/github";
@@ -32,6 +33,7 @@ export type SummaryWorkerDependencies = {
   postReviewComment: typeof postReviewComment;
   generateText: typeof generateText;
   createGeneratorModel: typeof google;
+  assertCurrentReviewHead: typeof assertCurrentReviewHead;
   now(): Date;
 };
 
@@ -67,6 +69,33 @@ async function getBoundGithubToken(
   }
 
   return account.accessToken;
+}
+
+async function assertAndRenewCurrentSummaryHead(input: {
+  dependencies: SummaryWorkerDependencies;
+  reviewRequest: ClaimedSummaryRequest;
+  attempt: number;
+  leaseToken: string;
+  allowedStatuses: readonly ("RUNNING" | "POSTING")[];
+}): Promise<void> {
+  await input.dependencies.assertCurrentReviewHead({
+    reviewId: input.reviewRequest.id,
+    attempt: input.attempt,
+    leaseToken: input.leaseToken,
+    expectedHeadSha: input.reviewRequest.headSha,
+    allowedStatuses: input.allowedStatuses,
+  });
+  await renewReviewExecutionLease(
+    {
+      reviewId: input.reviewRequest.id,
+      attempt: input.attempt,
+      leaseToken: input.leaseToken,
+      leaseOwner: "WORKER",
+      allowedStatuses: input.allowedStatuses,
+      now: input.dependencies.now(),
+    },
+    input.dependencies.prisma,
+  );
 }
 
 export function createGenerateSummaryHandler(
@@ -141,26 +170,6 @@ export function createGenerateSummaryHandler(
           prNumber,
         });
 
-        if (data.headSha !== reviewRequest.headSha) {
-          await transitionReviewExecution(
-            {
-              reviewId,
-              attempt,
-              leaseToken,
-              leaseOwner: "WORKER",
-              now: dependencies.now(),
-              from: ["RUNNING"],
-              to: "FAILED",
-              failure: {
-                stage: "FETCH",
-                message: "The pull request head changed before summary execution.",
-              },
-            },
-            dependencies.prisma,
-          );
-          return null;
-        }
-
         return data;
       } catch {
         await transitionReviewExecution(
@@ -189,17 +198,13 @@ export function createGenerateSummaryHandler(
 
     const { diff, title, description, headSha } = pullRequest;
     const summary = await step.run("generate-ai-summary", async () => {
-      await renewReviewExecutionLease(
-        {
-          reviewId,
-          attempt,
-          leaseToken,
-          leaseOwner: "WORKER",
-          allowedStatuses: ["RUNNING"],
-          now: dependencies.now(),
-        },
-        dependencies.prisma,
-      );
+      await assertAndRenewCurrentSummaryHead({
+        dependencies,
+        reviewRequest,
+        attempt,
+        leaseToken,
+        allowedStatuses: ["RUNNING"],
+      });
       const langCode = isValidLanguageCode(reviewRequest.langCode)
         ? reviewRequest.langCode
         : "en";
@@ -265,18 +270,14 @@ export function createGenerateSummaryHandler(
     );
 
     await step.run("post-comment", async () => {
-      await renewReviewExecutionLease(
-        {
-          reviewId,
-          attempt,
-          leaseToken,
-          leaseOwner: "WORKER",
-          allowedStatuses: ["POSTING"],
-          now: dependencies.now(),
-        },
-        dependencies.prisma,
-      );
       const token = await getBoundGithubToken(dependencies, reviewRequest);
+      await assertAndRenewCurrentSummaryHead({
+        dependencies,
+        reviewRequest,
+        attempt,
+        leaseToken,
+        allowedStatuses: ["POSTING"],
+      });
       await dependencies.postReviewComment(
         token,
         owner,
@@ -335,11 +336,22 @@ const defaultSummaryWorkerDependencies: SummaryWorkerDependencies = {
   postReviewComment,
   generateText,
   createGeneratorModel: google,
+  assertCurrentReviewHead,
   now: () => new Date(),
 };
 
 export const generateSummary = inngest.createFunction(
-  { id: "generate-summary" },
+  {
+    id: "generate-summary",
+    cancelOn: [
+      {
+        event: "pr.review.superseded",
+        if:
+          "async.data.reviewId == event.data.reviewId && " +
+          "async.data.attempt == event.data.attempt",
+      },
+    ],
+  },
   { event: "pr.summary.requested" },
   createGenerateSummaryHandler(defaultSummaryWorkerDependencies),
 );

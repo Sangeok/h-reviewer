@@ -84,6 +84,14 @@ type ReviewRequestEvent =
         reviewId: string;
         attempt: number;
       };
+    }
+  | {
+      id: string;
+      name: "pr.review.superseded";
+      data: {
+        reviewId: string;
+        attempt: number;
+      };
     };
 
 export type ReviewRequestDependencies = {
@@ -105,11 +113,18 @@ type FactualReview = {
   repositoryId: string;
   prNumber: number;
   reviewType: "FULL_REVIEW" | "SUMMARY";
+  headSha: string | null;
   lastCompletedStage: ReviewExecutionStage | null;
   failureStage: ReviewFailureStage | null;
   executionLeaseExpiresAt: Date | null;
   executionLeaseToken: string | null;
   executionLeaseOwner: ReviewExecutionLeaseOwner | null;
+  githubMainPostedAt: Date | null;
+};
+
+type SupersededReviewIdentity = {
+  reviewId: string;
+  attempt: number;
 };
 
 const DEFAULT_NONCE = "default";
@@ -251,13 +266,36 @@ async function findFactualReview(
       repositoryId: true,
       prNumber: true,
       reviewType: true,
+      headSha: true,
       lastCompletedStage: true,
       failureStage: true,
       executionLeaseExpiresAt: true,
       executionLeaseToken: true,
       executionLeaseOwner: true,
+      githubMainPostedAt: true,
     },
   });
+}
+
+async function sendSupersededReviewEvents(input: {
+  reviews: readonly SupersededReviewIdentity[];
+  dependencies: ReviewRequestDependencies;
+}): Promise<void> {
+  for (const review of input.reviews) {
+    try {
+      await input.dependencies.sendEvent({
+        id: `hreviewer:review-superseded:${review.reviewId}:${review.attempt}`,
+        name: "pr.review.superseded",
+        data: review,
+      });
+    } catch (error) {
+      console.warn("Superseded review cancellation event could not be sent", {
+        reviewId: review.reviewId,
+        attempt: review.attempt,
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
+    }
+  }
 }
 
 async function finalizeDispatch(input: {
@@ -406,9 +444,39 @@ export async function createReviewRequest(
   );
 
   let createdReview: FactualReview;
+  let supersededReviews: SupersededReviewIdentity[] = [];
 
   try {
-    createdReview = await dependencies.prisma.$transaction(async (client) => {
+    const transactionResult = await dependencies.prisma.$transaction(async (client) => {
+      const supersededReviews = await client.review.updateManyAndReturn({
+        where: {
+          repositoryId: repository.id,
+          prNumber: input.prNumber,
+          reviewType: input.reviewType,
+          headSha: { not: snapshot.headSha },
+          status: { in: ["PENDING", "RUNNING", "POSTING"] },
+          githubMainPostedAt: null,
+        },
+        data: {
+          status: "SUPERSEDED",
+          failureStage: null,
+          failureMessage: null,
+          executionLeaseExpiresAt: null,
+          executionLeaseToken: null,
+          executionLeaseOwner: null,
+        },
+        select: {
+          id: true,
+          attemptCount: true,
+        },
+      });
+      const superseded = supersededReviews
+        .sort((left, right) => left.id.localeCompare(right.id))
+        .map((review) => ({
+          reviewId: review.id,
+          attempt: review.attemptCount,
+        }));
+
       const review = await client.review.create({
         data: {
           repositoryId: repository.id,
@@ -446,11 +514,13 @@ export async function createReviewRequest(
           repositoryId: true,
           prNumber: true,
           reviewType: true,
+          headSha: true,
           lastCompletedStage: true,
           failureStage: true,
           executionLeaseExpiresAt: true,
           executionLeaseToken: true,
           executionLeaseOwner: true,
+          githubMainPostedAt: true,
         },
       });
 
@@ -465,8 +535,10 @@ export async function createReviewRequest(
         );
       }
 
-      return review;
+      return { review, superseded };
     });
+    createdReview = transactionResult.review;
+    supersededReviews = transactionResult.superseded;
   } catch (error) {
     if (!isRequestKeyUniqueConflict(error)) {
       throw error;
@@ -482,11 +554,13 @@ export async function createReviewRequest(
         repositoryId: true,
         prNumber: true,
         reviewType: true,
+        headSha: true,
         lastCompletedStage: true,
         failureStage: true,
         executionLeaseExpiresAt: true,
         executionLeaseToken: true,
         executionLeaseOwner: true,
+        githubMainPostedAt: true,
       },
     });
 
@@ -517,6 +591,11 @@ export async function createReviewRequest(
       status: existingReview.status,
     };
   }
+
+  await sendSupersededReviewEvents({
+    reviews: supersededReviews,
+    dependencies,
+  });
 
   return finalizeDispatch({
     review: createdReview,

@@ -494,12 +494,14 @@ export async function commitFileUpdate(params: CommitFileUpdateParams): Promise<
  * PR Head : PR을 생성한 브랜치
  * PR Base : PR을 target으로 하는 브랜치
  */
-export async function getPullRequestHeadInfo(
-  token: string,
-  owner: string,
-  repo: string,
-  prNumber: number
-): Promise<{
+export type GetPullRequestHeadInfoInput = {
+  token: string;
+  owner: string;
+  repo: string;
+  prNumber: number;
+};
+
+export type PullRequestHeadInfo = {
   branch: string;
   headSha: string;
   state: string;
@@ -507,7 +509,12 @@ export async function getPullRequestHeadInfo(
   headRepoOwner: string;
   headRepoName: string;
   isFork: boolean;
-}> {
+};
+
+export async function getPullRequestHeadInfo(
+  input: GetPullRequestHeadInfoInput,
+): Promise<PullRequestHeadInfo> {
+  const { token, owner, repo, prNumber } = input;
   const octokit = createOctokitClient(token);
 
   // Get a pull request information
@@ -516,17 +523,19 @@ export async function getPullRequestHeadInfo(
   });
 
   const headRepo = pr.head.repo;
-
-  // Check if the PR is from a fork
-  const isFork = headRepo ? headRepo.full_name !== `${owner}/${repo}` : false;
+  const headRepoOwner = headRepo?.owner?.login ?? owner;
+  const headRepoName = headRepo?.name ?? repo;
+  const isFork = headRepo
+    ? headRepoOwner !== owner || headRepoName !== repo
+    : false;
 
   return {
     branch: pr.head.ref,
     headSha: pr.head.sha,
     state: pr.state,
     merged: pr.merged,
-    headRepoOwner: headRepo?.owner?.login ?? owner,
-    headRepoName: headRepo?.name ?? repo,
+    headRepoOwner,
+    headRepoName,
     isFork,
   };
 }
