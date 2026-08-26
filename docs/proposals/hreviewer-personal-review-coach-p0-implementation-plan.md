@@ -1,14 +1,14 @@
 # HReviewer 개인 리뷰 코치 P0 구현 상세 계획
 
-> 상태: **T01-T06 완료 — T07 NEXT; T09 generation target 결정 완료, lifecycle·품질 release gate 유지**
+> 상태: **T01-T07 완료 — T08 NEXT; T09 generation target 결정 완료, lifecycle·품질 release gate 유지**
 >
 > 기준일: <code>2026-08-25</code>
 >
-> 코드 기준: <code>897ffec8cb64d3dc1c3071e8edd161210b0d336e</code>
+> 코드 기준: <code>70720d58e595367ae2472708aa80c87a1ee50849</code>
 >
-> 재조정 기준: <code>2026-08-26 Asia/Seoul</code>. 직접 source bundle은 이 문서, 상위 로드맵(<code>SHA-256 777735cad6fb7bf62336eaaf154e3a61351c0936b8f944594b2e37c751d3c990</code>), 기존 RAG 제거 평가(<code>SHA-256 eabb894aa36a1d6bdeac72c8dd1cbad88788bda64ee3a8e69c4b90f2dbd72b0a</code>)다.
+> 재조정 기준: <code>2026-08-26 Asia/Seoul</code>. 직접 source bundle은 이 문서, 상위 로드맵(<code>SHA-256 bd7002179972a6c918641435982261f3b9cc7b0850df0f976e65dd03a5755124</code>), 기존 RAG 제거 평가(<code>SHA-256 eabb894aa36a1d6bdeac72c8dd1cbad88788bda64ee3a8e69c4b90f2dbd72b0a</code>)다.
 >
-> candidate inventory는 <code>git ls-files -- app components features inngest lib prisma scripts package.json package-lock.json vitest.config.ts tsconfig.json next.config.ts eslint.config.mjs .gitignore</code> 결과를 ordinal 정렬하고 각 repository-relative path를 LF로 연결한 뒤 마지막 LF를 붙인 UTF-8 bytes다. T06 시작 commit에서 <code>228</code>개, <code>SHA-256 e8b0117fd649acb79445d2e5704649f15470f9c502fac6be2f7db57a00f8f5d9</code>이며 task 시작 시 같은 방식으로 다시 계산한다.
+> candidate inventory는 <code>git ls-files -- app components features inngest lib prisma scripts package.json package-lock.json vitest.config.ts tsconfig.json next.config.ts eslint.config.mjs .gitignore</code> 결과를 ordinal 정렬하고 각 repository-relative path를 LF로 연결한 뒤 마지막 LF를 붙인 UTF-8 bytes다. T07 시작 commit에서 <code>234</code>개, <code>SHA-256 06846fb1bb05490fe38ca6645982a3f1a6064e0e76858af931723fdce57fa722</code>이며 task 시작 시 같은 방식으로 다시 계산한다.
 >
 > 상위 문서: [HReviewer 개인 코드 리뷰 코치 실행 제안서](./hreviewer-personal-review-coach-roadmap.md)
 >
@@ -1361,10 +1361,10 @@ export async function getPullRequestHeadInfo(
 - 생성: <code>features/review/lib/retry-review-request.test.ts</code>
 - 생성: <code>features/review/ui/parts/review-retry-button.tsx</code>
 - 생성: <code>features/review/ui/parts/review-retry-button.test.tsx</code>
-- 수정: <code>features/review/actions/index.ts</code>
 - 수정: <code>features/review/ui/review-detail.tsx</code>
+- 수정: <code>features/review/ui/review-detail.test.tsx</code>
 - 수정: <code>features/review/lib/pr-review.ts</code>
-- 생성: <code>features/review/lib/pr-review.test.ts</code>
+- 수정: <code>features/review/lib/pr-review.test.ts</code>
 - 수정: <code>features/ai/lib/review-formatter.ts</code>
 - 수정: <code>features/ai/lib/review-formatter.test.ts</code>
 - 수정: <code>features/ai/lib/suggestion-format.ts</code>
@@ -1376,6 +1376,7 @@ export async function getPullRequestHeadInfo(
 - 수정: <code>features/review/lib/review-execution-state.ts</code>
 - 수정: <code>features/review/lib/review-execution-state.test.ts</code>
 - 수정: <code>features/review/lib/review-request.ts</code>
+- 수정: <code>features/review/lib/review-request.test.ts</code>
 - 수정: <code>features/review/constants/index.ts</code>
 - 수정: <code>inngest/functions/review.ts</code>
 - 수정: <code>inngest/functions/review.test.ts</code>
@@ -1478,6 +1479,8 @@ main review와 suggestion은 한 <code>pulls.createReview</code>에 포함할 �
 #### retry
 
 <code>retryReview</code> server action은 <code>requireAuthSession()</code> 뒤 Review -> Repository의 userId를 함께 조건으로 조회한다. 다른 사용자의 Review ID는 not-found 결과로 통일한다.
+
+클라이언트 retry button은 <code>"use server"</code> action barrel에서 재수출하지 않고 <code>features/review/actions/retry-review.ts</code>를 직접 import한다. Next.js가 server action module에서 async function 이외의 runtime 재수출을 금지하므로 기존 action barrel의 export surface는 변경하지 않는다.
 
 - retryable stage: QUEUE, FETCH, GENERATE, VERIFY, PERSIST, POST, RECONCILE
 - COMPLETED와 SUPERSEDED는 retry 불가

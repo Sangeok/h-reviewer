@@ -1,6 +1,6 @@
 # HReviewer 개인 코드 리뷰 코치 실행 제안서
 
-> 상태: **Proposed — T06 완료·T07 NEXT**
+> 상태: **Proposed — T07 완료·T08 NEXT**
 >
 > 작성일: `2026-08-17`
 >
@@ -110,7 +110,7 @@ HReviewer가 먼저 이겨야 하는 지점은 다음 세 가지다.
 
 - 한 구현 주기와 한 PR에서는 **하나의 task만** 수행한다. 같은 파일을 후속 task도 수정하더라도 현재 task의 완료 조건에 필요한 동작만 변경한다.
 - 상태는 `NEXT`, `WAITING`, `IN_PROGRESS`, `BLOCKED`, `COMPLETED`만 사용한다.
-- `NEXT` 또는 `IN_PROGRESS`는 전체 로드맵에서 하나만 존재한다. 현재 active task는 `NEXT` 상태의 T07이다.
+- `NEXT` 또는 `IN_PROGRESS`는 전체 로드맵에서 하나만 존재한다. 현재 active task는 `NEXT` 상태의 T08이다.
 - task를 시작할 때 상태를 `NEXT -> IN_PROGRESS`로 바꾸고, 현재 코드의 실제 owner, public API, import consumer, 테스트와 생성 artifact를 다시 inventory한다.
 - 완료 조건과 섹션 15의 검증을 모두 통과해야 `COMPLETED`로 바꿀 수 있다. 실패한 검증이나 미결정 사항이 있으면 `BLOCKED`로 기록하고 다음 task를 열지 않는다.
 - 완료 시 바로 다음 task만 `WAITING -> NEXT`로 바꾼다. 후속 task의 구현을 현재 task로 당겨오지 않는다.
@@ -131,8 +131,8 @@ HReviewer가 먼저 이겨야 하는 지점은 다음 세 가지다.
 | 4 | T04. GitHub webhook idempotency | P0 | `COMPLETED` | 1주차 | T03 |
 | 5 | T05. 명령 권한 검사와 `review` 라우팅 | P0 | `COMPLETED` | 1주차 | T04 |
 | 6 | T06. head supersede, debounce, stale-post 방지 | P0 | `COMPLETED` | 2주차 | T05 |
-| 7 | T07. 실패 복구와 lossless GitHub 게시 | P0 | `NEXT` | 2주차 | T06 |
-| 8 | T08. 무료 5회 체험과 상품 UI 정합성 | P0 | `WAITING` | 2주차 | T07 |
+| 7 | T07. 실패 복구와 lossless GitHub 게시 | P0 | `COMPLETED` | 2주차 | T06 |
+| 8 | T08. 무료 5회 체험과 상품 UI 정합성 | P0 | `NEXT` | 2주차 | T07 |
 | 9 | T09. generation 모델 마이그레이션·품질 평가와 P0 release gate | P0 | `WAITING` | 2주차 | T08 |
 | 10 | T10. issue 피드백 데이터 모델과 API | P1 | `WAITING` | 3주차 | T09 + P0 gate |
 | 11 | T11. 리뷰 상세 피드백 UI | P1 | `WAITING` | 3주차 | T10 |
@@ -187,6 +187,7 @@ task를 `COMPLETED`로 바꿀 때 아래 형식의 행을 이 표에 추가한�
 | T04 | 2026-08-25 | <code>lib/github/github-webhook-delivery.ts</code>와 단위·PostgreSQL integration 테스트, <code>features/review/lib/review-request.ts</code>와 단위·integration 테스트, AI action transport type·전달 테스트, route-private webhook handler·route 테스트, 두 proposal 문서 | migration·schema·추적 env 변경 없음; 기존 ignored <code>.env.local</code>의 전용 Neon <code>hreviewer_test</code> Direct connection만 사용하고 secret은 기록하지 않음 | T04 전용 53개 통과; 전체 232개 통과·환경 의존 6개 스킵; T02-T04 PostgreSQL gate 5개 통과; lint 오류 0개·기존 경고 1개; typecheck·production build 통과 | 준비 script가 전용 database의 <code>public</code> schema와 17개 migration·필수 table을 재확인; delivery 동시 acquire가 정확히 1개 owner로 수렴하고 Review create+delivery bind의 lease 실패 rollback을 검증; 실제 GitHub redelivery·write, Inngest Cloud, Google AI, production DB 요청은 실행하지 않음 | GitHub UI/API manual redelivery fixture는 Approval-after이며 자동 redelivery scheduler는 P0 범위 밖; collaborator 권한과 <code>review</code> command 라우팅은 T05 소유 | T05 |
 | T05 | 2026-08-25 | <code>features/ai/utils/command-parser.ts</code>와 신규 parser 테스트, AI command·review action type 및 source 전달 테스트, <code>lib/github/github.ts</code>의 collaborator permission helper와 테스트, route-private webhook handler와 테스트, 두 proposal 문서 | migration·schema·추적 env 변경 없음; 기존 ignored <code>.env.local</code>의 전용 Neon <code>hreviewer_test</code> Direct connection만 사용하고 secret은 기록하지 않음 | T05 전용 79개 통과; 전체 272개 통과·환경 의존 6개 스킵; T02-T05 PostgreSQL gate 5개 통과; lint 오류 0개·기존 경고 1개; typecheck·production build 통과 | 준비 script가 전용 database의 <code>public</code> schema와 17개 migration·필수 table을 재확인; GitHub legacy permission의 maintain→write·triage→read 계약, 404 무권한과 transient 실패 전파를 fixture로 검증; 실제 GitHub issue comment·permission·write, Inngest Cloud, Google AI, production DB 요청은 실행하지 않음 | 실제 public PR의 write/read 사용자 comment와 GitHub permission endpoint를 잇는 수동 fixture는 Approval-after; debounce·supersede·stale head 방지는 T06 소유 | T06 |
 | T06 | 2026-08-26 | <code>inngest/functions/schedule-automatic-review.ts</code>와 테스트, exact 세 함수 registry·route 테스트, 자동·수동 dispatch 분기, <code>review-request.ts</code>의 같은 type·다른 head supersede와 단위·PostgreSQL 테스트, 신규 <code>review-head-guard.ts</code>와 테스트, review·summary worker와 post helper의 generation/post guard, 객체 입력 GitHub head helper·suggestion consumer와 테스트, 두 proposal 문서 | migration·schema·추적 env 변경 없음; 기존 ignored <code>.env.local</code>의 전용 Neon <code>hreviewer_test</code> Direct connection만 사용하고 secret은 기록하지 않음 | T06 전용 84개 통과; 전체 292개 통과·환경 의존 6개 스킵; T02-T06 PostgreSQL gate 5개 통과; lint 오류 0개·기존 경고 1개; typecheck·production build 통과 | 15초 latest-event debounce config와 durable <code>step.sendEvent()</code>, exact reviewId·attempt cancel predicate, Review type 격리, lease-fenced head/state guard, main·fallback·inline·verification·summary 게시 직전 guard를 fixture로 검증; 준비 script가 전용 database의 <code>public</code> schema와 17개 migration·필수 table을 재확인; 실제 GitHub write, Inngest Cloud, Google AI, production DB 요청은 실행하지 않음 | 실제 head A/B push와 Inngest Cloud debounce/cancel 동작을 잇는 수동 fixture는 Approval-after; marker 기반 게시 복구와 DB-before-post는 T07 소유, credit release는 T08 소유 | T07 |
+| T07 | 2026-08-26 | review artifact marker·공용 body builder·GitHub pagination lookup과 테스트, review·summary posting wrapper와 worker의 DB-before-post·artifact checkpoint·<code>onFailure</code>, stale reconciler와 exact 네 함수 registry, stage-aware retry action·UI·실행 상태 helper, lossless formatter·structured body와 두 proposal 문서 | migration·schema·추적 env 변경 없음; 기존 ignored <code>.env.local</code>의 전용 Neon <code>hreviewer_test</code> Direct connection만 사용하고 secret은 기록하지 않음 | T07 전용 144개 통과; 전체 330개 통과·환경 의존 6개 스킵; T02-T07 PostgreSQL gate 5개 통과; lint 오류 0개·기존 경고 1개; typecheck·production build 통과 | 공용 builder의 exact marker·60,000/60,001 UTF-8 byte 경계, 작성자·head 신뢰 lookup, deterministic 422 fallback, DB-before-post, artifact completion guard, retry AI 0회, reconciler lease CAS와 spaced miss를 fixture로 검증; 준비 script가 전용 database의 <code>public</code> schema와 17개 migration·필수 table을 재확인; 실제 GitHub write, Inngest Cloud, Google AI, production DB 요청은 실행하지 않음 | 실제 post timeout·read-after-write와 Inngest Cloud cron/onFailure 수동 fixture는 Approval-after; trial credit의 원자적 consume/release와 disconnect lock은 T08, production cutover는 T09 소유 | T08 |
 
 ## 7. P0 — 신뢰성과 첫 경험
 

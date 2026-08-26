@@ -7,6 +7,9 @@ import type { ReviewStatus } from "@/lib/generated/prisma/enums";
 import {
   acknowledgeReviewDispatch,
   claimReviewExecution,
+  checkpointReviewExecution,
+  completeReviewExecution,
+  recordGithubMainArtifact,
   renewReviewExecutionLease,
   retryFailedReviewExecution,
   ReviewStateConflictError,
@@ -136,6 +139,11 @@ describe("review execution state", () => {
 
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: expect.objectContaining({
+          review: { not: "" },
+          githubMainReviewId: { not: null },
+          githubMainPostedAt: { not: null },
+        }),
         data: expect.objectContaining({
           status: "COMPLETED",
           executionLeaseExpiresAt: null,
@@ -163,6 +171,89 @@ describe("review execution state", () => {
         }),
       }),
     );
+  });
+
+  it("records a trusted primary artifact at MAIN_POSTED under the exact fence", async () => {
+    await recordGithubMainArtifact(
+      {
+        reviewId: "review-1",
+        attempt: 1,
+        leaseToken: "lease-token-1",
+        leaseOwner: "WORKER",
+        from: ["POSTING"],
+        artifactId: "github-review-7",
+        postedAt: NOW,
+        now: NOW,
+      },
+      client,
+    );
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        review: { not: "" },
+        status: { in: ["POSTING"] },
+        executionLeaseToken: "lease-token-1",
+      }),
+      data: expect.objectContaining({
+        githubMainReviewId: "github-review-7",
+        githubMainPostedAt: NOW,
+        lastCompletedStage: "MAIN_POSTED",
+      }),
+    });
+  });
+
+  it("records a durable stage checkpoint while renewing the same lease", async () => {
+    await checkpointReviewExecution(
+      {
+        reviewId: "review-1",
+        attempt: 1,
+        leaseToken: "lease-token-1",
+        leaseOwner: "WORKER",
+        allowedStatuses: ["RUNNING"],
+        now: NOW,
+        stage: "FETCHED",
+      },
+      client,
+    );
+
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          lastCompletedStage: "FETCHED",
+          executionLeaseExpiresAt: LEASE_EXPIRES_AT,
+        },
+      }),
+    );
+  });
+
+  it("guards worker and reconciler completion with persisted body and artifact", async () => {
+    await completeReviewExecution(
+      {
+        reviewId: "review-1",
+        attempt: 1,
+        leaseToken: "lease-token-1",
+        leaseOwner: "RECONCILER",
+        from: ["FAILED"],
+        now: NOW,
+      },
+      client,
+    );
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        status: { in: ["FAILED"] },
+        review: { not: "" },
+        githubMainReviewId: { not: null },
+        githubMainPostedAt: { not: null },
+        lastCompletedStage: {
+          in: ["MAIN_POSTED", "INLINE_POSTED", "VERIFICATION_POSTED"],
+        },
+      }),
+      data: expect.objectContaining({
+        status: "COMPLETED",
+        executionLeaseToken: null,
+      }),
+    });
   });
 
   it("allows only one concurrent worker claim to rotate the queue lease", async () => {

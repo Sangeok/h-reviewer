@@ -1,9 +1,14 @@
+import { randomUUID } from "node:crypto";
+
 import { google } from "@ai-sdk/google";
 import { generateText } from "ai";
 
 import { GENERATOR_MODEL_ID, stripFencedCodeBlocks } from "@/features/ai";
 import {
   claimReviewExecution,
+  checkpointReviewExecution,
+  completeReviewExecution,
+  recordGithubMainArtifact,
   renewReviewExecutionLease,
   transitionReviewExecution,
 } from "@/features/review/lib/review-execution-state";
@@ -11,6 +16,16 @@ import { assertCurrentReviewHead } from "@/features/review/lib/review-head-guard
 import { getLanguageName, isValidLanguageCode } from "@/features/settings";
 import prisma from "@/lib/db";
 import { getPullRequestDiff, postReviewComment } from "@/lib/github/github";
+import {
+  GITHUB_ARTIFACT_ABSENCE_GRACE_MS,
+  REVIEW_EXECUTION_LEASE_MS,
+} from "@/features/review/constants";
+import { buildReviewArtifactMarker } from "@/features/review/lib/review-artifact-marker";
+import { buildGithubArtifactBody } from "@/lib/github/github-artifact-body";
+import {
+  findGithubIssueCommentArtifact,
+  type PostedGithubArtifact,
+} from "@/lib/github/github-review-artifacts";
 
 import { inngest } from "../client";
 import type { HReviewerEvents } from "../events";
@@ -31,6 +46,7 @@ export type SummaryWorkerDependencies = {
   prisma: typeof prisma;
   getPullRequestDiff: typeof getPullRequestDiff;
   postReviewComment: typeof postReviewComment;
+  findGithubIssueCommentArtifact: typeof findGithubIssueCommentArtifact;
   generateText: typeof generateText;
   createGeneratorModel: typeof google;
   assertCurrentReviewHead: typeof assertCurrentReviewHead;
@@ -44,12 +60,52 @@ type ClaimedSummaryRequest = {
   githubAuthorId: string;
   langCode: string;
   prNumber: number;
+  review: string;
+  lastCompletedStage: string | null;
+  artifactLookupMissedAt: Date | null;
   repository: {
     owner: string;
     name: string;
     userId: string;
   };
 };
+
+function getRenewedExecutionLease(now: Date): Date {
+  return new Date(now.getTime() + REVIEW_EXECUTION_LEASE_MS);
+}
+
+async function markSummaryLookupMiss(input: {
+  dependencies: SummaryWorkerDependencies;
+  reviewId: string;
+  attempt: number;
+  leaseToken: string;
+}): Promise<void> {
+  const now = input.dependencies.now();
+  const result = await input.dependencies.prisma.review.updateMany({
+    where: {
+      id: input.reviewId,
+      status: "POSTING",
+      attemptCount: input.attempt,
+      executionLeaseToken: input.leaseToken,
+      executionLeaseOwner: "WORKER",
+      executionLeaseExpiresAt: { gt: now },
+    },
+    data: {
+      status: "FAILED",
+      failureStage: "POST",
+      failureMessage: "GitHub summary result requires marker reconciliation.",
+      artifactLookupMissedAt: now,
+      executionLeaseToken: randomUUID(),
+      executionLeaseOwner: "RECONCILER",
+      executionLeaseExpiresAt: new Date(
+        now.getTime() + GITHUB_ARTIFACT_ABSENCE_GRACE_MS,
+      ),
+    },
+  });
+  if (result.count !== 1) {
+    throw new Error(`Summary ${input.reviewId} recovery fence was lost`);
+  }
+}
 
 async function getBoundGithubToken(
   dependencies: SummaryWorkerDependencies,
@@ -119,6 +175,9 @@ export function createGenerateSummaryHandler(
           githubAuthorId: true,
           langCode: true,
           prNumber: true,
+          review: true,
+          lastCompletedStage: true,
+          artifactLookupMissedAt: true,
           repository: {
             select: {
               owner: true,
@@ -148,6 +207,139 @@ export function createGenerateSummaryHandler(
     const repo = reviewRequest.repository.name;
     const prNumber = reviewRequest.prNumber;
 
+    const postingRecovery =
+      reviewRequest.review.trim().length > 0 &&
+      reviewRequest.lastCompletedStage !== null &&
+      [
+        "PERSISTED",
+        "MAIN_POSTED",
+        "INLINE_POSTED",
+        "VERIFICATION_POSTED",
+      ].includes(reviewRequest.lastCompletedStage)
+        ? reviewRequest.artifactLookupMissedAt
+          ? "LOOKUP_ONLY"
+          : "REPOST_CONFIRMED_ABSENT"
+        : null;
+
+    if (postingRecovery) {
+      const marker = buildReviewArtifactMarker(reviewId, "summary");
+      if (postingRecovery === "REPOST_CONFIRMED_ABSENT") {
+        try {
+          buildGithubArtifactBody({
+            content: reviewRequest.review,
+            marker,
+            title: "AI PR Summary",
+          });
+        } catch {
+          await transitionReviewExecution(
+            {
+              reviewId,
+              attempt,
+              leaseToken,
+              leaseOwner: "WORKER",
+              now: dependencies.now(),
+              from: ["RUNNING"],
+              to: "FAILED",
+              failure: {
+                stage: "PERSIST",
+                message: "Persisted summary exceeds the GitHub body budget.",
+              },
+            },
+            dependencies.prisma,
+          );
+          return { success: true };
+        }
+      }
+
+      await step.run("resume-summary-posting", () =>
+        transitionReviewExecution(
+          {
+            reviewId,
+            attempt,
+            leaseToken,
+            leaseOwner: "WORKER",
+            now: dependencies.now(),
+            from: ["RUNNING"],
+            to: "POSTING",
+            lastCompletedStage: "PERSISTED",
+            leaseExpiresAt: getRenewedExecutionLease(dependencies.now()),
+          },
+          dependencies.prisma,
+        ),
+      );
+
+      const artifact = await step.run(
+        "recover-summary-artifact",
+        async (): Promise<PostedGithubArtifact | null> => {
+          const token = await getBoundGithubToken(dependencies, reviewRequest);
+          await assertAndRenewCurrentSummaryHead({
+            dependencies,
+            reviewRequest,
+            attempt,
+            leaseToken,
+            allowedStatuses: ["POSTING"],
+          });
+          const existing = await dependencies.findGithubIssueCommentArtifact({
+            token,
+            owner,
+            repo,
+            prNumber,
+            marker,
+            expectedAuthorId: reviewRequest.githubAuthorId,
+            headSha: reviewRequest.headSha,
+          });
+          if (existing) return existing;
+          if (postingRecovery === "LOOKUP_ONLY") {
+            await markSummaryLookupMiss({
+              dependencies,
+              reviewId,
+              attempt,
+              leaseToken,
+            });
+            return null;
+          }
+          return dependencies.postReviewComment({
+            token,
+            owner,
+            repo,
+            prNumber,
+            content: reviewRequest.review,
+            marker,
+            title: "AI PR Summary",
+          });
+        },
+      );
+      if (!artifact) return { success: true };
+
+      await step.run("complete-recovered-summary", async () => {
+        await recordGithubMainArtifact(
+          {
+            reviewId,
+            attempt,
+            leaseToken,
+            leaseOwner: "WORKER",
+            from: ["POSTING"],
+            artifactId: artifact.id,
+            postedAt: artifact.postedAt,
+            now: dependencies.now(),
+          },
+          dependencies.prisma,
+        );
+        await completeReviewExecution(
+          {
+            reviewId,
+            attempt,
+            leaseToken,
+            leaseOwner: "WORKER",
+            from: ["POSTING"],
+            now: dependencies.now(),
+          },
+          dependencies.prisma,
+        );
+      });
+      return { success: true };
+    }
+
     const pullRequest = await step.run("fetch-pr-data", async () => {
       await renewReviewExecutionLease(
         {
@@ -169,6 +361,19 @@ export function createGenerateSummaryHandler(
           repo,
           prNumber,
         });
+
+        await checkpointReviewExecution(
+          {
+            reviewId,
+            attempt,
+            leaseToken,
+            leaseOwner: "WORKER",
+            allowedStatuses: ["RUNNING"],
+            now: dependencies.now(),
+            stage: "FETCHED",
+          },
+          dependencies.prisma,
+        );
 
         return data;
       } catch {
@@ -250,24 +455,85 @@ export function createGenerateSummaryHandler(
         prompt,
       });
       const sanitized = stripFencedCodeBlocks(text);
-      return sanitized.length > 0 ? sanitized : text.trim();
-    });
-
-    await step.run("mark-summary-posting", () =>
-      transitionReviewExecution(
+      const generatedSummary = sanitized.length > 0 ? sanitized : text.trim();
+      await checkpointReviewExecution(
         {
           reviewId,
           attempt,
           leaseToken,
           leaseOwner: "WORKER",
+          allowedStatuses: ["RUNNING"],
           now: dependencies.now(),
-          from: ["RUNNING"],
-          to: "POSTING",
-          lastCompletedStage: "GENERATED",
+          stage: "GENERATED",
         },
         dependencies.prisma,
-      ),
-    );
+      );
+      return generatedSummary;
+    });
+
+    const marker = buildReviewArtifactMarker(reviewId, "summary");
+    const persisted = await step.run("persist-summary-before-post", async () => {
+      try {
+        buildGithubArtifactBody({
+          content: summary,
+          marker,
+          title: "AI PR Summary",
+        });
+      } catch {
+        await transitionReviewExecution(
+          {
+            reviewId,
+            attempt,
+            leaseToken,
+            leaseOwner: "WORKER",
+            now: dependencies.now(),
+            from: ["RUNNING"],
+            to: "FAILED",
+            failure: {
+              stage: "PERSIST",
+              message: "Summary content exceeds the GitHub body budget.",
+            },
+          },
+          dependencies.prisma,
+        );
+        return false;
+      }
+
+      await dependencies.prisma.$transaction(async (client) => {
+        await client.review.update({
+          where: { id: reviewId },
+          data: { prTitle: title, review: summary, headSha },
+        });
+        const transitionTime = dependencies.now();
+        await transitionReviewExecution(
+          {
+            reviewId,
+            attempt,
+            leaseToken,
+            leaseOwner: "WORKER",
+            now: transitionTime,
+            from: ["RUNNING"],
+            to: "POSTING",
+            lastCompletedStage: "PERSISTED",
+            leaseExpiresAt: getRenewedExecutionLease(transitionTime),
+          },
+          client,
+        );
+      });
+      return true;
+    });
+    if (!persisted) return { success: true };
+
+    const persistedSummary = await step.run("load-persisted-summary", async () => {
+      const review = await dependencies.prisma.review.findUnique({
+        where: { id: reviewId },
+        select: { review: true },
+      });
+      if (!review || review.review.trim().length === 0) {
+        throw new Error("Persisted summary is unavailable for posting");
+      }
+      return review.review;
+    });
 
     await step.run("post-comment", async () => {
       const token = await getBoundGithubToken(dependencies, reviewRequest);
@@ -278,62 +544,154 @@ export function createGenerateSummaryHandler(
         leaseToken,
         allowedStatuses: ["POSTING"],
       });
-      await dependencies.postReviewComment(
-        token,
-        owner,
-        repo,
-        prNumber,
-        summary,
-        { title: "AI PR Summary" },
-      );
-    });
-
-    await step.run("save-summary", async () => {
-      await renewReviewExecutionLease(
+      const artifact =
+        (await dependencies.findGithubIssueCommentArtifact({
+          token,
+          owner,
+          repo,
+          prNumber,
+          marker,
+          expectedAuthorId: reviewRequest.githubAuthorId,
+          headSha: reviewRequest.headSha,
+        })) ??
+        (await dependencies.postReviewComment({
+          token,
+          owner,
+          repo,
+          prNumber,
+          content: persistedSummary,
+          marker,
+          title: "AI PR Summary",
+        }));
+      await recordGithubMainArtifact(
         {
           reviewId,
           attempt,
           leaseToken,
           leaseOwner: "WORKER",
-          allowedStatuses: ["POSTING"],
+          from: ["POSTING"],
+          artifactId: artifact.id,
+          postedAt: artifact.postedAt,
           now: dependencies.now(),
         },
         dependencies.prisma,
       );
-
-      await dependencies.prisma.$transaction(async (client) => {
-        await client.review.update({
-          where: { id: reviewId },
-          data: {
-            prTitle: title,
-            review: summary,
-            headSha,
-          },
-        });
-        await transitionReviewExecution(
-          {
-            reviewId,
-            attempt,
-            leaseToken,
-            leaseOwner: "WORKER",
-            now: dependencies.now(),
-            from: ["POSTING"],
-            to: "COMPLETED",
-            lastCompletedStage: "PERSISTED",
-          },
-          client,
-        );
-      });
     });
+
+    await step.run("complete-summary", () =>
+      completeReviewExecution(
+        {
+          reviewId,
+          attempt,
+          leaseToken,
+          leaseOwner: "WORKER",
+          from: ["POSTING"],
+          now: dependencies.now(),
+        },
+        dependencies.prisma,
+      ),
+    );
 
     return { success: true };
   };
+}
+
+function buildSafeSummaryFailureMessage(error: unknown): string {
+  const name = error instanceof Error ? error.name : "UnknownError";
+  const status =
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof error.status === "number"
+      ? error.status
+      : null;
+  return [name, status === null ? null : `status=${status}`]
+    .filter((part): part is string => part !== null)
+    .join("; ")
+    .slice(0, 1_000);
+}
+
+export async function handleSummaryFailure(input: {
+  event: { data: { event: { data?: unknown } } };
+  error: unknown;
+}): Promise<void> {
+  const originalData = input.event.data.event.data;
+  if (typeof originalData !== "object" || originalData === null) return;
+  const reviewId =
+    "reviewId" in originalData && typeof originalData.reviewId === "string"
+      ? originalData.reviewId
+      : null;
+  const attempt =
+    "attempt" in originalData &&
+    typeof originalData.attempt === "number" &&
+    Number.isInteger(originalData.attempt)
+      ? originalData.attempt
+      : null;
+  if (!reviewId || attempt === null) return;
+
+  const review = await prisma.review.findUnique({
+    where: { id: reviewId },
+    select: {
+      status: true,
+      attemptCount: true,
+      executionLeaseToken: true,
+      executionLeaseOwner: true,
+      lastCompletedStage: true,
+    },
+  });
+  if (
+    !review ||
+    review.attemptCount !== attempt ||
+    !["PENDING", "RUNNING", "POSTING"].includes(review.status) ||
+    !review.executionLeaseToken
+  ) {
+    return;
+  }
+
+  const status = review.status as "PENDING" | "RUNNING" | "POSTING";
+  const expectedOwner = status === "PENDING" ? "QUEUE" : "WORKER";
+  if (review.executionLeaseOwner !== expectedOwner) return;
+  const stage =
+    status === "PENDING"
+      ? "QUEUE"
+      : status === "POSTING"
+        ? "POST"
+        : review.lastCompletedStage === "GENERATED"
+          ? "PERSIST"
+          : "GENERATE";
+  const now = new Date();
+  await prisma.review.updateMany({
+    where: {
+      id: reviewId,
+      status,
+      attemptCount: attempt,
+      executionLeaseToken: review.executionLeaseToken,
+      executionLeaseOwner: expectedOwner,
+    },
+    data: {
+      status: "FAILED",
+      failureStage: stage,
+      failureMessage: buildSafeSummaryFailureMessage(input.error),
+      ...(stage === "POST"
+        ? {
+            executionLeaseToken: randomUUID(),
+            executionLeaseOwner: "RECONCILER" as const,
+            executionLeaseExpiresAt: now,
+          }
+        : {
+            executionLeaseToken: null,
+            executionLeaseOwner: null,
+            executionLeaseExpiresAt: null,
+          }),
+    },
+  });
 }
 
 const defaultSummaryWorkerDependencies: SummaryWorkerDependencies = {
   prisma,
   getPullRequestDiff,
   postReviewComment,
+  findGithubIssueCommentArtifact,
   generateText,
   createGeneratorModel: google,
   assertCurrentReviewHead,
@@ -343,6 +701,7 @@ const defaultSummaryWorkerDependencies: SummaryWorkerDependencies = {
 export const generateSummary = inngest.createFunction(
   {
     id: "generate-summary",
+    onFailure: handleSummaryFailure,
     cancelOn: [
       {
         event: "pr.review.superseded",

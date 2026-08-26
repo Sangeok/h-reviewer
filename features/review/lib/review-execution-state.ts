@@ -97,6 +97,36 @@ export type RetryFailedReviewExecutionInput = {
   attempt: number;
   queueLeaseToken: string;
   now: Date;
+  preservePersistedStage?: boolean;
+  postingRecovery?: "LOOKUP_ONLY" | "REPOST_CONFIRMED_ABSENT";
+};
+
+export type CheckpointReviewExecutionInput = RenewReviewExecutionLeaseInput & {
+  stage: ReviewExecutionStage;
+};
+
+export type RecordGithubMainArtifactInput = {
+  reviewId: string;
+  attempt: number;
+  leaseToken: string;
+  leaseOwner: Extract<ReviewExecutionLeaseOwner, "WORKER" | "RECONCILER">;
+  from: readonly Extract<ReviewStatus, "POSTING" | "FAILED" | "SUPERSEDED">[];
+  artifactId: string;
+  postedAt: Date;
+  now?: Date;
+};
+
+export type CompleteReviewExecutionInput = {
+  reviewId: string;
+  attempt: number;
+  leaseToken: string;
+  leaseOwner: Extract<ReviewExecutionLeaseOwner, "WORKER" | "RECONCILER">;
+  from: readonly Extract<ReviewStatus, "POSTING" | "FAILED">[];
+  now: Date;
+  lastCompletedStage?: Extract<
+    ReviewExecutionStage,
+    "MAIN_POSTED" | "INLINE_POSTED" | "VERIFICATION_POSTED"
+  >;
 };
 
 export class ReviewStateConflictError extends Error {
@@ -174,6 +204,16 @@ export async function transitionReviewExecution(
       executionLeaseToken: input.leaseToken,
       executionLeaseOwner: input.leaseOwner,
       executionLeaseExpiresAt: { gt: input.now },
+      ...(input.to === "COMPLETED"
+        ? {
+            review: { not: "" },
+            githubMainReviewId: { not: null },
+            githubMainPostedAt: { not: null },
+            lastCompletedStage: {
+              in: ["MAIN_POSTED", "INLINE_POSTED", "VERIFICATION_POSTED"],
+            },
+          }
+        : {}),
     },
     data: {
       status: input.to,
@@ -307,7 +347,9 @@ export async function retryFailedReviewExecution(
       status: "PENDING",
       failureStage: null,
       failureMessage: null,
-      lastCompletedStage: null,
+      ...(input.preservePersistedStage ? {} : { lastCompletedStage: null }),
+      artifactLookupMissedAt:
+        input.postingRecovery === "LOOKUP_ONLY" ? input.now : null,
       attemptCount: nextAttempt,
       executionLeaseExpiresAt: getQueueLeaseExpiration(input.now),
       executionLeaseToken: input.queueLeaseToken,
@@ -322,6 +364,90 @@ export async function retryFailedReviewExecution(
   }
 
   return { attempt: nextAttempt };
+}
+
+export async function recordGithubMainArtifact(
+  input: RecordGithubMainArtifactInput,
+  client: ReviewExecutionClient = prisma,
+): Promise<void> {
+  const artifactId = input.artifactId.trim();
+  if (artifactId.length === 0 || Number.isNaN(input.postedAt.getTime())) {
+    throw new ReviewStateConflictError(
+      "A trusted GitHub artifact ID and timestamp are required",
+    );
+  }
+  if (input.from.length === 0) {
+    throw new ReviewStateConflictError(
+      "At least one artifact source status is required",
+    );
+  }
+
+  const result = await client.review.updateMany({
+    where: {
+      id: input.reviewId,
+      status: { in: [...input.from] },
+      attemptCount: input.attempt,
+      executionLeaseToken: input.leaseToken,
+      executionLeaseOwner: input.leaseOwner,
+      executionLeaseExpiresAt: { gt: input.now ?? new Date() },
+      review: { not: "" },
+    },
+    data: {
+      githubMainReviewId: artifactId,
+      githubMainPostedAt: input.postedAt,
+      artifactLookupMissedAt: null,
+      lastCompletedStage: "MAIN_POSTED",
+    },
+  });
+
+  if (result.count !== 1) {
+    throw new ReviewStateConflictError(
+      `Review ${input.reviewId} GitHub artifact fence was lost`,
+    );
+  }
+}
+
+export async function completeReviewExecution(
+  input: CompleteReviewExecutionInput,
+  client: ReviewExecutionClient = prisma,
+): Promise<void> {
+  if (input.from.length === 0) {
+    throw new ReviewStateConflictError(
+      "At least one completion source status is required",
+    );
+  }
+
+  const result = await client.review.updateMany({
+    where: {
+      id: input.reviewId,
+      status: { in: [...input.from] },
+      attemptCount: input.attempt,
+      executionLeaseToken: input.leaseToken,
+      executionLeaseOwner: input.leaseOwner,
+      executionLeaseExpiresAt: { gt: input.now },
+      review: { not: "" },
+      githubMainReviewId: { not: null },
+      githubMainPostedAt: { not: null },
+      lastCompletedStage: {
+        in: ["MAIN_POSTED", "INLINE_POSTED", "VERIFICATION_POSTED"],
+      },
+    },
+    data: {
+      status: "COMPLETED",
+      failureStage: null,
+      failureMessage: null,
+      lastCompletedStage: input.lastCompletedStage ?? "MAIN_POSTED",
+      executionLeaseExpiresAt: null,
+      executionLeaseToken: null,
+      executionLeaseOwner: null,
+    },
+  });
+
+  if (result.count !== 1) {
+    throw new ReviewStateConflictError(
+      `Review ${input.reviewId} completion requirements were not met`,
+    );
+  }
 }
 
 export async function renewReviewExecutionLease(
@@ -351,6 +477,36 @@ export async function renewReviewExecutionLease(
   if (result.count !== 1) {
     throw new ReviewStateConflictError(
       `Review ${input.reviewId} execution lease could not be renewed`,
+    );
+  }
+}
+
+export async function checkpointReviewExecution(
+  input: CheckpointReviewExecutionInput,
+  client: ReviewExecutionClient = prisma,
+): Promise<void> {
+  if (input.allowedStatuses.length === 0) {
+    throw new ReviewStateConflictError(
+      "At least one checkpoint review status is required",
+    );
+  }
+  const result = await client.review.updateMany({
+    where: {
+      id: input.reviewId,
+      status: { in: [...input.allowedStatuses] },
+      attemptCount: input.attempt,
+      executionLeaseToken: input.leaseToken,
+      executionLeaseOwner: input.leaseOwner,
+      executionLeaseExpiresAt: { gt: input.now },
+    },
+    data: {
+      lastCompletedStage: input.stage,
+      executionLeaseExpiresAt: getLeaseExpiration(input.now),
+    },
+  });
+  if (result.count !== 1) {
+    throw new ReviewStateConflictError(
+      `Review ${input.reviewId} checkpoint fence was lost`,
     );
   }
 }
