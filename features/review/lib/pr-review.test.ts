@@ -21,7 +21,10 @@ vi.mock("@/lib/github/github", async (importOriginal) => {
   };
 });
 
-import { postPRReviewWithSuggestions } from "./pr-review";
+import {
+  postPRReviewWithSuggestions,
+  postVerificationReview,
+} from "./pr-review";
 
 const INLINE_ISSUE: StructuredIssue = {
   file: "src/value.ts",
@@ -40,9 +43,11 @@ function createPostInput(beforeInlinePost: () => Promise<void>) {
     owner: "octo",
     repo: "sample",
     prNumber: 42,
-    reviewBody: "Review body",
+    reviewId: "review-1",
+    reviewContent: "Review body",
+    mainMarker: "<!-- hreviewer:review:review-1:main -->",
     suggestions: [],
-    issues: [INLINE_ISSUE],
+    issues: [{ ...INLINE_ISSUE, id: "issue-1" }],
     headSha: "head-sha",
     langCode: "en" as const,
     beforeInlinePost,
@@ -52,7 +57,13 @@ function createPostInput(beforeInlinePost: () => Promise<void>) {
 describe("postPRReviewWithSuggestions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    githubMocks.createReview.mockResolvedValue({ data: { id: 1 } });
+    githubMocks.createReview.mockResolvedValue({
+      data: {
+        id: 1,
+        commit_id: "head-sha",
+        submitted_at: "2026-08-29T00:00:00Z",
+      },
+    });
   });
 
   it("runs the current-head guard immediately before the inline batch", async () => {
@@ -65,6 +76,12 @@ describe("postPRReviewWithSuggestions", () => {
     expect(
       beforeInlinePost.mock.invocationCallOrder[0],
     ).toBeLessThan(githubMocks.createReview.mock.invocationCallOrder[1] ?? 0);
+    expect(githubMocks.createReview.mock.calls[0][0].body).toContain(
+      "<!-- hreviewer:review:review-1:main -->",
+    );
+    expect(githubMocks.createReview.mock.calls[1][0].comments[0].body).toContain(
+      "<!-- hreviewer:review:review-1:issue:issue-1 -->",
+    );
   });
 
   it("does not issue the inline GitHub call when its guard fails", async () => {
@@ -79,5 +96,48 @@ describe("postPRReviewWithSuggestions", () => {
 
     expect(githubMocks.createReview).toHaveBeenCalledOnce();
     expect(beforeInlinePost).toHaveBeenCalledOnce();
+  });
+
+  it("returns the main review API artifact", async () => {
+    await expect(
+      postPRReviewWithSuggestions(createPostInput(async () => undefined)),
+    ).resolves.toEqual({
+      id: "1",
+      kind: "pull-request-review",
+      commitId: "head-sha",
+      postedAt: new Date("2026-08-29T00:00:00Z"),
+    });
+  });
+});
+
+describe("postVerificationReview", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    githubMocks.createReview.mockResolvedValue({
+      data: {
+        id: 2,
+        commit_id: "head-sha",
+        submitted_at: "2026-08-29T00:01:00Z",
+      },
+    });
+  });
+
+  it("posts a marker-wrapped body and returns the API artifact", async () => {
+    const marker = "<!-- hreviewer:review:review-1:verification -->";
+
+    await expect(postVerificationReview({
+      token: "github-token",
+      owner: "octo",
+      repo: "sample",
+      prNumber: 42,
+      headSha: "head-sha",
+      content: "Verification details",
+      marker,
+    })).resolves.toMatchObject({ id: "2", commitId: "head-sha" });
+
+    expect(githubMocks.createReview.mock.calls[0][0].body).toContain(marker);
+    expect(githubMocks.createReview.mock.calls[0][0].body).toContain(
+      "Verification details",
+    );
   });
 });

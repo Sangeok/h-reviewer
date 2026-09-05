@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import { getRepositoryWithToken } from "@/features/ai/lib/get-repository-with-token";
-import { getUserTier } from "@/features/payment/lib/subscription";
+import {
+  createReviewWithTrialReservation,
+  prepareTrialCreditForRetry,
+  releaseTrialCredit,
+  runReviewTrialTransaction,
+} from "@/features/payment/lib/review-trial";
 import { REVIEW_QUEUE_LEASE_MS } from "@/features/review/constants";
 import { getUserLanguageByUserId } from "@/features/settings";
 import { inngest } from "@/inngest/client";
@@ -11,6 +16,7 @@ import type {
   ReviewExecutionStage,
   ReviewFailureStage,
   ReviewStatus,
+  TrialCreditState,
 } from "@/lib/generated/prisma/enums";
 import { getPullRequestSnapshot } from "@/lib/github/github";
 import {
@@ -75,6 +81,7 @@ type ReviewRequestEvent =
         reviewId: string;
         attempt: number;
         debounceKey: string;
+        resumeFromPersisted?: boolean;
       };
     }
   | {
@@ -83,6 +90,7 @@ type ReviewRequestEvent =
       data: {
         reviewId: string;
         attempt: number;
+        resumeFromPersisted?: boolean;
       };
     }
   | {
@@ -99,7 +107,10 @@ export type ReviewRequestDependencies = {
   getRepositoryWithToken: typeof getRepositoryWithToken;
   getPullRequestSnapshot: typeof getPullRequestSnapshot;
   getUserLanguageByUserId: typeof getUserLanguageByUserId;
-  getUserTier: typeof getUserTier;
+  createReviewWithTrialReservation: typeof createReviewWithTrialReservation;
+  prepareTrialCreditForRetry: typeof prepareTrialCreditForRetry;
+  releaseTrialCredit: typeof releaseTrialCredit;
+  runReviewTrialTransaction: typeof runReviewTrialTransaction;
   bindGithubWebhookDeliveryRequest: typeof bindGithubWebhookDeliveryRequest;
   sendEvent(event: ReviewRequestEvent): Promise<unknown>;
   now(): Date;
@@ -120,6 +131,8 @@ type FactualReview = {
   executionLeaseToken: string | null;
   executionLeaseOwner: ReviewExecutionLeaseOwner | null;
   githubMainPostedAt: Date | null;
+  review: string;
+  trialCreditState: TrialCreditState;
 };
 
 type SupersededReviewIdentity = {
@@ -222,6 +235,7 @@ function createReviewRequestEvent(input: {
   repositoryId: string;
   prNumber: number;
   dispatchMode: "DIRECT" | "DEBOUNCED";
+  resumeFromPersisted?: boolean;
 }): ReviewRequestEvent {
   if (input.reviewType === "SUMMARY") {
     if (input.dispatchMode !== "DIRECT") {
@@ -234,6 +248,7 @@ function createReviewRequestEvent(input: {
       data: {
         reviewId: input.reviewId,
         attempt: input.attempt,
+        ...(input.resumeFromPersisted ? { resumeFromPersisted: true } : {}),
       },
     };
   }
@@ -248,6 +263,7 @@ function createReviewRequestEvent(input: {
       reviewId: input.reviewId,
       attempt: input.attempt,
       debounceKey: `${input.repositoryId}:${input.prNumber}`,
+      ...(input.resumeFromPersisted ? { resumeFromPersisted: true } : {}),
     },
   };
 }
@@ -273,6 +289,8 @@ async function findFactualReview(
       executionLeaseToken: true,
       executionLeaseOwner: true,
       githubMainPostedAt: true,
+      review: true,
+      trialCreditState: true,
     },
   });
 }
@@ -303,6 +321,7 @@ async function finalizeDispatch(input: {
   queueLeaseToken: string;
   event: ReviewRequestEvent;
   resultKind: "created" | "existing";
+  resumeFailureStage?: Extract<ReviewFailureStage, "POST" | "RECONCILE">;
   dependencies: ReviewRequestDependencies;
 }): Promise<CreateReviewRequestResult> {
   try {
@@ -311,19 +330,41 @@ async function finalizeDispatch(input: {
     const failureTime = input.dependencies.now();
 
     try {
-      await transitionReviewExecution(
-        {
-          reviewId: input.review.id,
-          attempt: input.review.attemptCount,
-          leaseToken: input.queueLeaseToken,
-          leaseOwner: "QUEUE",
-          now: failureTime,
-          from: ["PENDING"],
-          to: "FAILED",
-          failure: {
-            stage: "QUEUE",
-            message: DISPATCH_FAILURE_MESSAGE,
-          },
+      const failureStage = input.resumeFailureStage ?? "QUEUE";
+      await input.dependencies.runReviewTrialTransaction(
+        async (client) => {
+          if (
+            input.review.trialCreditState === "RESERVED" &&
+            input.resumeFailureStage === undefined
+          ) {
+            await input.dependencies.releaseTrialCredit(
+              {
+                reviewId: input.review.id,
+                attempt: input.review.attemptCount,
+                leaseToken: input.queueLeaseToken,
+                leaseOwner: "QUEUE",
+                allowedStatuses: ["PENDING"],
+              },
+              client,
+            );
+          }
+
+          await transitionReviewExecution(
+            {
+              reviewId: input.review.id,
+              attempt: input.review.attemptCount,
+              leaseToken: input.queueLeaseToken,
+              leaseOwner: "QUEUE",
+              now: failureTime,
+              from: ["PENDING"],
+              to: "FAILED",
+              failure: {
+                stage: failureStage,
+                message: DISPATCH_FAILURE_MESSAGE,
+              },
+            },
+            client,
+          );
         },
         input.dependencies.prisma,
       );
@@ -333,7 +374,7 @@ async function finalizeDispatch(input: {
         reviewId: input.review.id,
         requestKey: input.review.requestKey,
         status: "FAILED",
-        failureStage: "QUEUE",
+        failureStage,
         message: DISPATCH_FAILURE_MESSAGE,
       };
     } catch (error) {
@@ -387,7 +428,10 @@ const defaultReviewRequestDependencies: ReviewRequestDependencies = {
   getRepositoryWithToken,
   getPullRequestSnapshot,
   getUserLanguageByUserId,
-  getUserTier,
+  createReviewWithTrialReservation,
+  prepareTrialCreditForRetry,
+  releaseTrialCredit,
+  runReviewTrialTransaction,
   bindGithubWebhookDeliveryRequest,
   sendEvent: (event) => inngest.send(event),
   now: () => new Date(),
@@ -402,17 +446,6 @@ export async function createReviewRequest(
     repo: input.repo,
   });
   const { repository, accessToken, githubAuthorId } = repositoryResult;
-
-  if (
-    input.reviewType === "FULL_REVIEW" &&
-    (await dependencies.getUserTier(repository.user.id)) !== "PRO"
-  ) {
-    return {
-      kind: "rejected",
-      reason: "PLAN_RESTRICTED",
-      message: "Review creation is available on the Pro plan only",
-    };
-  }
 
   const snapshot = await dependencies.getPullRequestSnapshot({
     token: accessToken,
@@ -447,98 +480,42 @@ export async function createReviewRequest(
   let supersededReviews: SupersededReviewIdentity[] = [];
 
   try {
-    const transactionResult = await dependencies.prisma.$transaction(async (client) => {
-      const supersededReviews = await client.review.updateManyAndReturn({
-        where: {
-          repositoryId: repository.id,
-          prNumber: input.prNumber,
-          reviewType: input.reviewType,
-          headSha: { not: snapshot.headSha },
-          status: { in: ["PENDING", "RUNNING", "POSTING"] },
-          githubMainPostedAt: null,
-        },
-        data: {
-          status: "SUPERSEDED",
-          failureStage: null,
-          failureMessage: null,
-          executionLeaseExpiresAt: null,
-          executionLeaseToken: null,
-          executionLeaseOwner: null,
-        },
-        select: {
-          id: true,
-          attemptCount: true,
-        },
-      });
-      const superseded = supersededReviews
-        .sort((left, right) => left.id.localeCompare(right.id))
-        .map((review) => ({
-          reviewId: review.id,
-          attempt: review.attemptCount,
-        }));
+    const reservation = await dependencies.createReviewWithTrialReservation(
+      {
+        userId: repository.user.id,
+        repositoryId: repository.id,
+        prNumber: input.prNumber,
+        prTitle: snapshot.title,
+        prUrl: snapshot.url,
+        headSha: snapshot.headSha,
+        githubAuthorId,
+        reviewType: input.reviewType,
+        reviewMode: input.reviewMode,
+        requestSource: input.requestSource,
+        requestKey,
+        langCode,
+        maxSuggestions: repository.user.maxSuggestions,
+        verificationEnabled: repository.user.verificationEnabled,
+        queueLeaseToken,
+        queueLeaseExpiresAt: getQueueLeaseExpiration(now),
+        ...(input.transportBinding
+          ? { transportBinding: input.transportBinding }
+          : {}),
+      },
+      dependencies.prisma,
+    );
+    if (reservation.kind === "rejected") {
+      return {
+        kind: "rejected",
+        reason: reservation.reason,
+        message: reservation.reason === "PLAN_RESTRICTED"
+          ? "Review creation is available on the Pro plan only"
+          : "The free AI code review trial has been exhausted",
+      };
+    }
 
-      const review = await client.review.create({
-        data: {
-          repositoryId: repository.id,
-          prNumber: input.prNumber,
-          prTitle: snapshot.title,
-          prUrl: snapshot.url,
-          review: "",
-          langCode,
-          maxSuggestions: repository.user.maxSuggestions,
-          verificationEnabled: repository.user.verificationEnabled,
-          reviewType: input.reviewType,
-          headSha: snapshot.headSha,
-          requestKey,
-          requestSource: input.requestSource,
-          reviewMode: input.reviewMode,
-          status: "PENDING",
-          failureStage: null,
-          failureMessage: null,
-          lastCompletedStage: null,
-          attemptCount: 1,
-          executionLeaseExpiresAt: getQueueLeaseExpiration(now),
-          executionLeaseToken: queueLeaseToken,
-          executionLeaseOwner: "QUEUE",
-          githubMainReviewId: null,
-          githubMainPostedAt: null,
-          githubAuthorId,
-          artifactLookupMissedAt: null,
-          trialCreditState: "NOT_APPLICABLE",
-        },
-        select: {
-          id: true,
-          requestKey: true,
-          status: true,
-          attemptCount: true,
-          repositoryId: true,
-          prNumber: true,
-          reviewType: true,
-          headSha: true,
-          lastCompletedStage: true,
-          failureStage: true,
-          executionLeaseExpiresAt: true,
-          executionLeaseToken: true,
-          executionLeaseOwner: true,
-          githubMainPostedAt: true,
-        },
-      });
-
-      if (input.transportBinding) {
-        await dependencies.bindGithubWebhookDeliveryRequest(
-          {
-            deliveryRowId: input.transportBinding.deliveryRowId,
-            leaseToken: input.transportBinding.leaseToken,
-            requestKey: review.requestKey,
-          },
-          client,
-        );
-      }
-
-      return { review, superseded };
-    });
-    createdReview = transactionResult.review;
-    supersededReviews = transactionResult.superseded;
+    createdReview = reservation.review;
+    supersededReviews = reservation.supersededReviewRuns;
   } catch (error) {
     if (!isRequestKeyUniqueConflict(error)) {
       throw error;
@@ -561,6 +538,8 @@ export async function createReviewRequest(
         executionLeaseToken: true,
         executionLeaseOwner: true,
         githubMainPostedAt: true,
+        review: true,
+        trialCreditState: true,
       },
     });
 
@@ -625,20 +604,105 @@ export async function retryReviewRequest(
     );
   }
 
+  const canResumePersistedPosting =
+    (review.failureStage === "POST" || review.failureStage === "RECONCILE") &&
+    review.review.trim().length > 0 &&
+    review.lastCompletedStage !== null &&
+    [
+      "PERSISTED",
+      "MAIN_POSTED",
+      "INLINE_POSTED",
+      "VERIFICATION_POSTED",
+    ].includes(review.lastCompletedStage);
+
+  const requiresAbsenceConfirmation =
+    canResumePersistedPosting &&
+    (review.failureStage === "RECONCILE" || review.executionLeaseToken !== null);
+
+  if (requiresAbsenceConfirmation) {
+    const now = dependencies.now();
+    const reconciliationToken = randomUUID();
+    const scheduled = await dependencies.prisma.review.updateMany({
+      where: {
+        id: reviewId,
+        status: "FAILED",
+        attemptCount: review.attemptCount,
+        failureStage: { in: ["POST", "RECONCILE"] },
+      },
+      data: {
+        failureStage: "RECONCILE",
+        failureMessage: "The persisted review is queued for GitHub reconciliation.",
+        executionLeaseToken: reconciliationToken,
+        executionLeaseOwner: "RECONCILER",
+        executionLeaseExpiresAt: now,
+      },
+    });
+
+    if (scheduled.count !== 1) {
+      throw new ReviewStateConflictError(
+        `Review ${reviewId} could not schedule reconciliation`,
+      );
+    }
+
+    return {
+      kind: "existing",
+      reviewId: review.id,
+      requestKey: review.requestKey,
+      status: "FAILED",
+    };
+  }
+
   const now = dependencies.now();
   const queueLeaseToken = randomUUID();
-  const { attempt } = await dependencies.prisma.$transaction((client) =>
-    retryFailedReviewExecution(
+  const originalFailureStage = canResumePersistedPosting &&
+    (review.failureStage === "POST" || review.failureStage === "RECONCILE")
+    ? review.failureStage
+    : undefined;
+  const retryPreparation = await dependencies.runReviewTrialTransaction(
+    async (client) => {
+      const credit = await dependencies.prepareTrialCreditForRetry(
+        reviewId,
+        client,
+      );
+      if (credit.kind !== "ready") return credit;
+
+      const { attempt } = await retryFailedReviewExecution(
       {
         reviewId,
         attempt: review.attemptCount,
         queueLeaseToken,
         now,
+        expectedTrialCreditState: credit.trialCreditState,
+        preserveLastCompletedStage: canResumePersistedPosting,
       },
       client,
-    ),
+      );
+      return { kind: "ready" as const, attempt, credit };
+    },
+    dependencies.prisma,
   );
-  const retriedReview = { ...review, status: "PENDING" as const, attemptCount: attempt };
+  if (retryPreparation.kind === "rejected") {
+    return {
+      kind: "rejected",
+      reason: retryPreparation.reason,
+      message: retryPreparation.reason === "PLAN_RESTRICTED"
+        ? "Review creation is available on the Pro plan only"
+        : "The free AI code review trial has been exhausted",
+    };
+  }
+  if (retryPreparation.kind === "conflict") {
+    throw new ReviewStateConflictError(
+      `Review ${reviewId} has an invalid trial credit state for retry`,
+    );
+  }
+
+  const { attempt, credit } = retryPreparation;
+  const retriedReview = {
+    ...review,
+    status: "PENDING" as const,
+    attemptCount: attempt,
+    trialCreditState: credit.trialCreditState,
+  };
 
   return finalizeDispatch({
     review: retriedReview,
@@ -650,8 +714,10 @@ export async function retryReviewRequest(
       repositoryId: review.repositoryId,
       prNumber: review.prNumber,
       dispatchMode: "DIRECT",
+      resumeFromPersisted: canResumePersistedPosting,
     }),
     resultKind: "existing",
+    ...(originalFailureStage ? { resumeFailureStage: originalFailureStage } : {}),
     dependencies,
   });
 }

@@ -6,7 +6,15 @@ const octokitMocks = vi.hoisted(() => ({
   reposGetCommit: vi.fn(),
   reposGetContent: vi.fn(),
   gitGetTree: vi.fn(),
+  issuesCreateComment: vi.fn(),
+  paginate: vi.fn(),
+  reposListWebhooks: vi.fn(),
+  reposCreateWebhook: vi.fn(),
+  reposDeleteWebhook: vi.fn(),
 }));
+
+const authMocks = vi.hoisted(() => ({ requireAuthSession: vi.fn() }));
+const dbMocks = vi.hoisted(() => ({ accountFindFirst: vi.fn() }));
 
 vi.mock("octokit", () => ({
   Octokit: class MockOctokit {
@@ -17,30 +25,38 @@ vi.mock("octokit", () => ({
           octokitMocks.reposGetCollaboratorPermissionLevel,
         getCommit: octokitMocks.reposGetCommit,
         getContent: octokitMocks.reposGetContent,
+        listWebhooks: octokitMocks.reposListWebhooks,
+        createWebhook: octokitMocks.reposCreateWebhook,
+        deleteWebhook: octokitMocks.reposDeleteWebhook,
       },
       git: { getTree: octokitMocks.gitGetTree },
+      issues: { createComment: octokitMocks.issuesCreateComment },
     };
+    paginate = octokitMocks.paginate;
   },
 }));
 
 vi.mock("@/lib/server-utils", () => ({
-  requireAuthSession: vi.fn(),
+  requireAuthSession: authMocks.requireAuthSession,
 }));
 
 vi.mock("@/lib/db", () => ({
   default: {
-    account: { findFirst: vi.fn() },
+    account: { findFirst: dbMocks.accountFindFirst },
   },
 }));
 
 import {
   canRunReviewCommand,
+  createWebhook,
+  deleteWebhook,
   getFileContent,
   getPullRequestDiff,
   getPullRequestHeadInfo,
   getPullRequestSnapshot,
   getRepositoryPermissionForUser,
   getRepositoryFileTree,
+  postReviewComment,
 } from "./github";
 
 type PullRequestOverrides = {
@@ -92,6 +108,74 @@ function queuePullRequestAttempt(
     .mockResolvedValueOnce({ data: diff })
     .mockResolvedValueOnce({ data: after });
 }
+
+describe("repository webhook mutation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NEXT_PUBLIC_APP_BASE_URL = "https://app.example.com";
+    process.env.GITHUB_WEBHOOK_SECRET = "test-secret";
+    authMocks.requireAuthSession.mockResolvedValue({ user: { id: "user-1" } });
+    dbMocks.accountFindFirst.mockResolvedValue({ accessToken: "github-token" });
+  });
+
+  it("deletes every paginated matching callback in stable ID order", async () => {
+    octokitMocks.paginate.mockResolvedValue([
+      { id: 9, config: { url: "https://app.example.com/api/webhooks/github" } },
+      { id: 4, config: { url: "https://other.example.com/webhook" } },
+      { id: 2, config: { url: "https://app.example.com/api/webhooks/github" } },
+    ]);
+    octokitMocks.reposDeleteWebhook.mockResolvedValue({ data: {} });
+
+    await expect(
+      deleteWebhook({ owner: "octo", repo: "sample" }),
+    ).resolves.toBe("deleted");
+
+    expect(octokitMocks.paginate).toHaveBeenCalledWith(
+      octokitMocks.reposListWebhooks,
+      expect.objectContaining({
+        owner: "octo",
+        repo: "sample",
+        per_page: 100,
+      }),
+    );
+    expect(octokitMocks.reposDeleteWebhook).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ hook_id: 2 }),
+    );
+    expect(octokitMocks.reposDeleteWebhook).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ hook_id: 9 }),
+    );
+  });
+
+  it("marks a partial multi-hook delete as a mutation requiring compensation", async () => {
+    octokitMocks.paginate.mockResolvedValue([
+      { id: 2, config: { url: "https://app.example.com/api/webhooks/github" } },
+      { id: 9, config: { url: "https://app.example.com/api/webhooks/github" } },
+    ]);
+    octokitMocks.reposDeleteWebhook
+      .mockResolvedValueOnce({ data: {} })
+      .mockRejectedValueOnce({ status: 500 });
+
+    await expect(
+      deleteWebhook({ owner: "octo", repo: "sample" }),
+    ).rejects.toMatchObject({
+      code: "WEBHOOK_DELETE_FAILED",
+      mutationOccurred: true,
+    });
+  });
+
+  it("does not create a duplicate when pagination finds the callback", async () => {
+    octokitMocks.paginate.mockResolvedValue([
+      { id: 101, config: { url: "https://app.example.com/api/webhooks/github" } },
+    ]);
+
+    await expect(
+      createWebhook({ owner: "octo", repo: "sample" }),
+    ).resolves.toBe("existing");
+    expect(octokitMocks.reposCreateWebhook).not.toHaveBeenCalled();
+  });
+});
 
 describe("repository command permission", () => {
   beforeEach(() => {
@@ -541,5 +625,43 @@ describe("getFileContent", () => {
       path: "src/missing.ts",
       ref: "commit-sha",
     })).resolves.toBeNull();
+  });
+});
+
+describe("postReviewComment", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    octokitMocks.issuesCreateComment.mockResolvedValue({
+      data: {
+        id: 123,
+        created_at: "2026-08-29T00:00:00Z",
+      },
+    });
+  });
+
+  it("builds the outbound body once and returns the API artifact", async () => {
+    const marker = "<!-- hreviewer:review:review-1:summary -->";
+
+    await expect(postReviewComment({
+      token: "token",
+      owner: "owner",
+      repo: "repo",
+      prNumber: 7,
+      content: "Canonical summary",
+      marker,
+      title: "AI Summary",
+    })).resolves.toEqual({
+      id: "123",
+      kind: "issue-comment",
+      commitId: null,
+      postedAt: new Date("2026-08-29T00:00:00Z"),
+    });
+
+    expect(octokitMocks.issuesCreateComment).toHaveBeenCalledOnce();
+    expect(octokitMocks.issuesCreateComment.mock.calls[0][0].body).toBe(
+      `## AI Summary\n\nCanonical summary\n\n${marker}\n\n---\n*Generated by HReviewer*`,
+    );
+    expect(octokitMocks.issuesCreateComment.mock.calls[0][0].request.signal)
+      .toBeInstanceOf(AbortSignal);
   });
 });

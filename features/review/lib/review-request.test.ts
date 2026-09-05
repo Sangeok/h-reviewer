@@ -29,6 +29,8 @@ type FakeReview = {
   failureStage: string | null;
   failureMessage: string | null;
   githubMainPostedAt: Date | null;
+  review: string;
+  trialCreditState: "NOT_APPLICABLE" | "RESERVED" | "CONSUMED" | "RELEASED";
   createData: Record<string, unknown>;
 };
 
@@ -38,6 +40,7 @@ function createRequestHarness(): {
   sendEvent: ReturnType<typeof vi.fn>;
   getPullRequestSnapshot: ReturnType<typeof vi.fn>;
   bindGithubWebhookDeliveryRequest: ReturnType<typeof vi.fn>;
+  createReviewWithTrialReservation: ReturnType<typeof vi.fn>;
 } {
   const reviews: FakeReview[] = [];
   const reviewDelegate = {
@@ -63,6 +66,8 @@ function createRequestHarness(): {
         failureStage: null,
         failureMessage: null,
         githubMainPostedAt: null,
+        review: typeof data.review === "string" ? data.review : "",
+        trialCreditState: data.trialCreditState as FakeReview["trialCreditState"],
         createData: data,
       };
       reviews.push(review);
@@ -132,7 +137,9 @@ function createRequestHarness(): {
             review.executionLeaseOwner === where.executionLeaseOwner) &&
           (where.headSha === undefined || review.headSha === where.headSha) &&
           (where.githubMainPostedAt === undefined ||
-            review.githubMainPostedAt === where.githubMainPostedAt);
+            review.githubMainPostedAt === where.githubMainPostedAt) &&
+          (where.trialCreditState === undefined ||
+            review.trialCreditState === where.trialCreditState);
 
         if (!review || !matches) return { count: 0 };
 
@@ -159,6 +166,9 @@ function createRequestHarness(): {
         if ("githubMainPostedAt" in data) {
           review.githubMainPostedAt = data.githubMainPostedAt as Date | null;
         }
+        if ("trialCreditState" in data) {
+          review.trialCreditState = data.trialCreditState as FakeReview["trialCreditState"];
+        }
         return { count: 1 };
       },
     ),
@@ -171,7 +181,68 @@ function createRequestHarness(): {
     ),
   };
   const sendEvent = vi.fn(async () => ({ ids: ["event-1"] }));
-  const bindGithubWebhookDeliveryRequest = vi.fn(async () => undefined);
+  const bindGithubWebhookDeliveryRequest = vi.fn(
+    async (...bindingArguments: unknown[]) => {
+      void bindingArguments;
+    },
+  );
+  const createReviewWithTrialReservation = vi.fn(
+    async (input: Record<string, unknown>) =>
+      prisma.$transaction(async (client) => {
+        const supersededReviews = await client.review.updateManyAndReturn({
+          where: {
+            repositoryId: input.repositoryId,
+            prNumber: input.prNumber,
+            reviewType: input.reviewType,
+            headSha: { not: input.headSha },
+            status: { in: ["PENDING", "RUNNING", "POSTING"] },
+            githubMainPostedAt: null,
+          },
+          data: {
+            status: "SUPERSEDED",
+            failureStage: null,
+            failureMessage: null,
+            executionLeaseExpiresAt: null,
+            executionLeaseToken: null,
+            executionLeaseOwner: null,
+          },
+        });
+        const review = await client.review.create({
+          data: {
+            ...input,
+            review: "",
+            status: "PENDING",
+            attemptCount: 1,
+            executionLeaseOwner: "QUEUE",
+            executionLeaseToken: input.queueLeaseToken,
+            executionLeaseExpiresAt: input.queueLeaseExpiresAt,
+            trialCreditState: "NOT_APPLICABLE",
+          },
+        });
+        if (input.transportBinding) {
+          const binding = input.transportBinding as {
+            deliveryRowId: string;
+            leaseToken: string;
+          };
+          await bindGithubWebhookDeliveryRequest(
+            {
+              deliveryRowId: binding.deliveryRowId,
+              leaseToken: binding.leaseToken,
+              requestKey: String(input.requestKey),
+            },
+            client,
+          );
+        }
+        return {
+          kind: "created" as const,
+          review,
+          supersededReviewRuns: supersededReviews.map((candidate) => ({
+            reviewId: candidate.id,
+            attempt: candidate.attemptCount,
+          })),
+        };
+      }),
+  );
   const getPullRequestSnapshot = vi.fn(async () => ({
     title: "Improve coordinator",
     url: "https://github.com/octo/sample/pull/42",
@@ -195,7 +266,17 @@ function createRequestHarness(): {
     })),
     getPullRequestSnapshot,
     getUserLanguageByUserId: vi.fn(async (): Promise<"ko"> => "ko"),
-    getUserTier: vi.fn(async (): Promise<"PRO"> => "PRO"),
+    createReviewWithTrialReservation:
+      createReviewWithTrialReservation as unknown as ReviewRequestDependencies["createReviewWithTrialReservation"],
+    prepareTrialCreditForRetry: vi.fn(async () => ({
+      kind: "ready" as const,
+      trialCreditState: "NOT_APPLICABLE" as const,
+    })),
+    releaseTrialCredit: vi.fn(async () => false),
+    runReviewTrialTransaction: vi.fn(
+      async (operation: (client: unknown) => Promise<unknown>) =>
+        prisma.$transaction(operation as (client: { review: typeof reviewDelegate }) => Promise<unknown>),
+    ) as unknown as ReviewRequestDependencies["runReviewTrialTransaction"],
     bindGithubWebhookDeliveryRequest,
     sendEvent,
     now: () => NOW,
@@ -207,6 +288,7 @@ function createRequestHarness(): {
     sendEvent,
     getPullRequestSnapshot,
     bindGithubWebhookDeliveryRequest,
+    createReviewWithTrialReservation,
   };
 }
 
@@ -429,10 +511,18 @@ describe("review request coordinator", () => {
     );
   });
 
-  it("rejects a free full review before snapshot or durable side effects", async () => {
-    const { dependencies, reviews, sendEvent, getPullRequestSnapshot } =
-      createRequestHarness();
-    dependencies.getUserTier = vi.fn(async (): Promise<"FREE"> => "FREE");
+  it("returns the atomic reservation entitlement rejection without durable side effects", async () => {
+    const {
+      dependencies,
+      reviews,
+      sendEvent,
+      getPullRequestSnapshot,
+      createReviewWithTrialReservation,
+    } = createRequestHarness();
+    createReviewWithTrialReservation.mockResolvedValue({
+      kind: "rejected",
+      reason: "PLAN_RESTRICTED",
+    });
 
     await expect(
       createReviewRequest(createFullReviewInput(), dependencies),
@@ -440,7 +530,29 @@ describe("review request coordinator", () => {
       kind: "rejected",
       reason: "PLAN_RESTRICTED",
     });
-    expect(getPullRequestSnapshot).not.toHaveBeenCalled();
+    expect(getPullRequestSnapshot).toHaveBeenCalledOnce();
+    expect(reviews).toHaveLength(0);
+    expect(sendEvent).not.toHaveBeenCalled();
+  });
+
+  it("returns trial exhausted without superseding or dispatching", async () => {
+    const {
+      dependencies,
+      reviews,
+      sendEvent,
+      createReviewWithTrialReservation,
+    } = createRequestHarness();
+    createReviewWithTrialReservation.mockResolvedValue({
+      kind: "rejected",
+      reason: "TRIAL_EXHAUSTED",
+    });
+
+    await expect(
+      createReviewRequest(createFullReviewInput(), dependencies),
+    ).resolves.toMatchObject({
+      kind: "rejected",
+      reason: "TRIAL_EXHAUSTED",
+    });
     expect(reviews).toHaveLength(0);
     expect(sendEvent).not.toHaveBeenCalled();
   });
@@ -558,6 +670,37 @@ describe("review request coordinator", () => {
         data: expect.objectContaining({ attempt: 2 }),
       }),
     );
+  });
+
+  it("keeps a released failed review unchanged when retry entitlement is exhausted", async () => {
+    const { dependencies, reviews, sendEvent } = createRequestHarness();
+    await createReviewRequest(createFullReviewInput(), dependencies);
+    const review = reviews[0];
+    if (!review) throw new Error("missing review fixture");
+    review.status = "FAILED";
+    review.trialCreditState = "RELEASED";
+    review.executionLeaseToken = null;
+    review.executionLeaseOwner = null;
+    review.executionLeaseExpiresAt = null;
+    sendEvent.mockClear();
+    dependencies.prepareTrialCreditForRetry = vi.fn(async () => ({
+      kind: "rejected" as const,
+      reason: "TRIAL_EXHAUSTED" as const,
+    }));
+
+    await expect(
+      retryReviewRequest(review.id, dependencies),
+    ).resolves.toMatchObject({
+      kind: "rejected",
+      reason: "TRIAL_EXHAUSTED",
+    });
+
+    expect(review).toMatchObject({
+      status: "FAILED",
+      attemptCount: 1,
+      trialCreditState: "RELEASED",
+    });
+    expect(sendEvent).not.toHaveBeenCalled();
   });
 
   it("resumes a bound queue failure on the same review without a new snapshot", async () => {

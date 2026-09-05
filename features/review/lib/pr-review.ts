@@ -1,11 +1,21 @@
 import { createOctokitClient } from "@/lib/github/github";
+import {
+  assertGithubArtifactBodyBudget,
+  buildGithubArtifactBody,
+} from "@/lib/github/github-artifact-body";
+import {
+  createPostedGithubArtifact,
+  type PostedGithubArtifact,
+} from "@/lib/github/github-review-artifacts";
 import type { CodeSuggestion, StructuredIssue, RepeatBadgeInfo } from "@/features/ai";
 import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "@/features/ai";
 import { normalizeSuggestionExplanation } from "@/features/ai/lib/suggestion-format";
 import type { LanguageCode } from "@/shared/types/language";
 import { ISSUE_FIELD_LABELS, REPEAT_BADGE_LABELS, VERIFICATION_LABELS } from "@/shared/constants";
+import { GITHUB_POST_TIMEOUT_MS } from "../constants";
+import { buildReviewArtifactMarker } from "./review-artifact-marker";
 
-type RepeatAnnotatedIssue = StructuredIssue & {
+export type RepeatAnnotatedIssue = StructuredIssue & {
   repeat?: RepeatBadgeInfo | null;
   verifierConfirmed?: boolean;
 };
@@ -17,17 +27,32 @@ interface ReviewComment {
   body: string;
 }
 
-interface PostPRReviewParams {
+export type PersistedReviewSuggestion = CodeSuggestion & { id: string };
+export type PersistedReviewIssue = RepeatAnnotatedIssue & { id: string };
+
+export interface PostPRReviewParams {
   token: string;
   owner: string;
   repo: string;
   prNumber: number;
-  reviewBody: string;
-  suggestions: CodeSuggestion[];
-  issues: RepeatAnnotatedIssue[];
+  reviewId: string;
+  reviewContent: string;
+  mainMarker: string;
+  suggestions: PersistedReviewSuggestion[];
+  issues: PersistedReviewIssue[];
   headSha: string;
   langCode: LanguageCode;
   beforeInlinePost(): Promise<void>;
+}
+
+export interface PostVerificationReviewInput {
+  token: string;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  headSha: string;
+  content: string;
+  marker: string;
 }
 
 /**
@@ -40,13 +65,17 @@ interface PostPRReviewParams {
  * suggestions는 before 필드로 diff 정합성을 검증할 수 있지만, issues는 검증 수단이 없다.
  * 따라서 suggestions 먼저 포스팅 → issues 별도 포스팅(실패 허용) 전략을 사용한다.
  */
-export async function postPRReviewWithSuggestions(params: PostPRReviewParams): Promise<void> {
+export async function postPRReviewWithSuggestions(
+  params: PostPRReviewParams,
+): Promise<PostedGithubArtifact> {
   const {
     token,
     owner,
     repo,
     prNumber,
-    reviewBody,
+    reviewId,
+    reviewContent,
+    mainMarker,
     suggestions,
     issues,
     headSha,
@@ -57,44 +86,80 @@ export async function postPRReviewWithSuggestions(params: PostPRReviewParams): P
   const octokit = createOctokitClient(token);
 
   // suggestion comments
-  const suggestionComments: ReviewComment[] = suggestions.map((s) => {
+  const suggestionComments: ReviewComment[] = suggestions.flatMap((s) => {
     const beforeLineCount = s.before.split("\n").length;
+    const body = buildAdvisoryBody({
+      content: formatSuggestionComment(s),
+      marker: buildReviewArtifactMarker(reviewId, {
+        kind: "suggestion",
+        id: s.id,
+      }),
+    });
+    if (!body) {
+      return [];
+    }
     const comment: ReviewComment = {
       path: s.file,
       line: s.line + beforeLineCount - 1,
-      body: formatSuggestionComment(s),
+      body,
     };
     if (beforeLineCount > 1) {
       comment.startLine = s.line;
     }
-    return comment;
+    return [comment];
   });
 
   // issue comments (file+line 둘 다 있는 issues만 inline comment로)
   // file-level issues (line: null)는 review body 테이블에 포함됨
   // ⚠️ type predicate 사용 — plain .filter()는 TypeScript narrowing 불가
   const inlineIssues = issues.filter(
-    (i): i is RepeatAnnotatedIssue & { file: string; line: number } =>
+    (i): i is PersistedReviewIssue & { file: string; line: number } =>
       i.file !== null && i.line !== null
   );
-  const issueComments: ReviewComment[] = inlineIssues.map((i) => ({
-    path: i.file,
-    line: i.line,
-    body: formatIssueComment(i, labels, REPEAT_BADGE_LABELS[langCode], VERIFICATION_LABELS[langCode]),
-  }));
+  const issueComments: ReviewComment[] = inlineIssues.flatMap((i) => {
+    const body = buildAdvisoryBody({
+      content: formatIssueComment(
+        i,
+        labels,
+        REPEAT_BADGE_LABELS[langCode],
+        VERIFICATION_LABELS[langCode],
+      ),
+      marker: buildReviewArtifactMarker(reviewId, {
+        kind: "issue",
+        id: i.id,
+      }),
+    });
+
+    return body ? [{ path: i.file, line: i.line, body }] : [];
+  });
+
+  const mainBody = buildGithubArtifactBody({
+    content: reviewContent,
+    marker: mainMarker,
+    title: "AI Code Review",
+  });
+  assertGithubArtifactBodyBudget({ body: mainBody });
 
   // 1차 호출: suggestions + review body (summary + general issues 테이블)
-  await octokit.rest.pulls.createReview({
+  const { data: mainReview } = await octokit.rest.pulls.createReview({
     owner,
     repo,
     pull_number: prNumber,
     commit_id: headSha,
-    body: `## AI Code Review\n\n${reviewBody}\n\n---\n*Generated by HReviewer*`,
+    body: mainBody,
     event: "COMMENT",
     comments: suggestionComments.map(({ startLine, ...c }) => ({
       ...c,
       ...(startLine ? { start_line: startLine } : {}),
     })),
+    request: { signal: AbortSignal.timeout(GITHUB_POST_TIMEOUT_MS) },
+  });
+
+  const artifact = createPostedGithubArtifact({
+    id: mainReview.id,
+    kind: "pull-request-review",
+    commitId: mainReview.commit_id,
+    postedAt: mainReview.submitted_at,
   });
 
   // 2차 호출: inline issues — 실패해도 suggestions에 영향 없음
@@ -116,10 +181,27 @@ export async function postPRReviewWithSuggestions(params: PostPRReviewParams): P
           line,
           body,
         })),
+        request: { signal: AbortSignal.timeout(GITHUB_POST_TIMEOUT_MS) },
       });
     } catch (error) {
       console.warn("Inline issue comments failed (suggestions were posted successfully):", error);
     }
+  }
+
+  return artifact;
+}
+
+function buildAdvisoryBody(input: {
+  content: string;
+  marker: string;
+}): string | null {
+  try {
+    const body = buildGithubArtifactBody(input);
+    assertGithubArtifactBodyBudget({ body });
+    return body;
+  } catch (error) {
+    console.warn("Skipped oversized or invalid advisory GitHub artifact:", error);
+    return null;
   }
 }
 
@@ -174,22 +256,27 @@ function formatIssueComment(
 /** 검수자 명의(동일 계정)의 body-only 리뷰 엔트리 게시.
  *  인라인 코멘트 없음 — body가 있는 review는 PR Conversation 탭에 별도 리뷰 카드로 나타난다
  *  (위 postPRReviewWithSuggestions 2차 호출의 "body 필드 생략" 주석과 동일 근거의 역방향 활용). */
-export async function postVerificationReview(params: {
-  token: string;
-  owner: string;
-  repo: string;
-  prNumber: number;
-  headSha: string;
-  body: string;
-}): Promise<void> {
-  const { token, owner, repo, prNumber, headSha, body } = params;
+export async function postVerificationReview(
+  input: PostVerificationReviewInput,
+): Promise<PostedGithubArtifact> {
+  const { token, owner, repo, prNumber, headSha, content, marker } = input;
   const octokit = createOctokitClient(token);
-  await octokit.rest.pulls.createReview({
+  const body = buildGithubArtifactBody({ content, marker });
+  assertGithubArtifactBodyBudget({ body });
+  const { data } = await octokit.rest.pulls.createReview({
     owner,
     repo,
     pull_number: prNumber,
     commit_id: headSha,
     body,
     event: "COMMENT",
+    request: { signal: AbortSignal.timeout(GITHUB_POST_TIMEOUT_MS) },
+  });
+
+  return createPostedGithubArtifact({
+    id: data.id,
+    kind: "pull-request-review",
+    commitId: data.commit_id,
+    postedAt: data.submitted_at,
   });
 }

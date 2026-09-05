@@ -7,11 +7,21 @@ import { Check, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { PLAN_FEATURES, PLAN_PRICING } from "../../constants";
 
-interface FreePlanCardProps {
+type FreePlanCardProps = {
   isPro: boolean;
-}
+  trialReviewsEnabled: boolean;
+};
 
-export function FreePlanCard({ isPro }: FreePlanCardProps) {
+export function FreePlanCard({
+  isPro,
+  trialReviewsEnabled,
+}: FreePlanCardProps): ReactNode {
+  const freeFeatures = PLAN_FEATURES.free.map((feature) =>
+    feature.name === "5 AI code reviews, one-time" && !trialReviewsEnabled
+      ? { name: "No AI reviews (Pro only)", included: false }
+      : feature,
+  );
+
   return (
     <Card className={!isPro ? "ring-2 ring-primary" : ""}>
       <CardHeader>
@@ -29,7 +39,7 @@ export function FreePlanCard({ isPro }: FreePlanCardProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          {PLAN_FEATURES.free.map((feature) => (
+          {freeFeatures.map((feature) => (
             <div key={feature.name} className="flex items-center gap-2">
               {feature.included ? (
                 <Check className="h-4 w-4 text-primary" />
@@ -48,12 +58,12 @@ export function FreePlanCard({ isPro }: FreePlanCardProps) {
   );
 }
 
-interface ProPlanCardProps {
+type ProPlanCardProps = {
   isPro: boolean;
   action: ReactNode;
-}
+};
 
-export function ProPlanCard({ isPro, action }: ProPlanCardProps) {
+export function ProPlanCard({ isPro, action }: ProPlanCardProps): ReactNode {
   return (
     <Card className={isPro ? "ring-2 ring-primary" : ""}>
       <CardHeader>

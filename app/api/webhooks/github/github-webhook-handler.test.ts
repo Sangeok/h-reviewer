@@ -475,13 +475,19 @@ describe("createGithubWebhookHandler", () => {
     expect(dependencies.finalizeMergedPullRequest).not.toHaveBeenCalled();
   });
 
-  it("treats factual review rejection as processed instead of an operational retry", async () => {
+  it.each([
+    ["pr_not_reviewable", "The pull request is closed"],
+    ["plan_restricted", "AI reviews require Pro"],
+    ["trial_exhausted", "The free trial is exhausted"],
+  ] as const)(
+    "treats %s review rejection as processed instead of an operational retry",
+    async (reason, message) => {
     const dependencies = createDependencies({
       queueReview: vi.fn<GithubWebhookHandlerDependencies["queueReview"]>(
         async () => ({
           success: false,
-          message: "The pull request is closed",
-          reason: "pr_not_reviewable",
+          message,
+          reason,
         }),
       ),
     });
@@ -493,11 +499,12 @@ describe("createGithubWebhookHandler", () => {
 
     expect(response).toEqual({
       status: 200,
-      body: { message: "The pull request is closed" },
+      body: { message },
     });
     expect(dependencies.completeDelivery).toHaveBeenCalledOnce();
     expect(dependencies.failDelivery).not.toHaveBeenCalled();
-  });
+    },
+  );
 
   it("checks the delivery header only after a valid signature", async () => {
     const dependencies = createDependencies();

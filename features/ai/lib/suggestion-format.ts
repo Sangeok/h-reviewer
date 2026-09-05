@@ -3,8 +3,8 @@ import type { CodeSuggestion } from "../types/suggestion";
 import type { LanguageCode } from "@/shared/types/language";
 
 export const SUGGESTION_SECTION_HINT = {
-  en: "> Each item maps 1:1 to an inline suggestion. Apply the actual code change directly from the Files changed tab.",
-  ko: ">\u0020\uC544\uB798 \uD56D\uBAA9\uC740 \uAC01\uAC01 inline suggestion\uACFC 1:1\uB85C \uC5F0\uACB0\uB429\uB2C8\uB2E4. \uC2E4\uC81C \uCF54\uB4DC \uBCC0\uACBD\uC740 Files changed \uD0ED\uC5D0\uC11C \uBC14\uB85C \uC801\uC6A9\uD558\uC138\uC694.",
+  en: "> Each item includes the exact replacement. An inline suggestion may also be available in Files changed.",
+  ko: "> 아래 항목마다 실제 교체 코드가 포함됩니다. Files changed 탭에도 inline suggestion이 제공될 수 있습니다.",
 } as const satisfies Record<LanguageCode, string>;
 
 export function normalizeSuggestionExplanation(explanation: string): string {
@@ -31,6 +31,14 @@ export function formatSuggestionLocation(suggestion: CodeSuggestion): string {
 export function formatSuggestionSummaryItem(suggestion: CodeSuggestion): string {
   const header = `- ${SEVERITY_EMOJI[suggestion.severity]} ${suggestion.severity} \u00b7 \`${formatSuggestionLocation(suggestion)}\``;
   const explanation = normalizeSuggestionExplanation(suggestion.explanation);
+  const longestBacktickRun = Math.max(
+    0,
+    ...Array.from(suggestion.after.matchAll(/`+/g), (match) => match[0].length),
+  );
+  const fence = "`".repeat(Math.max(3, longestBacktickRun + 1));
+  const replacement = `${fence}\n${suggestion.after}\n${fence}`;
 
-  return explanation ? `${header}\n  ${explanation}` : header;
+  return [header, explanation ? `  ${explanation}` : null, replacement]
+    .filter((line): line is string => line !== null)
+    .join("\n\n");
 }

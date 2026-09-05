@@ -6,6 +6,7 @@ import {
   disconnectRepository as disconnectRepositoryInternal,
   disconnectAllRepositoriesInternal,
 } from "@/features/repository";
+import { RepositoryDisconnectError } from "@/features/repository/lib/repository-disconnect";
 import { DEFAULT_LANGUAGE, type LanguageCode } from "../constants";
 import { isValidLanguageCode } from "../lib/language";
 import { profileUpdateSchema, type ProfileUpdateInput } from "../constants/profile-schema";
@@ -111,7 +112,11 @@ export async function disconnectRepository(repositoryId: string): Promise<void> 
   try {
     await disconnectRepositoryInternal(repositoryId, session.user.id);
   } catch (error) {
-    console.error("Error disconnecting repository:", error);
+    if (error instanceof RepositoryDisconnectError) {
+      console.error("Repository disconnect rejected", { code: error.code });
+      throw error;
+    }
+    console.error("Repository disconnect rejected", { code: "DISCONNECT_FAILED" });
     throw error instanceof Error ? error : new Error("Failed to disconnect repository");
   }
 }
@@ -121,7 +126,11 @@ export async function disconnectAllRepositories(): Promise<void> {
   try {
     await disconnectAllRepositoriesInternal(session.user.id);
   } catch (error) {
-    console.error("Error disconnecting all repositories:", error);
+    if (error instanceof RepositoryDisconnectError) {
+      console.error("Repository disconnect rejected", { code: error.code });
+      throw error;
+    }
+    console.error("Repository disconnect rejected", { code: "DISCONNECT_FAILED" });
     throw error instanceof Error ? error : new Error("Failed to disconnect all repositories");
   }
 }

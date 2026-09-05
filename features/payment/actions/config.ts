@@ -2,11 +2,21 @@
 
 import prisma from "@/lib/db";
 import { requireAuthSession } from "@/lib/server-utils";
-import { PRO_UPGRADE_ENABLED } from "../constants/flags";
-import { getRemainingLimits, updateUserTier, type UserLimits, type SubscriptionStatus } from "../lib/subscription";
-import { polarClient } from "../constants/polar";
 
-export interface SubscriptionData {
+import {
+  FREE_REVIEW_TRIAL_ENABLED,
+  PRO_UPGRADE_ENABLED,
+} from "../constants/flags";
+import { polarClient } from "../constants/polar";
+import {
+  getRemainingLimits,
+  type SubscriptionStatus,
+  updateUserTier,
+  type UserLimits,
+} from "../lib/subscription";
+
+export type SubscriptionData = {
+  freeReviewTrialEnabled: boolean;
   proUpgradeEnabled: boolean;
   user: {
     id: string;
@@ -18,7 +28,7 @@ export interface SubscriptionData {
     polarSubscriptionId: string | null;
   } | null;
   limits: UserLimits | null;
-}
+};
 
 interface PolarSubscriptionLike {
   id: string;
@@ -46,12 +56,18 @@ export async function getSubscriptionData(): Promise<SubscriptionData> {
   });
 
   if (!user) {
-    return { proUpgradeEnabled: PRO_UPGRADE_ENABLED, user: null, limits: null };
+    return {
+      freeReviewTrialEnabled: FREE_REVIEW_TRIAL_ENABLED,
+      proUpgradeEnabled: PRO_UPGRADE_ENABLED,
+      user: null,
+      limits: null,
+    };
   }
 
   const limits = await getRemainingLimits(user.id);
 
   return {
+    freeReviewTrialEnabled: FREE_REVIEW_TRIAL_ENABLED,
     proUpgradeEnabled: PRO_UPGRADE_ENABLED,
     user: {
       id: user.id,

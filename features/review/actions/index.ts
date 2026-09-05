@@ -2,6 +2,18 @@
 
 import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
+import {
+  retryReview as retryReviewAction,
+  type RetryReviewActionResult,
+} from "./retry-review";
+
+export type { RetryReviewActionResult } from "./retry-review";
+
+export async function retryReview(
+  reviewId: string,
+): Promise<RetryReviewActionResult> {
+  return retryReviewAction(reviewId);
+}
 
 export async function getUserReviews() {
   const session = await requireAuthSession();

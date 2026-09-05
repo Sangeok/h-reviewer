@@ -2,34 +2,29 @@ import "server-only";
 
 import prisma from "@/lib/db";
 
+import { FREE_REVIEW_TRIAL_LIMIT } from "../constants";
+import { FREE_REVIEW_TRIAL_ENABLED } from "../constants/flags";
+
 export type SubscriptionTier = "FREE" | "PRO";
 export type SubscriptionStatus = "ACTIVE" | "CANCELLED" | "EXPIRED";
 
-export interface UserLimits {
+export type UserLimits = {
   tier: SubscriptionTier;
   repositories: {
     current: number;
     limit: number | null;
     canAdd: boolean;
   };
-  reviews: {
-    [repositoryId: string]: {
-      current: number;
-      limit: number | null;
-      canAdd: boolean;
-    };
+  trialReviews: {
+    enabled: boolean;
+    used: number;
+    limit: number | null;
+    remaining: number | null;
+    canReview: boolean;
   };
-}
+};
 
 type UserUsageClient = Pick<typeof prisma, "userUsage">;
-
-function parseReviewCounts(raw: unknown): Record<string, number> {
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    return raw as Record<string, number>;
-  }
-  console.error("Invalid reviewCounts format:", raw);
-  return {};
-}
 
 function isSubscriptionTier(value: string | null | undefined): value is SubscriptionTier {
   return value === "FREE" || value === "PRO";
@@ -38,11 +33,9 @@ function isSubscriptionTier(value: string | null | undefined): value is Subscrip
 const TIER_LIMITS = {
   FREE: {
     repositories: 5,
-    reviewsPerRepo: 0,
   },
   PRO: {
     repositories: null, // unlimited
-    reviewsPerRepo: null, // unlimited
   },
 } as const;
 
@@ -129,39 +122,32 @@ export async function decrementRepositoryCount(userId: string): Promise<void> {
 export async function getRemainingLimits(userId: string): Promise<UserLimits> {
   const tier = await getUserTier(userId);
   const usage = await getUserUsage(userId);
-  const reviewCounts = parseReviewCounts(usage.reviewCounts);
+  const isPro = tier === "PRO";
+  const trialLimit = isPro || !FREE_REVIEW_TRIAL_ENABLED
+    ? null
+    : FREE_REVIEW_TRIAL_LIMIT;
+  const trialRemaining = trialLimit === null
+    ? null
+    : Math.max(0, trialLimit - usage.trialReviewCreditsUsed);
 
-  const limits: UserLimits = {
+  return {
     tier,
     repositories: {
       current: usage.repositoryCount,
-      limit: tier === "PRO" ? null : TIER_LIMITS.FREE.repositories,
-      canAdd: tier === "PRO" || usage.repositoryCount < TIER_LIMITS.FREE.repositories,
+      limit: isPro ? null : TIER_LIMITS.FREE.repositories,
+      canAdd: isPro || usage.repositoryCount < TIER_LIMITS.FREE.repositories,
     },
-    reviews: {},
+    trialReviews: {
+      enabled: isPro || FREE_REVIEW_TRIAL_ENABLED,
+      used: usage.trialReviewCreditsUsed,
+      limit: trialLimit,
+      remaining: trialRemaining,
+      canReview:
+        isPro ||
+        (FREE_REVIEW_TRIAL_ENABLED &&
+          usage.trialReviewCreditsUsed < FREE_REVIEW_TRIAL_LIMIT),
+    },
   };
-
-  // get all repositories for the user
-  const repositories = await prisma.repository.findMany({
-    where: {
-      userId,
-    },
-    select: {
-      id: true,
-    },
-  });
-
-  // Calculate remaining limits for each repository
-  for (const repo of repositories) {
-    const currentCount = reviewCounts[repo.id] ?? 0;
-    limits.reviews[repo.id] = {
-      current: currentCount,
-      limit: tier === "PRO" ? null : TIER_LIMITS.FREE.reviewsPerRepo,
-      canAdd: tier === "PRO" || currentCount < TIER_LIMITS.FREE.reviewsPerRepo,
-    };
-  }
-
-  return limits;
 }
 
 export async function updateUserTier(

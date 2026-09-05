@@ -6,6 +6,12 @@ vi.mock("server-only", () => ({}));
 
 import { createTestPrismaClient } from "@/lib/test/create-test-prisma-client";
 import {
+  createReviewWithTrialReservation,
+  prepareTrialCreditForRetry,
+  releaseTrialCredit,
+  runReviewTrialTransaction,
+} from "@/features/payment/lib/review-trial";
+import {
   acquireGithubWebhookDelivery,
   bindGithubWebhookDeliveryRequest,
 } from "@/lib/github/github-webhook-delivery";
@@ -104,7 +110,10 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           merged: false,
         })),
         getUserLanguageByUserId: vi.fn(async (): Promise<"en"> => "en"),
-        getUserTier: vi.fn(async (): Promise<"PRO"> => "PRO"),
+        createReviewWithTrialReservation,
+        prepareTrialCreditForRetry,
+        releaseTrialCredit,
+        runReviewTrialTransaction,
         bindGithubWebhookDeliveryRequest,
         sendEvent,
         now: () => new Date(),
@@ -208,7 +217,10 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           merged: false,
         })),
         getUserLanguageByUserId: vi.fn(async (): Promise<"en"> => "en"),
-        getUserTier: vi.fn(async (): Promise<"PRO"> => "PRO"),
+        createReviewWithTrialReservation,
+        prepareTrialCreditForRetry,
+        releaseTrialCredit,
+        runReviewTrialTransaction,
         bindGithubWebhookDeliveryRequest,
         sendEvent: vi.fn(async () => ({ ids: [randomUUID()] })),
         now: () => new Date(),

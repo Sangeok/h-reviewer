@@ -7,6 +7,7 @@ import type {
   ReviewExecutionStage,
   ReviewFailureStage,
   ReviewStatus,
+  TrialCreditState,
 } from "@/lib/generated/prisma/enums";
 
 import {
@@ -21,7 +22,7 @@ const T02_ALLOWED_TRANSITIONS: Readonly<
   RUNNING: ["POSTING", "FAILED", "SUPERSEDED"],
   POSTING: ["COMPLETED", "FAILED", "SUPERSEDED"],
   COMPLETED: [],
-  FAILED: [],
+  FAILED: ["PENDING", "COMPLETED"],
   SUPERSEDED: [],
 };
 
@@ -97,6 +98,25 @@ export type RetryFailedReviewExecutionInput = {
   attempt: number;
   queueLeaseToken: string;
   now: Date;
+  expectedTrialCreditState: Extract<
+    TrialCreditState,
+    "NOT_APPLICABLE" | "RESERVED"
+  >;
+  preserveLastCompletedStage?: boolean;
+};
+
+export type RecordGithubMainArtifactInput = {
+  reviewId: string;
+  attempt: number;
+  leaseToken: string;
+  leaseOwner: Extract<ReviewExecutionLeaseOwner, "WORKER" | "RECONCILER">;
+  allowedStatuses: readonly Extract<
+    ReviewStatus,
+    "POSTING" | "FAILED" | "SUPERSEDED"
+  >[];
+  artifactId: string;
+  postedAt: Date;
+  now: Date;
 };
 
 export class ReviewStateConflictError extends Error {
@@ -119,7 +139,7 @@ function assertTransitionInput(input: TransitionReviewExecutionInput): void {
 
   if (!isAllowedTransition) {
     throw new ReviewStateConflictError(
-      `Review transition to ${input.to} is not allowed in T02`,
+      `Review transition to ${input.to} is not allowed`,
     );
   }
 
@@ -174,6 +194,17 @@ export async function transitionReviewExecution(
       executionLeaseToken: input.leaseToken,
       executionLeaseOwner: input.leaseOwner,
       executionLeaseExpiresAt: { gt: input.now },
+      ...(input.to === "COMPLETED"
+        ? {
+            review: { not: "" },
+            githubMainReviewId: { not: null },
+            githubMainPostedAt: { not: null },
+            lastCompletedStage: {
+              in: ["MAIN_POSTED", "INLINE_POSTED", "VERIFICATION_POSTED"],
+            },
+            trialCreditState: { not: "RESERVED" },
+          }
+        : {}),
     },
     data: {
       status: input.to,
@@ -197,6 +228,46 @@ export async function transitionReviewExecution(
   if (result.count !== 1) {
     throw new ReviewStateConflictError(
       `Review ${input.reviewId} execution lease was lost`,
+    );
+  }
+}
+
+export async function recordGithubMainArtifact(
+  input: RecordGithubMainArtifactInput,
+  client: ReviewExecutionClient = prisma,
+): Promise<void> {
+  if (
+    input.allowedStatuses.length === 0 ||
+    input.artifactId.trim().length === 0 ||
+    Number.isNaN(input.postedAt.getTime())
+  ) {
+    throw new ReviewStateConflictError(
+      "Main artifact recording requires a status and artifact ID",
+    );
+  }
+
+  const result = await client.review.updateMany({
+    where: {
+      id: input.reviewId,
+      status: { in: [...input.allowedStatuses] },
+      attemptCount: input.attempt,
+      review: { not: "" },
+      executionLeaseToken: input.leaseToken,
+      executionLeaseOwner: input.leaseOwner,
+      executionLeaseExpiresAt: { gt: input.now },
+    },
+    data: {
+      githubMainReviewId: input.artifactId,
+      githubMainPostedAt: input.postedAt,
+      artifactLookupMissedAt: null,
+      lastCompletedStage: "MAIN_POSTED",
+      executionLeaseExpiresAt: getLeaseExpiration(input.now),
+    },
+  });
+
+  if (result.count !== 1) {
+    throw new ReviewStateConflictError(
+      `Review ${input.reviewId} main GitHub artifact could not be recorded`,
     );
   }
 }
@@ -302,12 +373,13 @@ export async function retryFailedReviewExecution(
       executionLeaseExpiresAt: null,
       executionLeaseToken: null,
       executionLeaseOwner: null,
+      trialCreditState: input.expectedTrialCreditState,
     },
     data: {
       status: "PENDING",
       failureStage: null,
       failureMessage: null,
-      lastCompletedStage: null,
+      ...(input.preserveLastCompletedStage ? {} : { lastCompletedStage: null }),
       attemptCount: nextAttempt,
       executionLeaseExpiresAt: getQueueLeaseExpiration(input.now),
       executionLeaseToken: input.queueLeaseToken,

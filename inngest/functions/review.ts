@@ -1,8 +1,14 @@
 import prisma from "@/lib/db";
 import { Prisma } from "@/lib/generated/prisma/client";
+import type { ReviewFailureStage } from "@/lib/generated/prisma/enums";
 import { inngest } from "../client";
 import { getPullRequestDiff, postReviewComment } from "@/lib/github/github";
-import { postPRReviewWithSuggestions, postVerificationReview } from "@/features/review/lib/pr-review";
+import {
+  postPRReviewWithSuggestions,
+  postVerificationReview,
+  type PersistedReviewIssue,
+  type PersistedReviewSuggestion,
+} from "@/features/review/lib/pr-review";
 import {
   buildDeterministicPrContext, createEmptyDeterministicPrContext, classifyPRSize,
   structuredReviewSchema, buildStructuredPrompt, buildFallbackPrompt,
@@ -35,10 +41,25 @@ import type { LanguageCode } from "@/features/settings";
 import type { HReviewerEvents } from "../events";
 import {
   claimReviewExecution,
+  recordGithubMainArtifact,
   renewReviewExecutionLease,
   transitionReviewExecution,
 } from "@/features/review/lib/review-execution-state";
+import {
+  consumeTrialCredit,
+  releaseTrialCredit,
+} from "@/features/payment/lib/review-trial";
 import { assertCurrentReviewHead } from "@/features/review/lib/review-head-guard";
+import { buildReviewArtifactMarker } from "@/features/review/lib/review-artifact-marker";
+import { createReviewFailureHandler } from "@/features/review/lib/review-on-failure";
+import {
+  assertGithubArtifactBodyBudget,
+  buildGithubArtifactBody,
+} from "@/lib/github/github-artifact-body";
+import {
+  findGithubReviewArtifact,
+  type PostedGithubArtifact,
+} from "@/lib/github/github-review-artifacts";
 
 const CONTEXT_BUILD_TIMEOUT_MS = 45_000;
 
@@ -94,18 +115,27 @@ export type ReviewWorkerDependencies = {
   postReviewComment: typeof postReviewComment;
   postPRReviewWithSuggestions: typeof postPRReviewWithSuggestions;
   postVerificationReview: typeof postVerificationReview;
+  findGithubReviewArtifact: typeof findGithubReviewArtifact;
   buildDeterministicPrContext: typeof buildDeterministicPrContext;
   generateText: typeof generateText;
   createGeneratorModel: typeof google;
   verifyReview: typeof verifyReview;
   detectRepeatIssues: typeof detectRepeatIssues;
   assertCurrentReviewHead: typeof assertCurrentReviewHead;
+  consumeTrialCredit: typeof consumeTrialCredit;
+  releaseTrialCredit: typeof releaseTrialCredit;
   createTimeoutSignal(milliseconds: number): AbortSignal;
   now(): Date;
 };
 
+type PersistedReviewPostingData = {
+  suggestions: PersistedReviewSuggestion[];
+  issues: PersistedReviewIssue[];
+};
+
 type ClaimedReviewRequest = {
   id: string;
+  review: string;
   attemptCount: number;
   headSha: string;
   githubAuthorId: string;
@@ -119,6 +149,7 @@ type ClaimedReviewRequest = {
     userId: string;
   };
   prNumber: number;
+  trialCreditState: "NOT_APPLICABLE" | "RESERVED";
 };
 
 async function getBoundGithubToken(
@@ -198,6 +229,95 @@ function getSafeExternalErrorSummary(
     name: error instanceof Error ? error.name : "UnknownError",
     status,
   };
+}
+
+function isDeterministicGithubValidationError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    error.status === 422
+  );
+}
+
+async function failReviewExecutionAndReleaseCredit(input: {
+  dependencies: ReviewWorkerDependencies;
+  reviewRequest: ClaimedReviewRequest;
+  attempt: number;
+  leaseToken: string;
+  stage: ReviewFailureStage;
+  message: string;
+}): Promise<void> {
+  const now = input.dependencies.now();
+  await input.dependencies.prisma.$transaction(async (transactionClient) => {
+    if (input.reviewRequest.trialCreditState === "RESERVED") {
+      await input.dependencies.releaseTrialCredit(
+        {
+          reviewId: input.reviewRequest.id,
+          attempt: input.attempt,
+          leaseToken: input.leaseToken,
+          leaseOwner: "WORKER",
+          allowedStatuses: ["RUNNING"],
+        },
+        transactionClient,
+      );
+    }
+
+    await transitionReviewExecution(
+      {
+        reviewId: input.reviewRequest.id,
+        attempt: input.attempt,
+        leaseToken: input.leaseToken,
+        leaseOwner: "WORKER",
+        now,
+        from: ["RUNNING"],
+        to: "FAILED",
+        failure: { stage: input.stage, message: input.message },
+      },
+      transactionClient,
+    );
+  });
+}
+
+async function recordMainArtifactAndConsumeCredit(input: {
+  dependencies: ReviewWorkerDependencies;
+  reviewRequest: ClaimedReviewRequest;
+  attempt: number;
+  leaseToken: string;
+  artifact: PostedGithubArtifact;
+}): Promise<void> {
+  const now = input.dependencies.now();
+  await input.dependencies.prisma.$transaction(async (transactionClient) => {
+    if (input.reviewRequest.trialCreditState === "RESERVED") {
+      await input.dependencies.consumeTrialCredit(
+        {
+          reviewId: input.reviewRequest.id,
+          attempt: input.attempt,
+          leaseToken: input.leaseToken,
+          leaseOwner: "WORKER",
+          allowedStatuses: ["POSTING"],
+          githubMainReviewId: input.artifact.id,
+          postedAt: input.artifact.postedAt,
+        },
+        transactionClient,
+      );
+      return;
+    }
+
+    await recordGithubMainArtifact(
+      {
+        reviewId: input.reviewRequest.id,
+        attempt: input.attempt,
+        leaseToken: input.leaseToken,
+        leaseOwner: "WORKER",
+        allowedStatuses: ["POSTING"],
+        artifactId: input.artifact.id,
+        postedAt: input.artifact.postedAt,
+        now,
+      },
+      transactionClient,
+    );
+  });
 }
 
 function normalizeGenerateAiReviewStepResult(
@@ -291,7 +411,7 @@ function resolveEntryFile<T extends { file: string }>(
  * 게시·저장 자체는 진행한다 (fail-open, Step 5.3/5.5와 동일 철학).
  */
 function checkLengthAlignment(
-  scope: "post-review" | "save-review",
+  scope: "post-review" | "save-review" | "persist-review",
   name: string,
   expected: number,
   actual: number,
@@ -311,7 +431,7 @@ function checkLengthAlignment(
 /** repeatAnnotations 전용 wrapper — 빈 배열 허용(allowEmpty) 정책을 배열에 바인딩한다.
  *  Step 5.5는 실패·이슈 0개 시 []를 반환하므로 빈 배열은 정상 상태다. */
 function checkRepeatsAligned(
-  scope: "post-review" | "save-review",
+  scope: "post-review" | "save-review" | "persist-review",
   expected: number,
   actual: number,
 ): boolean {
@@ -334,12 +454,14 @@ export function createGenerateReviewHandler(
         where: { id: reviewId },
         select: {
           id: true,
+          review: true,
           attemptCount: true,
           headSha: true,
           githubAuthorId: true,
           langCode: true,
           maxSuggestions: true,
           verificationEnabled: true,
+          trialCreditState: true,
           prNumber: true,
           repository: {
             select: {
@@ -356,7 +478,11 @@ export function createGenerateReviewHandler(
         !review ||
         !review.headSha ||
         !review.githubAuthorId ||
-        review.attemptCount !== attempt
+        review.attemptCount !== attempt ||
+        (
+          review.trialCreditState !== "NOT_APPLICABLE" &&
+          review.trialCreditState !== "RESERVED"
+        )
       ) {
         throw new Error("Claimed review request data is incomplete");
       }
@@ -365,6 +491,7 @@ export function createGenerateReviewHandler(
         ...review,
         headSha: review.headSha,
         githubAuthorId: review.githubAuthorId,
+        trialCreditState: review.trialCreditState,
       } satisfies ClaimedReviewRequest;
     });
     const owner = reviewRequest.repository.owner;
@@ -374,6 +501,106 @@ export function createGenerateReviewHandler(
     const preferredLanguage = reviewRequest.langCode;
     const maxSuggestions = reviewRequest.maxSuggestions;
     const verificationEnabled = reviewRequest.verificationEnabled;
+
+    if (event.data.resumeFromPersisted) {
+      const mainMarker = buildReviewArtifactMarker(reviewId, "main");
+      const canPost = await step.run("prepare-persisted-review-post", async () => {
+        try {
+          const body = buildGithubArtifactBody({
+            content: reviewRequest.review,
+            marker: mainMarker,
+            title: "AI Code Review",
+          });
+          assertGithubArtifactBodyBudget({ body });
+        } catch {
+          await failReviewExecutionAndReleaseCredit({
+            dependencies,
+            reviewRequest,
+            attempt,
+            leaseToken,
+            stage: "PERSIST",
+            message: "The persisted review exceeds the safe GitHub artifact budget.",
+          });
+          return false;
+        }
+
+        await transitionReviewExecution(
+          {
+            reviewId,
+            attempt,
+            leaseToken,
+            leaseOwner: "WORKER",
+            now: dependencies.now(),
+            from: ["RUNNING"],
+            to: "POSTING",
+            lastCompletedStage: "PERSISTED",
+          },
+          dependencies.prisma,
+        );
+        return true;
+      });
+      if (!canPost) return { success: true };
+
+      const artifact = await step.run(
+        "post-persisted-review",
+        async (): Promise<PostedGithubArtifact> => {
+          const token = await getBoundGithubToken(dependencies, reviewRequest);
+          await assertAndRenewCurrentReviewHead({
+            dependencies,
+            reviewRequest,
+            attempt,
+            leaseToken,
+            allowedStatuses: ["POSTING"],
+          });
+          const existingArtifact = await dependencies.findGithubReviewArtifact({
+            token,
+            owner,
+            repo,
+            prNumber,
+            marker: mainMarker,
+            expectedAuthorId: reviewRequest.githubAuthorId,
+            expectedHeadSha: reviewRequest.headSha,
+          });
+
+          return existingArtifact ?? dependencies.postReviewComment({
+            token,
+            owner,
+            repo,
+            prNumber,
+            content: reviewRequest.review,
+            marker: mainMarker,
+            title: "AI Code Review",
+          });
+        },
+      );
+
+      await step.run("record-persisted-review-artifact", () =>
+        recordMainArtifactAndConsumeCredit({
+          dependencies,
+          reviewRequest,
+          attempt,
+          leaseToken,
+          artifact,
+        }),
+      );
+      await step.run("complete-persisted-review", () =>
+        transitionReviewExecution(
+          {
+            reviewId,
+            attempt,
+            leaseToken,
+            leaseOwner: "WORKER",
+            now: dependencies.now(),
+            from: ["POSTING"],
+            to: "COMPLETED",
+            lastCompletedStage: "MAIN_POSTED",
+          },
+          dependencies.prisma,
+        ),
+      );
+
+      return { success: true };
+    }
 
     // ── Step 1: PR 데이터 + 크기 정보 가져오기 ──
     const fetchResult = await step.run("fetch-pr-data", async () => {
@@ -400,22 +627,14 @@ export function createGenerateReviewHandler(
 
         return data;
       } catch {
-        await transitionReviewExecution(
-          {
-            reviewId,
-            attempt,
-            leaseToken,
-            leaseOwner: "WORKER",
-            now: dependencies.now(),
-            from: ["RUNNING"],
-            to: "FAILED",
-            failure: {
-              stage: "FETCH",
-              message: "Pull request data could not be fetched.",
-            },
-          },
-          dependencies.prisma,
-        );
+        await failReviewExecutionAndReleaseCredit({
+          dependencies,
+          reviewRequest,
+          attempt,
+          leaseToken,
+          stage: "FETCH",
+          message: "Pull request data could not be fetched.",
+        });
         return null;
       }
     });
@@ -919,212 +1138,141 @@ export function createGenerateReviewHandler(
       }
     });
 
-    await step.run("mark-review-posting", () =>
-      transitionReviewExecution(
-        {
-          reviewId,
-          attempt,
-          leaseToken,
-          leaseOwner: "WORKER",
-          now: dependencies.now(),
-          from: ["RUNNING"],
-          to: "POSTING",
-          lastCompletedStage: "VERIFIED",
-        },
-        dependencies.prisma,
-      ),
+    const issueCount = finalOutput?.issues.length ?? 0;
+    const suggestionCount = finalOutput?.suggestions.length ?? 0;
+    const verdictsAligned =
+      !verified ||
+      checkLengthAlignment(
+        "persist-review",
+        "keptIssueVerdicts",
+        issueCount,
+        verified.keptIssueVerdicts.length,
+      );
+    const suggestionVerdictsAligned =
+      !verified ||
+      checkLengthAlignment(
+        "persist-review",
+        "keptSuggestionVerdicts",
+        suggestionCount,
+        verified.keptSuggestionVerdicts.length,
+      );
+    const repeatsAligned = checkRepeatsAligned(
+      "persist-review",
+      issueCount,
+      repeatAnnotations.length,
     );
+    const issuesWithRepeat = (finalOutput?.issues ?? []).map((issue, index) => {
+      const annotation = repeatsAligned ? repeatAnnotations[index] : undefined;
+      const confirmed =
+        verdictsAligned &&
+        verified?.keptIssueVerdicts[index]?.verdict === "CONFIRMED";
+      return {
+        ...issue,
+        ...(annotation?.repeat ? { repeat: annotation.repeat } : {}),
+        ...(confirmed ? { verifierConfirmed: true } : {}),
+      };
+    });
+    const mainMarker = buildReviewArtifactMarker(reviewId, "main");
 
-    // ── Step 6: GitHub에 리뷰 게시 ──
-    // IMPORTANT: postedAsReview는 반드시 step.run()의 반환값으로 캡처해야 한다.
-    const postedAsReview = await step.run("post-review", async () => {
-      const token = await getBoundGithubToken(dependencies, reviewRequest);
-      const suggestions = finalOutput?.suggestions ?? [];
-      const issues = finalOutput?.issues ?? [];
-      const issueCount = issues.length;
-      const verdictsAligned =
-        !verified ||
-        checkLengthAlignment("post-review", "keptIssueVerdicts", issueCount, verified.keptIssueVerdicts.length);
-      const repeatsAligned = checkRepeatsAligned("post-review", issueCount, repeatAnnotations.length);
-      const issuesWithRepeat = issues.map((issue, index) => {
-        const annotation = repeatsAligned ? repeatAnnotations[index] : undefined;
-        const confirmed = verdictsAligned && verified?.keptIssueVerdicts[index]?.verdict === "CONFIRMED";
-        return {
-          ...issue,
-          ...(annotation?.repeat ? { repeat: annotation.repeat } : {}),
-          ...(confirmed ? { verifierConfirmed: true } : {}),
-        };
-      });
-      const inlineIssues = issuesWithRepeat.filter(i => i.file !== null && i.line !== null);
-      const hasInlineContent = suggestions.length > 0 || inlineIssues.length > 0;
-
-      await assertAndRenewCurrentReviewHead({
-        dependencies,
-        reviewRequest,
-        attempt,
-        leaseToken,
-        allowedStatuses: ["POSTING"],
-      });
-
-      if (hasInlineContent) {
+    // ── Step 6: canonical content와 child row를 외부 게시 전에 저장 ──
+    const persisted = await step.run(
+      "persist-review",
+      async (): Promise<PersistedReviewPostingData | null> => {
         try {
-          await dependencies.postPRReviewWithSuggestions({
-            token, owner, repo, prNumber, reviewBody: finalReview,
-            suggestions, issues: issuesWithRepeat, headSha, langCode,
-            beforeInlinePost: () =>
-              assertAndRenewCurrentReviewHead({
-                dependencies,
-                reviewRequest,
-                attempt,
-                leaseToken,
-                allowedStatuses: ["POSTING"],
-              }),
+          const outboundBody = buildGithubArtifactBody({
+            content: finalReview,
+            marker: mainMarker,
+            title: "AI Code Review",
           });
-          return true;
-        } catch (error) {
-          console.warn("PR Review API failed, falling back to comment", {
-            error: getSafeExternalErrorSummary(error),
-          });
-          await assertAndRenewCurrentReviewHead({
+          assertGithubArtifactBodyBudget({ body: outboundBody });
+        } catch {
+          await failReviewExecutionAndReleaseCredit({
             dependencies,
             reviewRequest,
             attempt,
             leaseToken,
-            allowedStatuses: ["POSTING"],
+            stage: "PERSIST",
+            message: "The review exceeds the safe GitHub artifact budget.",
           });
-          await dependencies.postReviewComment(token, owner, repo, prNumber, finalReview);
-          return false;
+          return null;
         }
-      } else {
-        await dependencies.postReviewComment(token, owner, repo, prNumber, finalReview);
-        return false;
-      }
-    });
 
-    // ── Step 6.5: 검수자가 제외한 항목 게시 (제외가 있을 때만) ──
-    // 1차 리뷰(Step 6)와 독립 — 실패해도 리뷰 흐름을 막지 않는다.
-    // 생존 항목의 판정은 인라인 배지와 대시보드 패널이 전달하므로 여기서 반복하지 않는다.
-    await step.run("post-verification-review", async () => {
-      if (!verified) return false;
-      if (countExcluded(verified) === 0) return false;
-
-      const token = await getBoundGithubToken(dependencies, reviewRequest);
-
-      const body = buildVerificationReviewBody({
-        rejectedIssues: verified.rejectedIssues,
-        rejectedSuggestions: verified.rejectedSuggestions,
-        langCode,
-      });
-      // string | null 좁히기 — 위 게이트는 타입을 좁히지 못한다.
-      if (body === null) return false;
-
-      try {
-        await assertAndRenewCurrentReviewHead({
-          dependencies,
-          reviewRequest,
-          attempt,
-          leaseToken,
-          allowedStatuses: ["POSTING"],
-        });
-        await dependencies.postVerificationReview({ token, owner, repo, prNumber, headSha, body });
-        return true;
-      } catch (error) {
-        console.warn(
-          "Verification review entry failed after the main review was posted",
-          { error: getSafeExternalErrorSummary(error) },
+        await renewReviewExecutionLease(
+          {
+            reviewId,
+            attempt,
+            leaseToken,
+            leaseOwner: "WORKER",
+            allowedStatuses: ["RUNNING"],
+            now: dependencies.now(),
+          },
+          dependencies.prisma,
         );
-        return false;
-      }
-    });
 
-    // ── Step 7: DB에 리뷰 저장 ──
-    await step.run("save-review", async () => {
-      await renewReviewExecutionLease(
-        {
-          reviewId,
-          attempt,
-          leaseToken,
-          leaseOwner: "WORKER",
-          allowedStatuses: ["POSTING"],
-          now: dependencies.now(),
-        },
-        dependencies.prisma,
-      );
+        return dependencies.prisma.$transaction(async (tx) => {
+          const hasNewIssueShape = (finalOutput?.issues ?? []).every(
+            (issue) => typeof (issue as { title?: unknown }).title === "string",
+          );
+          const verificationBlock = verification
+            ? {
+                status: verification.status,
+                model: VERIFIER_MODEL_ID,
+                issueVerdicts: verdictsAligned
+                  ? verified?.keptIssueVerdicts ?? []
+                  : [],
+                suggestionVerdicts: suggestionVerdictsAligned
+                  ? verified?.keptSuggestionVerdicts ?? []
+                  : [],
+                rejectedIssues: verified?.rejectedIssues ?? [],
+                rejectedSuggestions: verified?.rejectedSuggestions ?? [],
+              }
+            : null;
 
-      const issueCount = finalOutput?.issues?.length ?? 0;
-      const suggestionCount = finalOutput?.suggestions?.length ?? 0;
-      const verdictsAligned =
-        !verified ||
-        checkLengthAlignment("save-review", "keptIssueVerdicts", issueCount, verified.keptIssueVerdicts.length);
-      const suggestionVerdictsAligned =
-        !verified ||
-        checkLengthAlignment("save-review", "keptSuggestionVerdicts", suggestionCount, verified.keptSuggestionVerdicts.length);
-      const repeatsAligned = checkRepeatsAligned("save-review", issueCount, repeatAnnotations.length);
-
-      await dependencies.prisma.$transaction(async (tx) => {
-        await tx.review.update({
-          where: { id: reviewId },
-          data: {
-            prTitle: title,
-            review: finalReview,
-            reviewData: finalOutput
-              ? (() => {
-                  // shape guard: 배포 경쟁 상태에서 구 shape(description-only)이
-                  // memoize되어 resume될 때 schemaVersion이 실제 shape과 불일치하는 것을 방지.
-                  // issues가 빈 배열이면 .every()는 true → 정상적으로 v2 저장.
-                  const hasNewIssueShape = (finalOutput.issues ?? []).every(
-                    (i) => typeof (i as { title?: unknown }).title === "string",
-                  );
-                  const storedSchemaVersion = hasNewIssueShape ? REVIEW_SCHEMA_VERSION : 1;
-                  // verification 블록은 optional 추가 필드 — 버전 범프 불필요 (storedReviewDataSchema 참조)
-                  // 판정 배열은 저장된 issues/suggestions와 index 정렬이 전제 —
-                  // 어긋나면 빈 배열로 저장한다 (대시보드 패널은 entry 없는 row를 건너뜀).
-                  const verificationBlock = verification
-                    ? {
-                        status: verification.status,
-                        model: VERIFIER_MODEL_ID,
-                        issueVerdicts: verdictsAligned ? verified?.keptIssueVerdicts ?? [] : [],
-                        suggestionVerdicts: suggestionVerdictsAligned ? verified?.keptSuggestionVerdicts ?? [] : [],
-                        rejectedIssues: verified?.rejectedIssues ?? [],
-                        rejectedSuggestions: verified?.rejectedSuggestions ?? [],
-                      }
-                    : null;
-                  // 인터페이스 타입 배열(VerdictEntry[] 등)은 인덱스 시그니처가 없어
-                  // Prisma InputJsonValue에 구조적으로 미할당 — 값은 순수 JSON이므로 캐스트.
-                  return {
+          await tx.review.update({
+            where: { id: reviewId },
+            data: {
+              prTitle: title,
+              review: finalReview,
+              reviewData: finalOutput
+                ? ({
                     ...finalOutput,
                     ...(verificationBlock ? { verification: verificationBlock } : {}),
-                    schemaVersion: storedSchemaVersion,
-                  } as unknown as Prisma.InputJsonValue;
-                })()
-              : Prisma.DbNull,
-            langCode,
-            maxSuggestions,
-            verificationEnabled,
-            headSha,
-          },
-        });
-
-        if (finalOutput?.suggestions?.length) {
-          await tx.suggestion.createMany({
-            data: finalOutput.suggestions.map((s) => ({
-              reviewId,
-              filePath: s.file,
-              lineNumber: s.line,
-              beforeCode: s.before,
-              afterCode: s.after,
-              explanation: s.explanation,
-              severity: s.severity,
-              status: "PENDING",
-            })),
+                    schemaVersion: hasNewIssueShape ? REVIEW_SCHEMA_VERSION : 1,
+                  } as unknown as Prisma.InputJsonValue)
+                : Prisma.DbNull,
+              langCode,
+              maxSuggestions,
+              verificationEnabled,
+              headSha,
+              artifactLookupMissedAt: null,
+            },
           });
-        }
+          await tx.suggestion.deleteMany({ where: { reviewId } });
+          await tx.reviewIssue.deleteMany({ where: { reviewId } });
 
-        if (finalOutput?.issues?.length) {
-          await tx.reviewIssue.createMany({
-            data: finalOutput.issues.map((issue, index) => {
-              const annotation = repeatsAligned ? repeatAnnotations[index] : undefined;
-              return {
+          const persistedSuggestions: PersistedReviewSuggestion[] = [];
+          for (const suggestion of finalOutput?.suggestions ?? []) {
+            const row = await tx.suggestion.create({
+              data: {
+                reviewId,
+                filePath: suggestion.file,
+                lineNumber: suggestion.line,
+                beforeCode: suggestion.before,
+                afterCode: suggestion.after,
+                explanation: suggestion.explanation,
+                severity: suggestion.severity,
+                status: "PENDING",
+              },
+              select: { id: true },
+            });
+            persistedSuggestions.push({ ...suggestion, id: row.id });
+          }
+
+          const persistedIssues: PersistedReviewIssue[] = [];
+          for (const [index, issue] of issuesWithRepeat.entries()) {
+            const annotation = repeatsAligned ? repeatAnnotations[index] : undefined;
+            const row = await tx.reviewIssue.create({
+              data: {
                 reviewId,
                 userId,
                 filePath: issue.file,
@@ -1137,29 +1285,177 @@ export function createGenerateReviewHandler(
                 isRepeat: annotation?.isRepeat ?? false,
                 repeatOfIssueId: annotation?.repeatOfIssueId ?? null,
                 repeatSimilarity: annotation?.repeatSimilarity ?? null,
-              };
-            }),
-          });
+              },
+              select: { id: true },
+            });
+            persistedIssues.push({ ...issue, id: row.id });
+          }
+
+          await transitionReviewExecution(
+            {
+              reviewId,
+              attempt,
+              leaseToken,
+              leaseOwner: "WORKER",
+              now: dependencies.now(),
+              from: ["RUNNING"],
+              to: "POSTING",
+              lastCompletedStage: "PERSISTED",
+            },
+            tx,
+          );
+
+          return {
+            suggestions: persistedSuggestions,
+            issues: persistedIssues,
+          };
+        });
+      },
+    );
+
+    if (!persisted) {
+      return { success: true };
+    }
+
+    // ── Step 7: marker lookup 후 primary artifact를 게시 ──
+    const mainArtifact = await step.run(
+      "post-review",
+      async (): Promise<PostedGithubArtifact> => {
+        const token = await getBoundGithubToken(dependencies, reviewRequest);
+        await assertAndRenewCurrentReviewHead({
+          dependencies,
+          reviewRequest,
+          attempt,
+          leaseToken,
+          allowedStatuses: ["POSTING"],
+        });
+
+        const existingArtifact = await dependencies.findGithubReviewArtifact({
+          token,
+          owner,
+          repo,
+          prNumber,
+          marker: mainMarker,
+          expectedAuthorId: reviewRequest.githubAuthorId,
+          expectedHeadSha: headSha,
+        });
+        if (existingArtifact) {
+          return existingArtifact;
         }
 
-        await transitionReviewExecution(
-          {
+        try {
+          return await dependencies.postPRReviewWithSuggestions({
+            token,
+            owner,
+            repo,
+            prNumber,
             reviewId,
+            reviewContent: finalReview,
+            mainMarker,
+            suggestions: persisted.suggestions,
+            issues: persisted.issues,
+            headSha,
+            langCode,
+            beforeInlinePost: () =>
+              assertAndRenewCurrentReviewHead({
+                dependencies,
+                reviewRequest,
+                attempt,
+                leaseToken,
+                allowedStatuses: ["POSTING"],
+              }),
+          });
+        } catch (error) {
+          if (!isDeterministicGithubValidationError(error)) {
+            throw error;
+          }
+
+          await assertAndRenewCurrentReviewHead({
+            dependencies,
+            reviewRequest,
             attempt,
             leaseToken,
-            leaseOwner: "WORKER",
-            now: dependencies.now(),
-            from: ["POSTING"],
-            to: "COMPLETED",
-            lastCompletedStage: "PERSISTED",
-          },
-          tx,
-        );
-      });
+            allowedStatuses: ["POSTING"],
+          });
+          return dependencies.postReviewComment({
+            token,
+            owner,
+            repo,
+            prNumber,
+            content: finalReview,
+            marker: mainMarker,
+            title: "AI Code Review",
+          });
+        }
+      },
+    );
 
-      // postedAsReview 참조로 Inngest replay 경고 방지
-      void postedAsReview;
+    await step.run("record-main-artifact", () =>
+      recordMainArtifactAndConsumeCredit({
+        dependencies,
+        reviewRequest,
+        attempt,
+        leaseToken,
+        artifact: mainArtifact,
+      }),
+    );
+
+    // ── Step 7.5: 검수자가 제외한 항목은 advisory artifact로 게시 ──
+    const verificationPosted = await step.run("post-verification-review", async () => {
+      if (!verified || countExcluded(verified) === 0) return false;
+
+      const content = buildVerificationReviewBody({
+        rejectedIssues: verified.rejectedIssues,
+        rejectedSuggestions: verified.rejectedSuggestions,
+        langCode,
+      });
+      if (content === null) return false;
+
+      try {
+        const token = await getBoundGithubToken(dependencies, reviewRequest);
+        await assertAndRenewCurrentReviewHead({
+          dependencies,
+          reviewRequest,
+          attempt,
+          leaseToken,
+          allowedStatuses: ["POSTING"],
+        });
+        await dependencies.postVerificationReview({
+          token,
+          owner,
+          repo,
+          prNumber,
+          headSha,
+          content,
+          marker: buildReviewArtifactMarker(reviewId, "verification"),
+        });
+        return true;
+      } catch (error) {
+        console.warn(
+          "Verification review entry failed after the main review was posted",
+          { error: getSafeExternalErrorSummary(error) },
+        );
+        return false;
+      }
     });
+
+    await step.run("complete-review", () =>
+      transitionReviewExecution(
+        {
+          reviewId,
+          attempt,
+          leaseToken,
+          leaseOwner: "WORKER",
+          now: dependencies.now(),
+          from: ["POSTING"],
+          to: "COMPLETED",
+          lastCompletedStage: verificationPosted
+            ? "VERIFICATION_POSTED"
+            : "MAIN_POSTED",
+        },
+        dependencies.prisma,
+      ),
+    );
 
     return { success: true };
   };
@@ -1171,19 +1467,29 @@ const defaultReviewWorkerDependencies: ReviewWorkerDependencies = {
   postReviewComment,
   postPRReviewWithSuggestions,
   postVerificationReview,
+  findGithubReviewArtifact,
   buildDeterministicPrContext,
   generateText,
   createGeneratorModel: google,
   verifyReview,
   detectRepeatIssues,
   assertCurrentReviewHead,
+  consumeTrialCredit,
+  releaseTrialCredit,
   createTimeoutSignal: AbortSignal.timeout,
   now: () => new Date(),
 };
 
+export const handleReviewFailure = createReviewFailureHandler({
+  prisma,
+  reviewType: "FULL_REVIEW",
+  now: () => new Date(),
+});
+
 export const generateReview = inngest.createFunction(
   {
     id: "generate-review",
+    onFailure: handleReviewFailure,
     concurrency: {
       key: "event.data.debounceKey",
       limit: 1,

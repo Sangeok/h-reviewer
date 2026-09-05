@@ -16,6 +16,7 @@ import { inngest } from "@/inngest/client";
 import { generateReview } from "@/inngest/functions/review";
 import { scheduleAutomaticReview } from "@/inngest/functions/schedule-automatic-review";
 import { generateSummary } from "@/inngest/functions/summary";
+import { reconcileStaleReviewExecutions } from "@/inngest/functions/reconcile-stale-review-executions";
 
 import { inngestFunctions } from "./route";
 
@@ -24,16 +25,23 @@ const EXACT_CANCEL_PREDICATE =
   "async.data.attempt == event.data.attempt";
 
 describe("Inngest route registry", () => {
-  it("registers and serves exactly the three T06 functions", () => {
+  it("registers and serves exactly the four T07 functions", () => {
     expect(inngestFunctions).toEqual([
       generateReview,
       generateSummary,
       scheduleAutomaticReview,
+      reconcileStaleReviewExecutions,
     ]);
-    expect(new Set(inngestFunctions)).toHaveLength(3);
+    expect(new Set(inngestFunctions)).toHaveLength(4);
     expect(nextMocks.serve).toHaveBeenCalledWith({
       client: inngest,
       functions: inngestFunctions,
+    });
+  });
+
+  it("pins the stale reconciliation schedule", () => {
+    expect(reconcileStaleReviewExecutions.opts).toMatchObject({
+      id: "reconcile-stale-review-executions",
     });
   });
 
@@ -47,6 +55,7 @@ describe("Inngest route registry", () => {
     });
     expect(generateReview.opts).toMatchObject({
       id: "generate-review",
+      onFailure: expect.any(Function),
       concurrency: {
         key: "event.data.debounceKey",
         limit: 1,
@@ -60,6 +69,7 @@ describe("Inngest route registry", () => {
     });
     expect(generateSummary.opts).toMatchObject({
       id: "generate-summary",
+      onFailure: expect.any(Function),
       cancelOn: [
         {
           event: "pr.review.superseded",

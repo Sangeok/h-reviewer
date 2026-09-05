@@ -134,7 +134,10 @@ export default function SubscriptionPage() {
       {data.limits && <UsageCard limits={data.limits} isPro={isPro} />}
 
       <div className="grid gap-6 md:grid-cols-2">
-        <FreePlanCard isPro={isPro} />
+        <FreePlanCard
+          isPro={isPro}
+          trialReviewsEnabled={data.freeReviewTrialEnabled}
+        />
         <ProPlanCard
           isPro={isPro}
           action={

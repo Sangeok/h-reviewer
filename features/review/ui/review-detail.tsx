@@ -13,6 +13,7 @@ import type { StoredReviewData } from "@/features/ai";
 import type { LanguageCode } from "@/shared/types/language";
 import { StructuredReviewBody } from "./parts/structured-review-body";
 import { VerificationPanel } from "./parts/verification-panel";
+import { ReviewRetryButton } from "./parts/review-retry-button";
 import {
   getReviewStatusPresentation,
   ReviewStatusBadge,
@@ -81,11 +82,16 @@ export default function ReviewDetail({
             <div className="space-y-2 text-sm text-secondary-foreground">
               <p>{review.failureMessage ?? statusPresentation.description}</p>
               {review.status === "FAILED" && (
-                <p className="text-muted-foreground">
-                  {isRetryableFailure
-                    ? "This review can be retried."
-                    : "Retry is unavailable for this legacy failure."}
-                </p>
+                <div className="space-y-3">
+                  <p className="text-muted-foreground">
+                    {isRetryableFailure
+                      ? "This review can be retried."
+                      : "Retry is unavailable for this legacy failure."}
+                  </p>
+                  {isRetryableFailure && (
+                    <ReviewRetryButton reviewId={review.id} />
+                  )}
+                </div>
               )}
             </div>
           ) : structuredData ? (

@@ -3,8 +3,9 @@
 import prisma from "@/lib/db";
 import { requireAuthSession } from "@/lib/server-utils";
 import { createWebhook, deleteWebhook, getRepositories } from "@/lib/github";
-import { canConnectRepository, incrementRepositoryCount, decrementRepositoryCount } from "@/features/payment/lib/subscription";
+import { canConnectRepository, incrementRepositoryCount } from "@/features/payment/lib/subscription";
 import { isGitHubRepositoryDto, mapGitHubRepositoryDtoToRepository } from "../lib/map-github-repository";
+import { disconnectRepositories } from "../lib/repository-disconnect";
 import type { ConnectRepositoryParams, ConnectRepositoryResult, Repository } from "../types";
 
 export async function getUserRepositories(page: number = 1, perPage: number = 10): Promise<Repository[]> {
@@ -59,7 +60,7 @@ export async function connectRepository({
     return { status: "error", error: "QUOTA_EXCEEDED" };
   }
 
-  await createWebhook(owner, repo);
+  await createWebhook({ owner, repo });
 
   try {
     await prisma.$transaction(async (transactionClient) => {
@@ -95,7 +96,7 @@ export async function connectRepository({
     // Best-effort compensation for partial failure: rollback only when repository was not persisted.
     if (!repositoryAfterFailure) {
       try {
-        await deleteWebhook(owner, repo);
+        await deleteWebhook({ owner, repo });
       } catch (rollbackError) {
         console.error("Failed to rollback webhook after repository connection failure", rollbackError);
       }
@@ -110,53 +111,9 @@ export async function connectRepository({
 }
 
 export async function disconnectRepository(repositoryId: string, userId: string): Promise<void> {
-  const repository = await prisma.repository.findUnique({
-    where: {
-      id: repositoryId,
-      userId,
-    },
-  });
-
-  if (!repository) {
-    throw new Error("Repository not found");
-  }
-
-  await deleteWebhook(repository.owner, repository.name);
-
-  await prisma.repository.delete({
-    where: {
-      id: repositoryId,
-      userId,
-    },
-  });
-
-  await decrementRepositoryCount(userId);
+  await disconnectRepositories({ userId, repositoryIds: [repositoryId] });
 }
 
 export async function disconnectAllRepositoriesInternal(userId: string): Promise<void> {
-  const repositories = await prisma.repository.findMany({
-    where: { userId },
-  });
-
-  await Promise.all(
-    repositories.map(async (repository) => {
-      await deleteWebhook(repository.owner, repository.name);
-    })
-  );
-
-  await prisma.repository.deleteMany({
-    where: { userId },
-  });
-
-  await prisma.userUsage.upsert({
-    where: { userId },
-    create: {
-      userId,
-      repositoryCount: 0,
-      reviewCounts: {},
-    },
-    update: {
-      repositoryCount: 0,
-    },
-  });
+  await disconnectRepositories({ userId });
 }

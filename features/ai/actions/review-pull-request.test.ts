@@ -109,6 +109,30 @@ describe("reviewPullRequest", () => {
   });
 
   it.each([
+    ["PLAN_RESTRICTED", "plan_restricted"],
+    ["TRIAL_EXHAUSTED", "trial_exhausted"],
+  ] as const)("maps the %s entitlement rejection", async (reason, expectedReason) => {
+    reviewRequestMocks.createReviewRequest.mockResolvedValue({
+      kind: "rejected",
+      reason,
+      message: "Review entitlement rejected",
+    });
+
+    await expect(
+      reviewPullRequest({
+        owner: "octo",
+        repo: "sample",
+        prNumber: 42,
+        requestSource: "AUTOMATIC",
+      }),
+    ).resolves.toEqual({
+      success: false,
+      reason: expectedReason,
+      message: "Review entitlement rejected",
+    });
+  });
+
+  it.each([
     ["FAILED", "review_failed"],
     ["SUPERSEDED", "review_superseded"],
   ] as const)("maps factual %s status without queued success", async (status, reason) => {

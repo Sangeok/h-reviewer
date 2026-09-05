@@ -86,6 +86,7 @@ function createDependencies() {
   const reviewDelegate = {
     findUnique: vi.fn(async () => ({
       id: "summary-1",
+      review: "Persisted summary body",
       attemptCount: state.attemptCount,
       headSha: "head-sha",
       githubAuthorId: "github-user-1",
@@ -121,7 +122,14 @@ function createDependencies() {
   });
   const postReviewComment = vi.fn(async () => {
     operationOrder.push("post");
+    return {
+      id: "github-summary-1",
+      kind: "issue-comment" as const,
+      commitId: null,
+      postedAt: NOW,
+    };
   });
+  const findGithubReviewArtifact = vi.fn(async () => null);
   const assertCurrentReviewHead = vi.fn(async () => undefined);
   reviewUpdate.mockImplementation(async () => {
     operationOrder.push("save");
@@ -146,6 +154,7 @@ function createDependencies() {
     getPullRequestDiff,
     postReviewComment:
       postReviewComment as unknown as SummaryWorkerDependencies["postReviewComment"],
+    findGithubReviewArtifact,
     generateText:
       generateText as unknown as SummaryWorkerDependencies["generateText"],
     createGeneratorModel: vi.fn(
@@ -160,6 +169,7 @@ function createDependencies() {
     state,
     operationOrder,
     mocks: {
+      generateText,
       accountFindFirst,
       getPullRequestDiff,
       postReviewComment,
@@ -170,7 +180,7 @@ function createDependencies() {
 }
 
 describe("createGenerateSummaryHandler", () => {
-  it("claims, posts, and updates the coordinator summary in the existing order", async () => {
+  it("persists before posting and records the primary artifact", async () => {
     const { dependencies, state, operationOrder, mocks } = createDependencies();
     const recorder = createStepRecorder();
     const handler = createGenerateSummaryHandler(dependencies);
@@ -182,11 +192,12 @@ describe("createGenerateSummaryHandler", () => {
       "load-review-request",
       "fetch-pr-data",
       "generate-ai-summary",
-      "mark-summary-posting",
+      "persist-summary",
       "post-comment",
-      "save-summary",
+      "record-summary-artifact",
+      "complete-summary",
     ]);
-    expect(operationOrder).toEqual(["generate", "post", "save"]);
+    expect(operationOrder).toEqual(["generate", "save", "post"]);
     expect(recorder.stepResults.get("fetch-pr-data")).not.toHaveProperty("token");
     expect(JSON.stringify([...recorder.stepResults.values()])).not.toContain(
       "github-token",
@@ -194,20 +205,22 @@ describe("createGenerateSummaryHandler", () => {
     expect(JSON.stringify([...recorder.stepResults.values()])).not.toContain(
       "accessToken",
     );
-    expect(mocks.postReviewComment).toHaveBeenCalledWith(
-      "github-token",
-      "octo",
-      "sample",
-      42,
-      "Generated summary",
-      { title: "AI PR Summary" },
-    );
+    expect(mocks.postReviewComment).toHaveBeenCalledWith({
+      token: "github-token",
+      owner: "octo",
+      repo: "sample",
+      prNumber: 42,
+      content: "Generated summary",
+      marker: "<!-- hreviewer:review:summary-1:summary -->",
+      title: "AI PR Summary",
+    });
     expect(mocks.reviewUpdate).toHaveBeenCalledWith({
       where: { id: "summary-1" },
       data: {
         prTitle: "Improve docs",
         review: "Generated summary",
         headSha: "head-sha",
+        artifactLookupMissedAt: null,
       },
     });
     expect(state).toMatchObject({
@@ -262,7 +275,7 @@ describe("createGenerateSummaryHandler", () => {
 
     expect(state.status).toBe("SUPERSEDED");
     expect(mocks.postReviewComment).not.toHaveBeenCalled();
-    expect(mocks.reviewUpdate).not.toHaveBeenCalled();
+    expect(mocks.reviewUpdate).toHaveBeenCalledOnce();
   });
 
   it("requires the exact persisted GitHub account binding", async () => {
@@ -278,6 +291,32 @@ describe("createGenerateSummaryHandler", () => {
     expect(state).toMatchObject({ status: "FAILED", failureStage: "FETCH" });
     expect(mocks.getPullRequestDiff).not.toHaveBeenCalled();
     expect(mocks.postReviewComment).not.toHaveBeenCalled();
+  });
+
+  it("resumes a persisted summary without fetching or invoking AI", async () => {
+    const { dependencies, mocks } = createDependencies();
+    const recorder = createStepRecorder();
+
+    await createGenerateSummaryHandler(dependencies)({
+      event: {
+        data: { ...SUMMARY_EVENT_DATA, resumeFromPersisted: true },
+      },
+      step: recorder.step,
+    });
+
+    expect(recorder.stepIds).toEqual([
+      "claim-review",
+      "load-review-request",
+      "prepare-persisted-summary-post",
+      "post-persisted-summary",
+      "record-persisted-summary-artifact",
+      "complete-persisted-summary",
+    ]);
+    expect(mocks.getPullRequestDiff).not.toHaveBeenCalled();
+    expect(mocks.generateText).not.toHaveBeenCalled();
+    expect(mocks.postReviewComment).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "Persisted summary body" }),
+    );
   });
 });
 

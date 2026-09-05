@@ -1,6 +1,6 @@
 # HReviewer 개인 리뷰 코치 P0 구현 상세 계획
 
-> 상태: **T01-T06 완료 — T07 NEXT; T09 generation target 결정 완료, lifecycle·품질 release gate 유지**
+> 상태: **T01-T08 완료 — T09 NEXT; generation target 결정 완료, lifecycle·품질 release gate 유지**
 >
 > 기준일: <code>2026-08-25</code>
 >
@@ -1352,6 +1352,8 @@ export async function getPullRequestHeadInfo(
 
 - 생성: <code>features/review/lib/review-artifact-marker.ts</code>
 - 생성: <code>features/review/lib/review-artifact-marker.test.ts</code>
+- 생성: <code>features/review/lib/review-on-failure.ts</code>
+- 생성: <code>features/review/lib/review-on-failure.test.ts</code>
 - 생성: <code>lib/github/github-artifact-body.ts</code>
 - 생성: <code>lib/github/github-artifact-body.test.ts</code>
 - 생성: <code>lib/github/github-review-artifacts.ts</code>
@@ -1363,6 +1365,7 @@ export async function getPullRequestHeadInfo(
 - 생성: <code>features/review/ui/parts/review-retry-button.test.tsx</code>
 - 수정: <code>features/review/actions/index.ts</code>
 - 수정: <code>features/review/ui/review-detail.tsx</code>
+- 수정: <code>features/review/ui/review-detail.test.tsx</code>
 - 수정: <code>features/review/lib/pr-review.ts</code>
 - 생성: <code>features/review/lib/pr-review.test.ts</code>
 - 수정: <code>features/ai/lib/review-formatter.ts</code>
@@ -1377,6 +1380,7 @@ export async function getPullRequestHeadInfo(
 - 수정: <code>features/review/lib/review-execution-state.test.ts</code>
 - 수정: <code>features/review/lib/review-request.ts</code>
 - 수정: <code>features/review/constants/index.ts</code>
+- 수정: <code>inngest/events.ts</code>
 - 수정: <code>inngest/functions/review.ts</code>
 - 수정: <code>inngest/functions/review.test.ts</code>
 - 수정: <code>inngest/functions/summary.ts</code>
@@ -1489,7 +1493,7 @@ main review와 suggestion은 한 <code>pulls.createReview</code>에 포함할 �
 
 Inngest <code>onFailure</code>에서 원 event는 <code>event.data.event</code>에 있다. 여기서 <code>reviewId</code>를 안전하게 파싱한다.
 
-T07에서 review worker option에 <code>onFailure: handleReviewFailure</code>를 등록한다. summary worker에는 SUMMARY의 상태 전이만 처리하는 별도 handler를 등록한다.
+T07에서 <code>features/review/lib/review-on-failure.ts</code>를 원 event parsing, attempt/token/owner fencing, safe error normalization의 공용 owner로 만들고 review worker option에 <code>onFailure: handleReviewFailure</code>를 등록한다. summary worker에는 같은 owner로 구성하되 SUMMARY의 상태 전이만 처리하는 별도 handler를 등록한다.
 
 - 이미 FAILED, COMPLETED 또는 SUPERSEDED면 아무것도 쓰지 않는다.
 - PENDING은 QUEUE owner, RUNNING/POSTING은 WORKER owner일 때만 원 event의 <code>attempt</code>가 현재 attempt와 같은지 확인하고, 읽은 exact lease token을 CAS 조건으로 현재 stage를 FAILED로 바꾼다. reconciler가 이미 token을 회전했거나 새 retry attempt가 시작된 경우 아무것도 쓰지 않는다.
@@ -1566,7 +1570,7 @@ PENDING은 T03에서 생성 시 queue lease를 받으므로 event send 성공 �
 
 ### T08. 무료 5회 체험과 상품 UI 정합성
 
-#### 수정 파일
+#### 파일 인벤토리
 
 - 수정: <code>features/payment/constants/flags.ts</code>
 - 수정: <code>features/payment/constants/index.ts</code>
@@ -1583,15 +1587,18 @@ PENDING은 T03에서 생성 시 queue lease를 받으므로 event send 성공 �
 - 생성: <code>features/payment/ui/parts/usage-card.test.tsx</code>
 - 수정: <code>features/review/lib/review-request.ts</code>
 - 수정: <code>features/review/lib/review-request.test.ts</code>
+- 수정: <code>features/review/lib/review-request.integration.test.ts</code>
 - 수정: <code>features/review/lib/retry-review-request.test.ts</code>
 - 수정: <code>features/review/actions/retry-review.ts</code>
 - 수정: <code>features/review/actions/retry-review.test.ts</code>
 - 수정: <code>features/review/lib/review-execution-state.ts</code>
 - 수정: <code>features/review/lib/review-execution-state.test.ts</code>
-- 수정: <code>features/ai/types/index.ts</code>
-- 수정: <code>features/ai/actions/review-pull-request.ts</code>
+- 수정: <code>features/review/lib/review-on-failure.ts</code>
+- 수정: <code>features/review/lib/review-on-failure.test.ts</code>
+- 기존 계약 확인(변경 없음): <code>features/ai/types/index.ts</code>
+- 기존 계약 확인(변경 없음): <code>features/ai/actions/review-pull-request.ts</code>
 - 수정: <code>features/ai/actions/review-pull-request.test.ts</code>
-- 수정: <code>app/api/webhooks/github/github-webhook-handler.ts</code>
+- 기존 계약 확인(변경 없음): <code>app/api/webhooks/github/github-webhook-handler.ts</code>
 - 수정: <code>app/api/webhooks/github/github-webhook-handler.test.ts</code>
 - 수정: <code>inngest/functions/review.ts</code>
 - 수정: <code>inngest/functions/reconcile-stale-review-executions.ts</code>
@@ -1605,6 +1612,8 @@ PENDING은 T03에서 생성 시 queue lease를 받으므로 event send 성공 �
 - 생성: <code>features/settings/actions/index.test.ts</code>
 - 수정: <code>lib/github/github.ts</code>
 - 수정: <code>lib/github/github.test.ts</code>
+- 수정: <code>docs/proposals/hreviewer-personal-review-coach-p0-implementation-plan.md</code>
+- 수정: <code>docs/proposals/hreviewer-personal-review-coach-roadmap.md</code>
 
 #### 상수와 flag
 
@@ -2251,8 +2260,8 @@ secret 값과 account balance는 기록하지 않는다.
 | T04 | <code>github-webhook-delivery.ts</code>와 transactional request binding | route-private handler, request coordinator, trial transaction |
 | T05 | GitHub permission helper | route-private handler |
 | T06 | <code>schedule-automatic-review.ts</code>, head guard, object-input <code>getPullRequestHeadInfo()</code> | Inngest registry, review worker, suggestion action |
-| T07 | marker, pure artifact body builder·budget, artifact lookup, retry, stale reconciler | posting wrapper, workers, review detail, Inngest registry |
-| T08 | <code>review-trial.ts</code>, <code>repository-disconnect.ts</code> | request coordinator, retry, webhook handler, worker/reconciler, repository/settings actions, subscription UI |
+| T07 | marker, pure artifact body builder·budget, artifact lookup, retry, onFailure owner, stale reconciler | posting wrapper, workers, review detail, Inngest registry |
+| T08 | <code>review-trial.ts</code>, <code>repository-disconnect.ts</code> | request coordinator, retry, webhook handler, worker/reconciler/onFailure, repository/settings actions, subscription UI |
 | T09 | production model constant, evaluation harness, production repeat candidate selector와 receipt | generator·verifier·P0 release gate |
 
 boundary 규칙:
@@ -2295,8 +2304,8 @@ boundary 규칙:
 | T04 | <code>npx.cmd vitest run lib/github/github-webhook-delivery.test.ts features/review/lib/review-request.test.ts features/ai/actions/review-pull-request.test.ts features/ai/actions/generate-pr-summary.test.ts app/api/webhooks/github/github-webhook-handler.test.ts app/api/webhooks/github/route.test.ts</code> |
 | T05 | <code>npx.cmd vitest run features/ai/utils/command-parser.test.ts features/ai/actions/review-pull-request.test.ts lib/github/github.test.ts app/api/webhooks/github/github-webhook-handler.test.ts</code> |
 | T06 | <code>npx.cmd vitest run app/api/inngest/route.test.ts inngest/functions/schedule-automatic-review.test.ts features/review/lib/review-request.test.ts features/review/lib/review-head-guard.test.ts features/review/lib/pr-review.test.ts features/ai/actions/review-pull-request.test.ts inngest/functions/review.test.ts inngest/functions/summary.test.ts lib/github/github.test.ts</code> |
-| T07 | <code>npx.cmd vitest run app/api/inngest/route.test.ts features/review/lib/review-artifact-marker.test.ts lib/github/github-artifact-body.test.ts lib/github/github-review-artifacts.test.ts lib/github/github.test.ts features/review/lib/pr-review.test.ts features/ai/lib/review-formatter.test.ts features/ai/lib/suggestion-format.test.ts features/review/lib/review-execution-state.test.ts features/review/lib/review-request.test.ts features/review/actions/retry-review.test.ts features/review/lib/retry-review-request.test.ts features/review/ui/review-detail.test.tsx features/review/ui/parts/review-retry-button.test.tsx features/review/ui/parts/structured-review-body.test.tsx inngest/functions/reconcile-stale-review-executions.test.ts inngest/functions/review.test.ts inngest/functions/summary.test.ts</code> |
-| T08 | <code>npx.cmd vitest run features/payment/lib/review-trial.test.ts features/repository/lib/repository-disconnect.test.ts features/settings/actions/index.test.ts features/review/lib/review-execution-state.test.ts features/review/lib/review-request.test.ts features/review/lib/retry-review-request.test.ts features/review/actions/retry-review.test.ts features/ai/actions/review-pull-request.test.ts app/api/webhooks/github/github-webhook-handler.test.ts inngest/functions/reconcile-stale-review-executions.test.ts features/payment/actions/config.test.ts features/payment/ui/parts/plan-card.test.tsx features/payment/ui/parts/usage-card.test.tsx lib/github/github.test.ts</code> |
+| T07 | <code>npx.cmd vitest run app/api/inngest/route.test.ts features/review/lib/review-artifact-marker.test.ts features/review/lib/review-on-failure.test.ts lib/github/github-artifact-body.test.ts lib/github/github-review-artifacts.test.ts lib/github/github.test.ts features/review/lib/pr-review.test.ts features/ai/lib/review-formatter.test.ts features/ai/lib/suggestion-format.test.ts features/review/lib/review-execution-state.test.ts features/review/lib/review-request.test.ts features/review/actions/retry-review.test.ts features/review/lib/retry-review-request.test.ts features/review/ui/review-detail.test.tsx features/review/ui/parts/review-retry-button.test.tsx features/review/ui/parts/structured-review-body.test.tsx inngest/functions/reconcile-stale-review-executions.test.ts inngest/functions/review.test.ts inngest/functions/summary.test.ts</code> |
+| T08 | <code>npx.cmd vitest run features/payment/lib/review-trial.test.ts features/repository/lib/repository-disconnect.test.ts features/settings/actions/index.test.ts features/review/lib/review-execution-state.test.ts features/review/lib/review-on-failure.test.ts features/review/lib/review-request.test.ts features/review/lib/retry-review-request.test.ts features/review/actions/retry-review.test.ts features/ai/actions/review-pull-request.test.ts app/api/webhooks/github/github-webhook-handler.test.ts inngest/functions/reconcile-stale-review-executions.test.ts features/payment/actions/config.test.ts features/payment/ui/parts/plan-card.test.tsx features/payment/ui/parts/usage-card.test.tsx lib/github/github.test.ts</code> |
 | T09 | 아래 network-free preflight, quality/repeat/calibration test와 calibration source contract를 먼저 실행한 뒤, 승인 후 섹션 T09의 strict model availability wrapper와 capture/score 명령을 실행 |
 
 <code>scripts/verify-calibration.test.ts</code>는 <code>CALIBRATION</code>이 없으면 suite 전체를 skip하므로 test process가 성공했다는 사실만으로 기본 model과 timeout 수정을 검증할 수 없다. T09의 network-free gate에서 다음 source contract도 통과시킨다.
@@ -2388,7 +2397,7 @@ $p0DatabaseGateTests = switch ($p0Task) {
 node scripts/prepare-p0-test-database.mjs
 if ($LASTEXITCODE -ne 0) { throw "P0 test database preparation failed" }
 
-& npx.cmd vitest run @p0DatabaseGateTests
+& npx.cmd vitest run --no-file-parallelism @p0DatabaseGateTests
 if ($LASTEXITCODE -ne 0) { throw "P0 database gate failed" }
 ~~~
 

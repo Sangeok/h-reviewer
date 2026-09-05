@@ -8,6 +8,7 @@ import {
   acknowledgeReviewDispatch,
   claimReviewExecution,
   renewReviewExecutionLease,
+  recordGithubMainArtifact,
   retryFailedReviewExecution,
   ReviewStateConflictError,
   transitionReviewExecution,
@@ -75,6 +76,8 @@ describe("review execution state", () => {
     { from: "POSTING", to: "COMPLETED" },
     { from: "POSTING", to: "FAILED" },
     { from: "POSTING", to: "SUPERSEDED" },
+    { from: "FAILED", to: "COMPLETED" },
+    { from: "FAILED", to: "PENDING" },
   ])("allows the T02 $from to $to transition", async ({ from, to }) => {
     await transitionReviewExecution(
       createTransitionInput({
@@ -102,8 +105,6 @@ describe("review execution state", () => {
     { from: "PENDING", to: "POSTING" },
     { from: "RUNNING", to: "COMPLETED" },
     { from: "POSTING", to: "RUNNING" },
-    { from: "FAILED", to: "PENDING" },
-    { from: "FAILED", to: "COMPLETED" },
     { from: "COMPLETED", to: "FAILED" },
     { from: "SUPERSEDED", to: "PENDING" },
   ])("rejects the T02 $from to $to transition", async ({ from, to }) => {
@@ -144,6 +145,55 @@ describe("review execution state", () => {
         }),
       }),
     );
+  });
+
+  it("requires persisted content and a recorded main artifact for completion", async () => {
+    await transitionReviewExecution(
+      createTransitionInput({ from: ["POSTING"], to: "COMPLETED" }),
+      client,
+    );
+
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          review: { not: "" },
+          githubMainReviewId: { not: null },
+          githubMainPostedAt: { not: null },
+          lastCompletedStage: {
+            in: ["MAIN_POSTED", "INLINE_POSTED", "VERIFICATION_POSTED"],
+          },
+        }),
+      }),
+    );
+  });
+
+  it("records the main artifact behind the exact execution fence", async () => {
+    await recordGithubMainArtifact(
+      {
+        reviewId: "review-1",
+        attempt: 1,
+        leaseToken: "lease-token-1",
+        leaseOwner: "WORKER",
+        allowedStatuses: ["POSTING"],
+        artifactId: "github-review-1",
+        postedAt: NOW,
+        now: NOW,
+      },
+      client,
+    );
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        review: { not: "" },
+        executionLeaseToken: "lease-token-1",
+        executionLeaseOwner: "WORKER",
+      }),
+      data: expect.objectContaining({
+        githubMainReviewId: "github-review-1",
+        githubMainPostedAt: NOW,
+        lastCompletedStage: "MAIN_POSTED",
+      }),
+    });
   });
 
   it("fences transition writes by attempt, token, owner, and lease expiry", async () => {
@@ -279,6 +329,7 @@ describe("review execution state", () => {
         attempt: 2,
         queueLeaseToken: "queue-token-3",
         now: NOW,
+        expectedTrialCreditState: "NOT_APPLICABLE",
       },
       client,
     );
