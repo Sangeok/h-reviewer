@@ -2166,7 +2166,7 @@ secret 값과 account balance는 기록하지 않는다.
 - release 예정일, <code>2027-05-07</code>까지 남은 기간, 예정 운영·rollback 종료일과 lifecycle window 충족 여부
 - 평가 실행의 role별 input/output token, 기준일 list price와 계산 비용
 - strict model availability wrapper의 exit code, exact 세 <code>OK</code> line, output SHA-256과 <code>SKIP/WARN/soft-pass</code> 0건 판정
-- 비밀 없는 provider binding 항목
+- 비밀 없는 provider binding 항목. 단 <code>Sangeok/h-reviewer</code>는 public 저장소이고 canonical procedure가 key fingerprint를 access-control 대상 audit metadata로 규정하므로, <code>keyFingerprintSha256</code>와 <code>googleCloudProjectId</code>는 receipt에 <code>recorded-out-of-band</code>로만 남기고 실제 값은 추적되지 않는 <code>docs/evaluations/p0-provider-binding.local.md</code>에 둔다. 이 파일은 <code>/docs/</code> ignore 규칙이 덮으며 force-add하지 않는다. plan, billing tier·readiness 판정과 gate 통과 여부는 receipt에 그대로 기록한다.
 - case 수와 metric 분자·분모·비율
 - reliability test file과 test name
 - 격리된 PostgreSQL database 식별자의 비밀 없는 digest, 공통 <code>public</code> schema와 migration transition용 실행별 schema의 분리 증거, <code>current_schema()</code>·적용 migration·필수 table 확인, request/delivery/trial concurrency test 결과

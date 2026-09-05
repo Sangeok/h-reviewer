@@ -43,8 +43,8 @@
 
 | 항목 | 값 |
 |---|---|
-| API key fingerprint | `not-inspected-before-approval` |
-| Google Cloud project ID | `not-inspected-before-approval` |
+| API key fingerprint | `recorded-out-of-band` |
+| Google Cloud project ID | `recorded-out-of-band` |
 | Plan | `not-confirmed` |
 | billing state | `not-confirmed` |
 | billing tier / plan | `not-confirmed` |
@@ -52,6 +52,14 @@
 | exact OK lines | `0 / 3` |
 | SKIP / WARN / soft-pass | 성공으로 번역하지 않음; gate 미실행 |
 | model availability output SHA-256 | `not-run` |
+
+이 저장소는 public이고 `.gitignore`의 `/docs/` 규칙 때문에 이 receipt만 예외적으로
+추적된다. canonical procedure가 key fingerprint를 access-control 대상 audit
+metadata로 규정하므로, fingerprint와 Google Cloud project ID는 추적되지 않는
+로컬 기록 `docs/evaluations/p0-provider-binding.local.md`에 두고 여기서는
+`recorded-out-of-band`로만 참조한다. 계산 절차는 archive 문서 12절의 canonical
+procedure와 동일하며, capture 하니스와 같은 `dotenv` 파싱 순서를 사용한다.
+나머지 plan·billing 항목은 아직 확인되지 않았고 `not-confirmed`를 유지한다.
 
 ## 고정 corpus identity
 
