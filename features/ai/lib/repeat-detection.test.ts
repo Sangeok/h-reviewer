@@ -16,7 +16,10 @@ vi.mock("./generate-embedding", () => ({
 }));
 
 import type { StructuredIssue } from "../types";
-import { detectRepeatIssues } from "./repeat-detection";
+import {
+  detectRepeatIssues,
+  findBestRepeatCandidate,
+} from "./repeat-detection";
 
 const CURRENT_EMBEDDING = [1, ...Array.from({ length: 767 }, () => 0)];
 
@@ -44,6 +47,64 @@ function createCandidate(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+describe("findBestRepeatCandidate", () => {
+  it("accepts a same-category candidate exactly at the production threshold", () => {
+    const thresholdEmbedding = [
+      0.9,
+      Math.sqrt(1 - (0.9 ** 2)),
+      ...Array.from({ length: 766 }, () => 0),
+    ];
+
+    const result = findBestRepeatCandidate({
+      category: "bug",
+      embedding: CURRENT_EMBEDDING,
+      candidates: [{
+        id: "threshold",
+        category: "bug",
+        embedding: thresholdEmbedding,
+      }],
+    });
+
+    expect(result?.id).toBe("threshold");
+    expect(result?.similarity).toBeCloseTo(0.9);
+  });
+
+  it("keeps category filtering and ignores malformed embeddings", () => {
+    const result = findBestRepeatCandidate({
+      category: "bug",
+      embedding: CURRENT_EMBEDDING,
+      candidates: [
+        { id: "other-category", category: "testing", embedding: CURRENT_EMBEDDING },
+        { id: "short", category: "bug", embedding: [1, 0] },
+        {
+          id: "non-finite",
+          category: "bug",
+          embedding: [...CURRENT_EMBEDDING.slice(0, 767), Number.NaN],
+        },
+      ],
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it("returns the highest-similarity compatible candidate", () => {
+    const lowerSimilarityEmbedding = [
+      0.95,
+      Math.sqrt(1 - (0.95 ** 2)),
+      ...Array.from({ length: 766 }, () => 0),
+    ];
+
+    expect(findBestRepeatCandidate({
+      category: "bug",
+      embedding: CURRENT_EMBEDDING,
+      candidates: [
+        { id: "lower", category: "bug", embedding: lowerSimilarityEmbedding },
+        { id: "highest", category: "bug", embedding: CURRENT_EMBEDDING },
+      ],
+    })).toEqual({ id: "highest", similarity: 1 });
+  });
+});
 
 describe("detectRepeatIssues", () => {
   beforeEach(() => {

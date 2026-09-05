@@ -1,7 +1,7 @@
 // 리뷰·요약·이슈 해결 판정 생성 모델. 이 상수가 유일한 출처다 —
 // 인라인 google("...") 리터럴을 쓰면 scripts/check-model-availability.mjs가
 // 그 모델을 검사하지 못하고, 폐기 시 조용히 죽는다(2026-08-10 사고 참조).
-export const GENERATOR_MODEL_ID = "gemini-2.5-flash";
+export const GENERATOR_MODEL_ID = "gemini-3.1-flash-lite";
 
 export const EMBEDDING_MODEL_ID = "gemini-embedding-001";
 export const EMBEDDING_OUTPUT_DIMENSION = 768;
@@ -12,7 +12,7 @@ export const REPEAT_SIMILARITY_THRESHOLD = 0.9; // Track A: 0.90에서 FP 5.1%. 
 export const REPEAT_WINDOW_DAYS = 90;
 export const REPEAT_MIN_TEXT_LENGTH = 20; // 빈/짧은 텍스트 임베딩 방지 (sim=1.0 인공물)
 
-// 리뷰 검증(검수자) — 생성 모델(gemini-2.5-flash) 산출물을 팩트체크.
+// 리뷰 검증(검수자) — 생성 모델(gemini-3.1-flash-lite) 산출물을 팩트체크.
 // 같은 Gemini 계열이므로 독립 검증은 아니다.
 //
 // 2026-08-10 교체: 이전 값 "gemini-2.5-pro"는 현 API 키에서 generateContent가

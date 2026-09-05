@@ -5,6 +5,8 @@
 > 갱신 시각: `2026-08-03T23:11:51.959Z`
 >
 > 이 문서는 비밀값, 저장소 좌표, 원문 diff, source context, prompt/response를 포함하지 않는다.
+>
+> 역사 문서: 이 영수증의 모델·품질 판정은 당시 snapshot이며 현재 release 근거로 재사용하지 않는다. T09 이후의 대체 영수증은 [P0 개인 리뷰 코치 release receipt](./p0-personal-review-coach-release-receipt.md)다.
 
 ## 판정 요약
 

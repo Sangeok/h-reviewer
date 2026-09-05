@@ -1,6 +1,6 @@
 # HReviewer 개인 리뷰 코치 P0 구현 상세 계획
 
-> 상태: **T01-T08 완료 — T09 NEXT; generation target 결정 완료, lifecycle·품질 release gate 유지**
+> 상태: **T01-T08 완료 — T09 BLOCKED; network-free 구현·검증 완료, Approval-after gate 대기**
 >
 > 기준일: <code>2026-08-25</code>
 >
@@ -1880,6 +1880,8 @@ generation과 verification이 같은 <code>gemini-3.1-flash-lite</code>를 사�
 - 수정: <code>scripts/verify-calibration.test.ts</code>
 - 수정: <code>features/ai/lib/repeat-detection.ts</code>
 - 수정: <code>features/ai/lib/repeat-detection.test.ts</code>
+- 수정: <code>features/ai/lib/verify-review.ts</code>
+- 수정: <code>features/ai/lib/verify-review.test.ts</code>
 - 수정: <code>features/ai/lib/build-deterministic-pr-context.ts</code>
 - 수정: <code>features/ai/lib/build-deterministic-pr-context.test.ts</code>
 - 생성: <code>scripts/p0-review-quality-evaluation.test.ts</code>
@@ -1991,6 +1993,8 @@ export function findBestRepeatCandidate(input: {
 ~~~
 
 평가 harness는 <code>@/features/ai/lib/repeat-detection</code>에서 이 helper를 직접 import하고 production <code>REPEAT_SIMILARITY_THRESHOLD</code>를 내부 구현을 통해 공유한다. feature public barrel에는 평가 전용 노출을 추가하지 않는다. owner, production consumer, evaluation consumer, 기존 repeat-detection unit test가 모두 같은 symbol을 가리켜야 하며 repeat 알고리즘을 scripts 아래에 복제하지 않는다. <code>capture</code> output에는 각 generated finding의 <code>isRepeat</code>, candidate finding ID, similarity를 고정하며, <code>score</code>는 adjudication의 <code>repeatExpected</code>와 비교한다.
+
+<code>verifyReview()</code>는 기존 verdict 계약을 유지하면서 AI SDK가 반환한 input·output·reasoning·total token usage를 <code>VerificationResult</code>에 보존한다. production consumer는 verdict 필드만 계속 사용하고, 평가 harness는 같은 production 호출의 usage를 receipt에 기록한다. 비용 산정 시 공식 가격표의 "output (including thinking tokens)" 계약에 맞춰 output과 reasoning token을 합산한다. 검증 prompt나 schema를 scripts 아래에 복제하거나 별도 검증 호출로 token 수를 추정하지 않는다.
 
 #### 측정 정의
 
@@ -2306,7 +2310,7 @@ boundary 규칙:
 | T06 | <code>npx.cmd vitest run app/api/inngest/route.test.ts inngest/functions/schedule-automatic-review.test.ts features/review/lib/review-request.test.ts features/review/lib/review-head-guard.test.ts features/review/lib/pr-review.test.ts features/ai/actions/review-pull-request.test.ts inngest/functions/review.test.ts inngest/functions/summary.test.ts lib/github/github.test.ts</code> |
 | T07 | <code>npx.cmd vitest run app/api/inngest/route.test.ts features/review/lib/review-artifact-marker.test.ts features/review/lib/review-on-failure.test.ts lib/github/github-artifact-body.test.ts lib/github/github-review-artifacts.test.ts lib/github/github.test.ts features/review/lib/pr-review.test.ts features/ai/lib/review-formatter.test.ts features/ai/lib/suggestion-format.test.ts features/review/lib/review-execution-state.test.ts features/review/lib/review-request.test.ts features/review/actions/retry-review.test.ts features/review/lib/retry-review-request.test.ts features/review/ui/review-detail.test.tsx features/review/ui/parts/review-retry-button.test.tsx features/review/ui/parts/structured-review-body.test.tsx inngest/functions/reconcile-stale-review-executions.test.ts inngest/functions/review.test.ts inngest/functions/summary.test.ts</code> |
 | T08 | <code>npx.cmd vitest run features/payment/lib/review-trial.test.ts features/repository/lib/repository-disconnect.test.ts features/settings/actions/index.test.ts features/review/lib/review-execution-state.test.ts features/review/lib/review-on-failure.test.ts features/review/lib/review-request.test.ts features/review/lib/retry-review-request.test.ts features/review/actions/retry-review.test.ts features/ai/actions/review-pull-request.test.ts app/api/webhooks/github/github-webhook-handler.test.ts inngest/functions/reconcile-stale-review-executions.test.ts features/payment/actions/config.test.ts features/payment/ui/parts/plan-card.test.tsx features/payment/ui/parts/usage-card.test.tsx lib/github/github.test.ts</code> |
-| T09 | 아래 network-free preflight, quality/repeat/calibration test와 calibration source contract를 먼저 실행한 뒤, 승인 후 섹션 T09의 strict model availability wrapper와 capture/score 명령을 실행 |
+| T09 | 아래 network-free preflight, quality/context/repeat/verification/calibration test와 calibration source contract를 먼저 실행한 뒤, 승인 후 섹션 T09의 strict model availability wrapper와 capture/score 명령을 실행 |
 
 <code>scripts/verify-calibration.test.ts</code>는 <code>CALIBRATION</code>이 없으면 suite 전체를 skip하므로 test process가 성공했다는 사실만으로 기본 model과 timeout 수정을 검증할 수 없다. T09의 network-free gate에서 다음 source contract도 통과시킨다.
 
@@ -2316,7 +2320,7 @@ if (-not [string]::IsNullOrWhiteSpace($env:CALIBRATION)) {
 }
 
 $env:P0_QUALITY_MODE = "validate"
-npx.cmd vitest run scripts/p0-review-quality-evaluation.test.ts features/ai/lib/build-deterministic-pr-context.test.ts features/ai/lib/repeat-detection.test.ts scripts/verify-calibration.test.ts
+npx.cmd vitest run scripts/p0-review-quality-evaluation.test.ts features/ai/lib/build-deterministic-pr-context.test.ts features/ai/lib/repeat-detection.test.ts features/ai/lib/verify-review.test.ts scripts/verify-calibration.test.ts
 if ($LASTEXITCODE -ne 0) { throw "The network-free T09 tests failed" }
 
 $p0ModelConstantsSource = Get-Content -Raw -Encoding UTF8 "features/ai/constants/index.ts"

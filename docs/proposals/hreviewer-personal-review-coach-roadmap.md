@@ -1,6 +1,6 @@
 # HReviewer 개인 코드 리뷰 코치 실행 제안서
 
-> 상태: **Proposed — T08 완료·T09 NEXT**
+> 상태: **Proposed — T08 완료·T09 BLOCKED**
 >
 > 작성일: `2026-08-17`
 >
@@ -110,7 +110,7 @@ HReviewer가 먼저 이겨야 하는 지점은 다음 세 가지다.
 
 - 한 구현 주기와 한 PR에서는 **하나의 task만** 수행한다. 같은 파일을 후속 task도 수정하더라도 현재 task의 완료 조건에 필요한 동작만 변경한다.
 - 상태는 `NEXT`, `WAITING`, `IN_PROGRESS`, `BLOCKED`, `COMPLETED`만 사용한다.
-- `NEXT` 또는 `IN_PROGRESS`는 전체 로드맵에서 하나만 존재한다. 현재 다음 task는 `NEXT` 상태의 T09다.
+- `NEXT` 또는 `IN_PROGRESS`는 전체 로드맵에서 최대 하나만 존재한다. 현재 T09가 Approval-after gate에서 `BLOCKED`이므로 둘 다 존재하지 않으며 T10은 `WAITING`을 유지한다.
 - task를 시작할 때 상태를 `NEXT -> IN_PROGRESS`로 바꾸고, 현재 코드의 실제 owner, public API, import consumer, 테스트와 생성 artifact를 다시 inventory한다.
 - 완료 조건과 섹션 15의 검증을 모두 통과해야 `COMPLETED`로 바꿀 수 있다. 실패한 검증이나 미결정 사항이 있으면 `BLOCKED`로 기록하고 다음 task를 열지 않는다.
 - 완료 시 바로 다음 task만 `WAITING -> NEXT`로 바꾼다. 후속 task의 구현을 현재 task로 당겨오지 않는다.
@@ -133,7 +133,7 @@ HReviewer가 먼저 이겨야 하는 지점은 다음 세 가지다.
 | 6 | T06. head supersede, debounce, stale-post 방지 | P0 | `COMPLETED` | 2주차 | T05 |
 | 7 | T07. 실패 복구와 lossless GitHub 게시 | P0 | `COMPLETED` | 2주차 | T06 |
 | 8 | T08. 무료 5회 체험과 상품 UI 정합성 | P0 | `COMPLETED` | 2주차 | T07 |
-| 9 | T09. generation 모델 마이그레이션·품질 평가와 P0 release gate | P0 | `NEXT` | 2주차 | T08 |
+| 9 | T09. generation 모델 마이그레이션·품질 평가와 P0 release gate | P0 | `BLOCKED` | 2주차 | T08 |
 | 10 | T10. issue 피드백 데이터 모델과 API | P1 | `WAITING` | 3주차 | T09 + P0 gate |
 | 11 | T11. 리뷰 상세 피드백 UI | P1 | `WAITING` | 3주차 | T10 |
 | 12 | T12. 개인 리뷰 코치 지표와 dashboard | P1 | `WAITING` | 4주차 | T11 |
@@ -189,6 +189,7 @@ task를 `COMPLETED`로 바꿀 때 아래 형식의 행을 이 표에 추가한�
 | T06 | 2026-08-26 | <code>inngest/functions/schedule-automatic-review.ts</code>와 테스트, exact 세 함수 registry·route 테스트, 자동·수동 dispatch 분기, <code>review-request.ts</code>의 같은 type·다른 head supersede와 단위·PostgreSQL 테스트, 신규 <code>review-head-guard.ts</code>와 테스트, review·summary worker와 post helper의 generation/post guard, 객체 입력 GitHub head helper·suggestion consumer와 테스트, 두 proposal 문서 | migration·schema·추적 env 변경 없음; 기존 ignored <code>.env.local</code>의 전용 Neon <code>hreviewer_test</code> Direct connection만 사용하고 secret은 기록하지 않음 | T06 전용 84개 통과; 전체 292개 통과·환경 의존 6개 스킵; T02-T06 PostgreSQL gate 5개 통과; lint 오류 0개·기존 경고 1개; typecheck·production build 통과 | 15초 latest-event debounce config와 durable <code>step.sendEvent()</code>, exact reviewId·attempt cancel predicate, Review type 격리, lease-fenced head/state guard, main·fallback·inline·verification·summary 게시 직전 guard를 fixture로 검증; 준비 script가 전용 database의 <code>public</code> schema와 17개 migration·필수 table을 재확인; 실제 GitHub write, Inngest Cloud, Google AI, production DB 요청은 실행하지 않음 | 실제 head A/B push와 Inngest Cloud debounce/cancel 동작을 잇는 수동 fixture는 Approval-after; marker 기반 게시 복구와 DB-before-post는 T07 소유, credit release는 T08 소유 | T07 |
 | T07 | 2026-08-29 | deterministic artifact marker·공용 GitHub body budget·trusted paginated lookup, review·summary worker의 DB-before-post와 artifact checkpoint, lossless issue·suggestion formatter/UI, stage-aware retry action·버튼, <code>features/review/lib/review-on-failure.ts</code>와 테스트가 소유하는 안전한 Inngest onFailure, stale execution reconciler와 exact 네 함수 registry, 관련 단위·worker·route 테스트, 두 proposal 문서 | migration·schema·추적 env 변경 없음 | 전체 333개 통과·환경 의존 6개 스킵; lint 오류 0개·기존 warning 1개; typecheck·production build 통과; positional posting call·legacy <code>reviewBody</code> 검색 0건; <code>git diff --check</code> 오류 0건 | marker·author·head SHA 신뢰 조건, page 2 이후 pagination, 60,000-byte body budget, 422-only fallback, ambiguous error 재게시 금지, DB-before-post, artifact completion guard, retry 소유권, persisted-only AI 0회 retry, onFailure fencing, first-miss grace와 stale lease 수렴을 fixture로 검증; 실제 GitHub write, Inngest Cloud, Google AI, production DB 요청은 실행하지 않음 | 실제 GitHub read-after-write 지연과 Inngest Cloud cron/onFailure 연결 fixture는 Approval-after; RESERVED credit의 원자적 소비·반환과 repository disconnect 보상은 T08 소유; P0 cutover drain은 T09 gate 전까지 유지 | T08 |
 | T08 | 2026-09-03 | <code>features/payment/lib/review-trial.ts</code>와 단위·PostgreSQL integration 테스트, payment flag·subscription action·plan/usage UI와 테스트, review request·retry·execution·onFailure 및 worker/reconciler credit 연결, <code>features/repository/lib/repository-disconnect.ts</code>와 단위·PostgreSQL integration 테스트, repository/settings action과 GitHub webhook mutation, 두 proposal 문서 | migration·schema·추적 env 변경 없음; 기존 ignored <code>.env.local</code>의 운영·개발 URL과 다른 전용 Neon <code>hreviewer_test</code> Direct connection만 사용; production <code>FREE_REVIEW_TRIAL_ENABLED</code> 활성화는 Approval-after | T08 전용 168개 통과; 전체 374개 통과·DB 16개와 calibration 1개는 기본 run에서 환경 의존 skip; T02-T08 PostgreSQL gate 5파일 16개 통과; lint 오류 0개·기존 warning 1개; typecheck·production build 통과 | 준비 script가 전용 database의 <code>public</code> schema와 17개 migration·필수 table을 재확인; 6개 별도 connection의 동시 예약이 5개 commit·1개 한도 거절로 수렴; disconnect와 신규 reservation·retry·reconciler·terminal transition의 양방향 경합 8개 및 consume/release 원자 경합을 실제 PostgreSQL에서 검증; 실제 GitHub write, Inngest Cloud, Google AI, Polar, production DB 요청 없음 | production flag 활성화와 실제 GitHub webhook delete/보상·Inngest Cloud 경합 fixture는 Approval-after; generation 모델 migration·유료 품질 평가·P0 cutover는 T09 gate 소유 | T09 |
+| T09 | 2026-09-05 | generation 상수를 <code>gemini-3.1-flash-lite</code>로 전환하고 calibration 기본값·150초 timeout 정렬, production repeat helper와 deterministic context repository reader port, 고정 merge corpus·pending adjudication·3-mode 품질 하니스, verification token usage 보존, historical RAG 영수증 대체 링크와 P0 release receipt | migration·schema·dependency 변경 없음; T07/T08의 기존 staged 65경로는 보존하고 T09 source는 unstaged, ignored release receipt 한 경로만 계약에 따라 force-add | network-free T09 51개 통과·calibration 1개 의도적 skip; 전체 380개 통과·환경 의존 17개 skip; PostgreSQL gate 5파일 16개 통과; lint 오류 0개·기존 warning 1개; typecheck·production build 통과; 금지 구조·registry gate 통과 | fixture 4개의 exact merge parent·merge-base·diff·head tree와 production context를 로컬 Git에서 재현하고 두 실행의 content·manifest·canonical input SHA-256 일치 확인; capture 승인 guard, pending score 차단, unknown mode fail-closed 확인; 실제 Google AI·GitHub write·production/Inngest 요청 없음 | <code>BLOCKED</code>: 유료 strict model probe와 capture 승인, capture output의 사람 adjudication 및 score, provider paid binding 확인, 외부 GitHub fixture·redelivery·production cutover/drain 승인이 필요하다. 승인과 사람 판정이 끝난 뒤 T09를 재개하며 T10은 <code>WAITING</code> 유지 | T09 재개 |
 
 ## 7. P0 — 신뢰성과 첫 경험
 

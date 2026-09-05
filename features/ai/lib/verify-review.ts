@@ -13,12 +13,21 @@ export interface VerdictEntry {
   reason: string;
 }
 
+export type ReviewVerificationTokenUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+};
+
 export interface VerificationResult {
   status: "verified" | "skipped";
   /** 입력 issues 배열과 index 정렬 */
   issueVerdicts: VerdictEntry[];
   /** 입력 suggestions 배열과 index 정렬 */
   suggestionVerdicts: VerdictEntry[];
+  /** 검증 호출의 실제 provider usage. 호출 전 생략 경로에는 존재하지 않는다. */
+  usage?: ReviewVerificationTokenUsage;
 }
 
 export interface AppliedVerification {
@@ -126,7 +135,7 @@ export async function verifyReview(params: {
 }): Promise<VerificationResult> {
   const prompt = buildVerificationPrompt(params);
 
-  const { experimental_output } = await generateText({
+  const { experimental_output, usage } = await generateText({
     model: google(VERIFIER_MODEL_ID),
     experimental_output: Output.object({ schema: verifierOutputSchema }),
     prompt,
@@ -142,6 +151,16 @@ export async function verifyReview(params: {
     status: "verified",
     issueVerdicts: alignVerdicts(parsed.data.issueVerdicts, params.issues.length),
     suggestionVerdicts: alignVerdicts(parsed.data.suggestionVerdicts, params.suggestions.length),
+    usage: {
+      inputTokens: usage.inputTokens ?? 0,
+      outputTokens: usage.outputTokens ?? 0,
+      reasoningTokens: usage.reasoningTokens ?? 0,
+      totalTokens:
+        usage.totalTokens ??
+        (usage.inputTokens ?? 0) +
+          (usage.outputTokens ?? 0) +
+          (usage.reasoningTokens ?? 0),
+    },
   };
 }
 
