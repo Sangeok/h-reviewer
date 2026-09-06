@@ -9,7 +9,7 @@ import type { LanguageCode } from "@/shared/types/language";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-interface Props {
+export interface StructuredReviewBodyProps {
   data: StructuredReviewOutput;
   langCode: LanguageCode;
   shouldRenderSuggestionSummary: boolean;
@@ -48,7 +48,7 @@ export function StructuredReviewBody({
   data,
   langCode,
   shouldRenderSuggestionSummary,
-}: Props) {
+}: StructuredReviewBodyProps): React.ReactElement {
   return (
     <div className="space-y-6">
       <SummarySection summary={data.summary} langCode={langCode} />
@@ -212,14 +212,15 @@ function RemainingMarkdownSections({
     );
   }
 
-  const bodyIssues = (data.issues ?? []).filter((issue) => issue.line === null);
+  const bodyIssues = data.issues ?? [];
 
   if (bodyIssues.length > 0) {
     const labels = ISSUE_FIELD_LABELS[langCode];
     const issueLines = bodyIssues.map((issue) => {
       const severity = `${SEVERITY_EMOJI[issue.severity]} ${issue.severity}`;
       const category = `${CATEGORY_EMOJI[issue.category]} ${issue.category}`;
-      const fileTag = issue.file ? ` \u00b7 \`${issue.file}\`` : "";
+      const lineTag = issue.line === null ? "" : `:${issue.line}`;
+      const fileTag = issue.file ? ` \u00b7 \`${issue.file}${lineTag}\`` : "";
 
       const title = (issue.title ?? "").trim();
       const rawBody = (issue.body ?? (issue as { description?: string }).description ?? "").trim();

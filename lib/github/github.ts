@@ -1,6 +1,17 @@
 import { Octokit } from "octokit";
+import { REPOSITORY_GITHUB_WEBHOOK_TIMEOUT_MS } from "@/features/repository/constants";
+import { GITHUB_POST_TIMEOUT_MS } from "@/features/review/constants";
 import { requireAuthSession } from "@/lib/server-utils";
 import prisma from "@/lib/db";
+
+import {
+  assertGithubArtifactBodyBudget,
+  buildGithubArtifactBody,
+} from "./github-artifact-body";
+import {
+  createPostedGithubArtifact,
+  type PostedGithubArtifact,
+} from "./github-review-artifacts";
 
 export async function getAuthenticatedGithubAccount(): Promise<{ userId: string; accessToken: string }> {
   const session = await requireAuthSession();
@@ -30,6 +41,65 @@ export const getGithubAccessToken = async () => {
  */
 export function createOctokitClient(token: string): Octokit {
   return new Octokit({ auth: token });
+}
+
+export type RepositoryBasePermission = "admin" | "write" | "read" | "none";
+
+export type GetRepositoryPermissionForUserInput = {
+  token: string;
+  owner: string;
+  repo: string;
+  username: string;
+};
+
+function getHttpStatus(error: unknown): number | undefined {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof error.status === "number"
+  ) {
+    return error.status;
+  }
+
+  return undefined;
+}
+
+export async function getRepositoryPermissionForUser(
+  input: GetRepositoryPermissionForUserInput,
+): Promise<RepositoryBasePermission> {
+  const { token, owner, repo, username } = input;
+  const octokit = createOctokitClient(token);
+
+  try {
+    const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({
+      owner,
+      repo,
+      username,
+    });
+
+    switch (data.permission) {
+      case "admin":
+      case "write":
+      case "read":
+      case "none":
+        return data.permission;
+      default:
+        throw new Error("GitHub returned an unsupported repository permission");
+    }
+  } catch (error) {
+    if (getHttpStatus(error) === 404) {
+      return "none";
+    }
+
+    throw error;
+  }
+}
+
+export function canRunReviewCommand(
+  permission: RepositoryBasePermission,
+): boolean {
+  return permission === "write" || permission === "admin";
 }
 
 export async function fetchUserContribution(token: string, username: string) {
@@ -95,66 +165,128 @@ export const getRepositories = async (page: number = 1, perPage: number = 10) =>
   return data;
 };
 
-export const createWebhook = async (owner: string, repo: string) => {
-  const token = await getGithubAccessToken();
-  const octokit = createOctokitClient(token);
-
-  const webhookUrl = `${process.env.NEXT_PUBLIC_APP_BASE_URL}/api/webhooks/github`;
-
-  const { data: hooks } = await octokit.rest.repos.listWebhooks({
-    owner,
-    repo,
-  });
-
-  const existingHook = hooks.find((hook) => hook.config.url === webhookUrl);
-
-  if (existingHook) {
-    return existingHook;
-  }
-
-  const { data } = await octokit.rest.repos.createWebhook({
-    owner,
-    repo,
-    config: {
-      url: webhookUrl,
-      content_type: "json",
-      secret: process.env.GITHUB_WEBHOOK_SECRET,
-    },
-    events: ["pull_request", "issue_comment"],
-  });
-
-  return data;
+export type GithubWebhookRepositoryInput = {
+  owner: string;
+  repo: string;
 };
 
-export const deleteWebhook = async (owner: string, repo: string) => {
+export type GithubWebhookMutationErrorCode =
+  | "WEBHOOK_CONFIGURATION_INVALID"
+  | "WEBHOOK_CREATE_FAILED"
+  | "WEBHOOK_DELETE_FAILED"
+  | "WEBHOOK_LIST_FAILED";
+
+export class GithubWebhookMutationError extends Error {
+  constructor(
+    readonly code: GithubWebhookMutationErrorCode,
+    readonly mutationOccurred: boolean,
+  ) {
+    super("The GitHub webhook mutation could not be completed safely.");
+    this.name = "GithubWebhookMutationError";
+  }
+}
+
+function getGithubWebhookUrl(): string {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_BASE_URL?.trim();
+  if (!baseUrl) {
+    throw new GithubWebhookMutationError(
+      "WEBHOOK_CONFIGURATION_INVALID",
+      false,
+    );
+  }
+
+  return `${baseUrl.replace(/\/$/, "")}/api/webhooks/github`;
+}
+
+export async function createWebhook(
+  input: GithubWebhookRepositoryInput,
+): Promise<"created" | "existing"> {
   const token = await getGithubAccessToken();
   const octokit = createOctokitClient(token);
+  const webhookUrl = getGithubWebhookUrl();
+  const signal = AbortSignal.timeout(REPOSITORY_GITHUB_WEBHOOK_TIMEOUT_MS);
 
-  const webhookUrl = `${process.env.NEXT_PUBLIC_APP_BASE_URL}/api/webhooks/github`;
+  let hooks: Awaited<ReturnType<typeof octokit.rest.repos.listWebhooks>>["data"];
   try {
-    const { data: hooks } = await octokit.rest.repos.listWebhooks({
-      owner,
-      repo,
+    hooks = await octokit.paginate(octokit.rest.repos.listWebhooks, {
+      owner: input.owner,
+      repo: input.repo,
+      per_page: 100,
+      request: { signal },
     });
-
-    const hookToDelete = hooks.find((hook) => hook.config.url === webhookUrl);
-
-    if (hookToDelete) {
-      await octokit.rest.repos.deleteWebhook({
-        owner,
-        repo,
-        hook_id: hookToDelete.id,
-      });
-
-      return true;
-    }
-
-    return false;
-  } catch (error) {
-    console.error("Error deleting webhook:", error);
-    return false;
+  } catch {
+    throw new GithubWebhookMutationError("WEBHOOK_LIST_FAILED", false);
   }
-};
+
+  if (hooks.some((hook) => hook.config.url === webhookUrl)) {
+    return "existing";
+  }
+
+  try {
+    await octokit.rest.repos.createWebhook({
+      owner: input.owner,
+      repo: input.repo,
+      config: {
+        url: webhookUrl,
+        content_type: "json",
+        secret: process.env.GITHUB_WEBHOOK_SECRET,
+      },
+      events: ["pull_request", "issue_comment"],
+      request: { signal },
+    });
+  } catch {
+    throw new GithubWebhookMutationError("WEBHOOK_CREATE_FAILED", false);
+  }
+
+  return "created";
+}
+
+export async function deleteWebhook(
+  input: GithubWebhookRepositoryInput,
+): Promise<"deleted" | "absent"> {
+  const token = await getGithubAccessToken();
+  const octokit = createOctokitClient(token);
+  const webhookUrl = getGithubWebhookUrl();
+  const signal = AbortSignal.timeout(REPOSITORY_GITHUB_WEBHOOK_TIMEOUT_MS);
+
+  let hooks: Awaited<ReturnType<typeof octokit.rest.repos.listWebhooks>>["data"];
+  try {
+    hooks = await octokit.paginate(octokit.rest.repos.listWebhooks, {
+      owner: input.owner,
+      repo: input.repo,
+      per_page: 100,
+      request: { signal },
+    });
+  } catch {
+    throw new GithubWebhookMutationError("WEBHOOK_LIST_FAILED", false);
+  }
+
+  const matchingHookIds = hooks
+    .filter((hook) => hook.config.url === webhookUrl)
+    .map((hook) => hook.id)
+    .sort((left, right) => left - right);
+  let mutationOccurred = false;
+
+  for (const hookId of matchingHookIds) {
+    try {
+      await octokit.rest.repos.deleteWebhook({
+        owner: input.owner,
+        repo: input.repo,
+        hook_id: hookId,
+        request: { signal },
+      });
+      mutationOccurred = true;
+    } catch (error) {
+      if (getHttpStatus(error) === 404) continue;
+      throw new GithubWebhookMutationError(
+        "WEBHOOK_DELETE_FAILED",
+        mutationOccurred,
+      );
+    }
+  }
+
+  return mutationOccurred ? "deleted" : "absent";
+}
 
 interface GetPullRequestDiffParams {
   token: string;
@@ -435,12 +567,14 @@ export async function commitFileUpdate(params: CommitFileUpdateParams): Promise<
  * PR Head : PR을 생성한 브랜치
  * PR Base : PR을 target으로 하는 브랜치
  */
-export async function getPullRequestHeadInfo(
-  token: string,
-  owner: string,
-  repo: string,
-  prNumber: number
-): Promise<{
+export type GetPullRequestHeadInfoInput = {
+  token: string;
+  owner: string;
+  repo: string;
+  prNumber: number;
+};
+
+export type PullRequestHeadInfo = {
   branch: string;
   headSha: string;
   state: string;
@@ -448,7 +582,12 @@ export async function getPullRequestHeadInfo(
   headRepoOwner: string;
   headRepoName: string;
   isFork: boolean;
-}> {
+};
+
+export async function getPullRequestHeadInfo(
+  input: GetPullRequestHeadInfoInput,
+): Promise<PullRequestHeadInfo> {
+  const { token, owner, repo, prNumber } = input;
   const octokit = createOctokitClient(token);
 
   // Get a pull request information
@@ -457,17 +596,19 @@ export async function getPullRequestHeadInfo(
   });
 
   const headRepo = pr.head.repo;
-
-  // Check if the PR is from a fork
-  const isFork = headRepo ? headRepo.full_name !== `${owner}/${repo}` : false;
+  const headRepoOwner = headRepo?.owner?.login ?? owner;
+  const headRepoName = headRepo?.name ?? repo;
+  const isFork = headRepo
+    ? headRepoOwner !== owner || headRepoName !== repo
+    : false;
 
   return {
     branch: pr.head.ref,
     headSha: pr.head.sha,
     state: pr.state,
     merged: pr.merged,
-    headRepoOwner: headRepo?.owner?.login ?? owner,
-    headRepoName: headRepo?.name ?? repo,
+    headRepoOwner,
+    headRepoName,
     isFork,
   };
 }
@@ -504,24 +645,38 @@ export async function getCompareFiles(params: GetCompareFilesParams): Promise<Co
   }));
 }
 
+export type PostReviewCommentInput = {
+  token: string;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  content: string;
+  marker: string;
+  title?: string;
+};
+
 export async function postReviewComment(
-  token: string,
-  owner: string,
-  repo: string,
-  prNumber: number,
-  review: string,
-  options?: {
-    title?: string;
-  }
-) {
-  const octokit = createOctokitClient(token);
+  input: PostReviewCommentInput,
+): Promise<PostedGithubArtifact> {
+  const octokit = createOctokitClient(input.token);
+  const body = buildGithubArtifactBody({
+    content: input.content,
+    marker: input.marker,
+    title: input.title ?? "AI Code Review",
+  });
+  assertGithubArtifactBodyBudget({ body });
 
-  const title = options?.title ?? "AI Code Review";
+  const { data } = await octokit.rest.issues.createComment({
+    owner: input.owner,
+    repo: input.repo,
+    issue_number: input.prNumber,
+    body,
+    request: { signal: AbortSignal.timeout(GITHUB_POST_TIMEOUT_MS) },
+  });
 
-  await octokit.rest.issues.createComment({
-    owner,
-    repo,
-    issue_number: prNumber,
-    body: `## ${title}\n\n${review}\n\n---\n*Generated by HReviewer*`,
+  return createPostedGithubArtifact({
+    id: data.id,
+    kind: "issue-comment",
+    postedAt: data.created_at,
   });
 }

@@ -18,12 +18,3 @@ export async function requireAuthSession() {
 
   return session;
 }
-
-/**
- * Get authenticated user.
- * Throws error if user is not authenticated.
- */
-export async function getAuthUser() {
-  const session = await requireAuthSession();
-  return session.user;
-}

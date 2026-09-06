@@ -88,28 +88,11 @@ export function formatStructuredReviewToMarkdown(
     `> **${RISK_BADGE[output.summary.riskLevel]}** — ${issuesPart} · ${suggestionsPart}`,
   );
 
-  // ── 발견된 문제점: 전수 표시 ──
-  // 인라인 판별은 pr-review.ts의 술어(file !== null && line !== null)와 동일하게 유지.
-  // 본문은 그 여집합 — 기존 line === null 필터가 놓치던 file:null·line:non-null도 포함된다.
+  // ── 발견된 문제점: inline 게시 성공 여부와 무관하게 전문을 전수 표시 ──
   if (output.issues.length > 0) {
-    const inlineIssues = output.issues.filter((i) => i.file !== null && i.line !== null);
-    const bodyIssues = output.issues.filter((i) => !(i.file !== null && i.line !== null));
-
     const parts: string[] = [`## ${headers.issues} (${output.issues.length})`];
-
-    if (inlineIssues.length > 0) {
-      parts.push("", ISSUE_SECTION_HINT[langCode], "");
-      parts.push(
-        ...inlineIssues.map(
-          (issue) =>
-            `- ${SEVERITY_EMOJI[issue.severity]} ${CATEGORY_EMOJI[issue.category]} \`${issue.file}:${issue.line}\` — ${(issue.title ?? "").trim()}`,
-        ),
-      );
-    }
-
-    if (bodyIssues.length > 0) {
-      parts.push("", formatBodyIssues(bodyIssues, langCode));
-    }
+    parts.push("", ISSUE_SECTION_HINT[langCode], "");
+    parts.push(formatBodyIssues(output.issues, langCode));
 
     sections.push(parts.join("\n"));
   }
@@ -170,7 +153,8 @@ function formatBodyIssues(
     .map((issue) => {
       const severity = `${SEVERITY_EMOJI[issue.severity]} ${issue.severity}`;
       const category = `${CATEGORY_EMOJI[issue.category]} ${issue.category}`;
-      const fileTag = issue.file ? ` \u00b7 \`${issue.file}\`` : "";
+      const lineTag = issue.line === null ? "" : `:${issue.line}`;
+      const fileTag = issue.file ? ` \u00b7 \`${issue.file}${lineTag}\`` : "";
 
       const title = (issue.title ?? "").trim();
       const rawBody = (issue.body ?? (issue as { description?: string }).description ?? "").trim();

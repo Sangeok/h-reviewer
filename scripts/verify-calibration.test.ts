@@ -6,7 +6,7 @@
  *
  * 실행:
  *   CALIBRATION=1 npx vitest run scripts/verify-calibration.test.ts
- *   VERIFIER_MODELS="a,b" 로 비교 대상 지정 (기본: 2.5-flash-lite vs 3.1-pro-preview)
+ *   VERIFIER_MODELS="a,b" 로 비교 대상 지정 (기본: production 3.1-flash-lite)
  *   (CALIBRATION 미설정 시 `npm test`에서 자동 skip — LLM 호출 비용 방어)
  *
  * ⚠️ 이 스크립트는 레포 소스를 Google AI로 전송한다.
@@ -59,9 +59,9 @@ vi.mock("@/features/ai/constants", async (importOriginal) => {
 dotenv.config({ path: ".env.local" });
 dotenv.config({ path: ".env" });
 
-const GENERATOR_MODEL = process.env.GENERATOR_MODEL ?? "gemini-2.5-flash";
+const GENERATOR_MODEL = process.env.GENERATOR_MODEL ?? "gemini-3.1-flash-lite";
 const VERIFIER_MODELS = (
-  process.env.VERIFIER_MODELS ?? "gemini-2.5-flash-lite,gemini-3.1-pro-preview"
+  process.env.VERIFIER_MODELS ?? "gemini-3.1-flash-lite"
 )
   .split(",")
   .map((m) => m.trim())
@@ -69,7 +69,7 @@ const VERIFIER_MODELS = (
 const LANG_CODE: LanguageCode = "ko";
 /** 기본값은 프로덕션 AI_GENERATION_TIMEOUT_MS와 동일. 타임아웃 상향 실험 시 덮어쓴다. */
 const GENERATION_TIMEOUT_MS = Number.parseInt(
-  process.env.GENERATION_TIMEOUT_MS ?? "100000",
+  process.env.GENERATION_TIMEOUT_MS ?? "150000",
   10,
 );
 
@@ -78,7 +78,7 @@ const OUT_DIR = process.env.CALIBRATION_OUT ?? path.join(tmpdir(), "hreviewer-ca
 
 /**
  * 머지 커밋 → PR diff 복원. `^1`=base, `^2`=PR head.
- * PR#62(99e774a, 138 files / 30.8k tokens)는 제외 — 프로덕션과 같은 100초 제한에서
+ * PR#62(99e774a, 138 files / 30.8k tokens)는 제외 — 프로덕션과 같은 150초 제한에서
  * flash 생성이 타임아웃한다(그 자체가 별도 발견이라 여기서 재확인할 필요 없음).
  */
 const ALL_FIXTURES = [

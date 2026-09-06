@@ -62,13 +62,20 @@ const STRUCTURED_REVIEW: StructuredReviewOutput = {
 };
 
 type WorkerState = {
-  status: "PENDING" | "RUNNING" | "POSTING" | "COMPLETED" | "FAILED";
+  status:
+    | "PENDING"
+    | "RUNNING"
+    | "POSTING"
+    | "COMPLETED"
+    | "FAILED"
+    | "SUPERSEDED";
   attemptCount: number;
   executionLeaseToken: string | null;
   executionLeaseOwner: "QUEUE" | "WORKER" | null;
   executionLeaseExpiresAt: Date | null;
   lastCompletedStage: string | null;
   failureStage: string | null;
+  trialCreditState: "NOT_APPLICABLE" | "RESERVED" | "CONSUMED" | "RELEASED";
 };
 
 function createStepRecorder(): {
@@ -89,7 +96,9 @@ function createStepRecorder(): {
   return { step, stepIds, stepResults };
 }
 
-function createDependencies(): {
+function createDependencies(
+  options: { trialCreditState?: WorkerState["trialCreditState"] } = {},
+): {
   dependencies: ReviewWorkerDependencies;
   state: WorkerState;
   mocks: {
@@ -98,8 +107,12 @@ function createDependencies(): {
     accountFindFirst: ReturnType<typeof vi.fn>;
     postReviewComment: ReturnType<typeof vi.fn>;
     postPRReviewWithSuggestions: ReturnType<typeof vi.fn>;
+    assertCurrentReviewHead: ReturnType<typeof vi.fn>;
     reviewUpdate: ReturnType<typeof vi.fn>;
-    suggestionCreateMany: ReturnType<typeof vi.fn>;
+    suggestionCreate: ReturnType<typeof vi.fn>;
+    findGithubReviewArtifact: ReturnType<typeof vi.fn>;
+    consumeTrialCredit: ReturnType<typeof vi.fn>;
+    releaseTrialCredit: ReturnType<typeof vi.fn>;
   };
 } {
   const state: WorkerState = {
@@ -110,6 +123,7 @@ function createDependencies(): {
     executionLeaseExpiresAt: new Date("2026-08-25T01:00:00.000Z"),
     lastCompletedStage: null,
     failureStage: null,
+    trialCreditState: options.trialCreditState ?? "NOT_APPLICABLE",
   };
   const updateMany = vi.fn(async ({ where, data }: {
     where: Record<string, unknown>;
@@ -152,12 +166,14 @@ function createDependencies(): {
   const reviewDelegate = {
     findUnique: vi.fn(async () => ({
       id: "review-1",
+      review: "Persisted review body",
       attemptCount: state.attemptCount,
       headSha: "head-sha",
       githubAuthorId: "github-user-1",
       langCode: "en",
       maxSuggestions: 3,
       verificationEnabled: false,
+      trialCreditState: state.trialCreditState,
       prNumber: 42,
       repository: {
         id: "repository-1",
@@ -169,11 +185,17 @@ function createDependencies(): {
     updateMany,
     update: reviewUpdate,
   };
-  const suggestionCreateMany = vi.fn(async () => ({ count: 1 }));
+  const suggestionCreate = vi.fn(async () => ({ id: "suggestion-1" }));
   const transactionClient = {
     review: reviewDelegate,
-    suggestion: { createMany: suggestionCreateMany },
-    reviewIssue: { createMany: vi.fn(async () => ({ count: 0 })) },
+    suggestion: {
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+      create: suggestionCreate,
+    },
+    reviewIssue: {
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+      create: vi.fn(async () => ({ id: "issue-1" })),
+    },
   };
   const accountFindFirst = vi.fn(async () => ({ accessToken: "github-token" }));
   const prismaMock = {
@@ -186,8 +208,28 @@ function createDependencies(): {
   };
   const generateText = vi.fn();
   const getPullRequestDiff = vi.fn(async () => PULL_REQUEST_DIFF);
-  const postReviewComment = vi.fn(async () => undefined);
-  const postPRReviewWithSuggestions = vi.fn(async () => undefined);
+  const postedArtifact = {
+    id: "github-review-1",
+    kind: "pull-request-review" as const,
+    commitId: "head-sha",
+    postedAt: NOW,
+  };
+  const postReviewComment = vi.fn(async () => ({
+    ...postedArtifact,
+    kind: "issue-comment" as const,
+    commitId: null,
+  }));
+  const postPRReviewWithSuggestions = vi.fn(async () => postedArtifact);
+  const findGithubReviewArtifact = vi.fn(async () => null);
+  const assertCurrentReviewHead = vi.fn(async () => undefined);
+  const consumeTrialCredit = vi.fn(async () => {
+    state.trialCreditState = "CONSUMED";
+    return true;
+  });
+  const releaseTrialCredit = vi.fn(async () => {
+    state.trialCreditState = "RELEASED";
+    return true;
+  });
   const dependencies: ReviewWorkerDependencies = {
     prisma: prismaMock as unknown as ReviewWorkerDependencies["prisma"],
     getPullRequestDiff,
@@ -195,7 +237,8 @@ function createDependencies(): {
       postReviewComment as unknown as ReviewWorkerDependencies["postReviewComment"],
     postPRReviewWithSuggestions:
       postPRReviewWithSuggestions as unknown as ReviewWorkerDependencies["postPRReviewWithSuggestions"],
-    postVerificationReview: vi.fn(async () => undefined),
+    postVerificationReview: vi.fn(async () => postedArtifact),
+    findGithubReviewArtifact,
     buildDeterministicPrContext: vi.fn(),
     generateText:
       generateText as unknown as ReviewWorkerDependencies["generateText"],
@@ -204,6 +247,9 @@ function createDependencies(): {
     ) as unknown as ReviewWorkerDependencies["createGeneratorModel"],
     verifyReview: vi.fn(),
     detectRepeatIssues: vi.fn(async () => []),
+    assertCurrentReviewHead,
+    consumeTrialCredit,
+    releaseTrialCredit,
     createTimeoutSignal: () => new AbortController().signal,
     now: () => NOW,
   };
@@ -217,8 +263,12 @@ function createDependencies(): {
       accountFindFirst,
       postReviewComment,
       postPRReviewWithSuggestions,
+      assertCurrentReviewHead,
       reviewUpdate,
-      suggestionCreateMany,
+      suggestionCreate,
+      findGithubReviewArtifact,
+      consumeTrialCredit,
+      releaseTrialCredit,
     },
   };
 }
@@ -249,10 +299,11 @@ describe("createGenerateReviewHandler", () => {
       "validate-review",
       "verify-findings",
       "detect-repeat-issues",
-      "mark-review-posting",
+      "persist-review",
       "post-review",
+      "record-main-artifact",
       "post-verification-review",
-      "save-review",
+      "complete-review",
     ]);
     expect(stepResults.get("fetch-pr-data")).not.toHaveProperty("token");
     expect(JSON.stringify([...stepResults.values()])).not.toContain(
@@ -276,14 +327,15 @@ describe("createGenerateReviewHandler", () => {
         headSha: "head-sha",
       }),
     });
-    expect(mocks.suggestionCreateMany).toHaveBeenCalledWith({
-      data: [expect.objectContaining({ reviewId: "review-1" })],
+    expect(mocks.suggestionCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ reviewId: "review-1" }),
+      select: { id: true },
     });
     expect(state).toMatchObject({
       status: "COMPLETED",
       executionLeaseToken: null,
       executionLeaseOwner: null,
-      lastCompletedStage: "PERSISTED",
+      lastCompletedStage: "MAIN_POSTED",
     });
   });
 
@@ -295,12 +347,11 @@ describe("createGenerateReviewHandler", () => {
 
     await runReviewHandler(dependencies);
 
-    expect(mocks.postReviewComment).toHaveBeenCalledWith(
-      "github-token",
-      "octo",
-      "sample",
-      42,
-      expect.stringContaining("Fallback review"),
+    expect(mocks.postPRReviewWithSuggestions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: "github-token",
+        reviewContent: expect.stringContaining("Fallback review"),
+      }),
     );
   });
 
@@ -308,7 +359,9 @@ describe("createGenerateReviewHandler", () => {
     const { dependencies, mocks } = createDependencies();
     mocks.generateText.mockResolvedValue({ experimental_output: STRUCTURED_REVIEW });
     mocks.postPRReviewWithSuggestions.mockRejectedValue(
-      new Error("GitHub review API failed"),
+      Object.assign(new Error("GitHub review validation failed"), {
+        status: 422,
+      }),
     );
 
     await runReviewHandler(dependencies);
@@ -316,20 +369,102 @@ describe("createGenerateReviewHandler", () => {
     expect(mocks.postReviewComment).toHaveBeenCalledOnce();
   });
 
-  it("fails at FETCH without external post when the persisted head differs", async () => {
-    const { dependencies, state, mocks } = createDependencies();
-    mocks.getPullRequestDiff.mockResolvedValue({
-      ...PULL_REQUEST_DIFF,
-      headSha: "new-head-sha",
+  it("does not fall back when the GitHub result is ambiguous", async () => {
+    const { dependencies, mocks } = createDependencies();
+    mocks.generateText.mockResolvedValue({ experimental_output: STRUCTURED_REVIEW });
+    mocks.postPRReviewWithSuggestions.mockRejectedValue(
+      Object.assign(new Error("GitHub unavailable"), { status: 503 }),
+    );
+
+    await expect(runReviewHandler(dependencies)).rejects.toThrow(
+      "GitHub unavailable",
+    );
+    expect(mocks.postReviewComment).not.toHaveBeenCalled();
+  });
+
+  it("reuses a trusted marker result without posting again", async () => {
+    const { dependencies, mocks } = createDependencies();
+    mocks.generateText.mockResolvedValue({ experimental_output: STRUCTURED_REVIEW });
+    mocks.findGithubReviewArtifact.mockResolvedValue({
+      id: "existing-review",
+      kind: "pull-request-review",
+      commitId: "head-sha",
+      postedAt: NOW,
+      body: "existing",
+      authorId: "github-user-1",
     });
 
-    const { stepIds } = await runReviewHandler(dependencies);
+    await runReviewHandler(dependencies);
 
-    expect(stepIds).toEqual(["claim-review", "load-review-request", "fetch-pr-data"]);
-    expect(state).toMatchObject({ status: "FAILED", failureStage: "FETCH" });
+    expect(mocks.postPRReviewWithSuggestions).not.toHaveBeenCalled();
+    expect(mocks.postReviewComment).not.toHaveBeenCalled();
+  });
+
+  it("resumes persisted posting without fetching or invoking AI", async () => {
+    const { dependencies, mocks } = createDependencies();
+    const recorder = createStepRecorder();
+
+    await createGenerateReviewHandler(dependencies)({
+      event: {
+        data: { ...REVIEW_EVENT_DATA, resumeFromPersisted: true },
+      },
+      step: recorder.step,
+    });
+
+    expect(recorder.stepIds).toEqual([
+      "claim-review",
+      "load-review-request",
+      "prepare-persisted-review-post",
+      "post-persisted-review",
+      "record-persisted-review-artifact",
+      "complete-persisted-review",
+    ]);
+    expect(mocks.getPullRequestDiff).not.toHaveBeenCalled();
+    expect(mocks.generateText).not.toHaveBeenCalled();
+    expect(mocks.postPRReviewWithSuggestions).not.toHaveBeenCalled();
+    expect(mocks.postReviewComment).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "Persisted review body" }),
+    );
+  });
+
+  it("supersedes before generation without an external post", async () => {
+    const { dependencies, state, mocks } = createDependencies();
+    mocks.assertCurrentReviewHead.mockImplementation(async () => {
+      state.status = "SUPERSEDED";
+      state.executionLeaseToken = null;
+      state.executionLeaseOwner = null;
+      state.executionLeaseExpiresAt = null;
+      throw new Error("superseded");
+    });
+
+    await expect(runReviewHandler(dependencies)).rejects.toThrow("superseded");
+
+    expect(state).toMatchObject({ status: "SUPERSEDED" });
     expect(mocks.generateText).not.toHaveBeenCalled();
     expect(mocks.postReviewComment).not.toHaveBeenCalled();
     expect(mocks.postPRReviewWithSuggestions).not.toHaveBeenCalled();
+  });
+
+  it("supersedes on the post guard without issuing a GitHub post", async () => {
+    const { dependencies, state, mocks } = createDependencies();
+    mocks.generateText.mockResolvedValue({ experimental_output: STRUCTURED_REVIEW });
+    mocks.assertCurrentReviewHead
+      .mockResolvedValueOnce(undefined)
+      .mockImplementationOnce(async () => {
+        state.status = "SUPERSEDED";
+        state.executionLeaseToken = null;
+        state.executionLeaseOwner = null;
+        state.executionLeaseExpiresAt = null;
+        throw new Error("superseded before post");
+      });
+
+    await expect(runReviewHandler(dependencies)).rejects.toThrow(
+      "superseded before post",
+    );
+
+    expect(state.status).toBe("SUPERSEDED");
+    expect(mocks.postPRReviewWithSuggestions).not.toHaveBeenCalled();
+    expect(mocks.postReviewComment).not.toHaveBeenCalled();
   });
 
   it("does not use another GitHub account when the persisted binding is absent", async () => {
@@ -341,6 +476,52 @@ describe("createGenerateReviewHandler", () => {
     expect(state).toMatchObject({ status: "FAILED", failureStage: "FETCH" });
     expect(mocks.getPullRequestDiff).not.toHaveBeenCalled();
     expect(mocks.postReviewComment).not.toHaveBeenCalled();
+  });
+
+  it("releases a reserved trial credit with a pre-post fetch failure", async () => {
+    const { dependencies, state, mocks } = createDependencies({
+      trialCreditState: "RESERVED",
+    });
+    mocks.getPullRequestDiff.mockRejectedValue(new Error("GitHub unavailable"));
+
+    await runReviewHandler(dependencies);
+
+    expect(mocks.releaseTrialCredit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reviewId: "review-1",
+        leaseOwner: "WORKER",
+        allowedStatuses: ["RUNNING"],
+      }),
+      expect.objectContaining({ review: expect.any(Object) }),
+    );
+    expect(mocks.generateText).not.toHaveBeenCalled();
+    expect(state).toMatchObject({
+      status: "FAILED",
+      failureStage: "FETCH",
+      trialCreditState: "RELEASED",
+    });
+  });
+
+  it("consumes a reserved trial credit when the main marker is recorded", async () => {
+    const { dependencies, state, mocks } = createDependencies({
+      trialCreditState: "RESERVED",
+    });
+    mocks.generateText.mockResolvedValue({ experimental_output: STRUCTURED_REVIEW });
+
+    await runReviewHandler(dependencies);
+
+    expect(mocks.consumeTrialCredit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reviewId: "review-1",
+        leaseOwner: "WORKER",
+        githubMainReviewId: "github-review-1",
+      }),
+      expect.objectContaining({ review: expect.any(Object) }),
+    );
+    expect(state).toMatchObject({
+      status: "COMPLETED",
+      trialCreditState: "CONSUMED",
+    });
   });
 });
 

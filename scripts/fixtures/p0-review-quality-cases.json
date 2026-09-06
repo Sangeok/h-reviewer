@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "caseId": "p0-pr65-parallel-array-assert",
+      "mergeCommit": "c902f229a179b36399f8179382a45c08083c1f62",
+      "title": "feat : review verification (검수자) — 게시 전 오탐 팩트체크 필터",
+      "description": "",
+      "expectedFindings": [],
+      "historicalFindings": [
+        {
+          "findingId": "history-pr65-index-alignment",
+          "category": "bug",
+          "claim": "Parallel issue decoration arrays can attach verifier or repeat metadata to the wrong issue when index alignment is lost."
+        }
+      ]
+    },
+    {
+      "caseId": "p0-pr64-verification-rename",
+      "mergeCommit": "cf41f00676214b5b9f1fe8cbfd306217d0340db7",
+      "title": "refactor : rename second reviewer to review verification (검수자)",
+      "description": "",
+      "expectedFindings": [],
+      "historicalFindings": [
+        {
+          "findingId": "history-pr64-verification-migration",
+          "category": "bug",
+          "claim": "Renaming a persisted verification setting can silently disable verification unless existing enabled users are migrated."
+        }
+      ]
+    },
+    {
+      "caseId": "p0-pr60-repeat-wedge",
+      "mergeCommit": "6dc7eda06154c0e05747d2320164939ab3c7b93a",
+      "title": "feat: 반복 실수 감지(wedge) + addressed 추적",
+      "description": "",
+      "expectedFindings": [
+        {
+          "findingId": "pr60-repeat-candidate-embedding-shape",
+          "file": "module/ai/lib/repeat-detection.ts",
+          "lineRange": [89, 91],
+          "category": "bug",
+          "claim": "Repeat matching accepts any JSON array without checking vector length or finite numeric entries, so malformed stored embeddings can produce invalid or misleading similarity results.",
+          "crossFile": false
+        },
+        {
+          "findingId": "pr60-closed-unmerged-issues-remain-repeat-candidates",
+          "file": "app/api/webhooks/github/route.ts",
+          "lineRange": [210, 214],
+          "category": "bug",
+          "claim": "Only merged pull requests finalize pending review issues, leaving issues from closed-unmerged pull requests eligible for future repeat detection.",
+          "crossFile": true
+        }
+      ],
+      "historicalFindings": [
+        {
+          "findingId": "history-pr60-malformed-embedding",
+          "category": "bug",
+          "claim": "Stored repeat-candidate embeddings must have the expected dimension and contain only finite numbers before cosine similarity is calculated."
+        },
+        {
+          "findingId": "history-pr60-abandoned-pr",
+          "category": "bug",
+          "claim": "Review issues from a pull request that was closed without merging must not remain eligible as repeat-history candidates."
+        }
+      ]
+    },
+    {
+      "caseId": "p0-pr59-frontend-clean-code",
+      "mergeCommit": "a240c85319dbcf9eacf910ed990dae4ba19d57d7",
+      "title": "refactor: frontend clean code (22 findings from 4-lens review)",
+      "description": "",
+      "expectedFindings": [
+        {
+          "findingId": "pr59-sidebar-corrupt-storage-crash",
+          "file": "components/layouts/app-sidebar/hooks/use-sidebar-state.ts",
+          "lineRange": [8, 10],
+          "category": "bug",
+          "claim": "Malformed JSON in the persisted sidebar state is parsed without a fallback and can crash sidebar initialization.",
+          "crossFile": false
+        }
+      ],
+      "historicalFindings": [
+        {
+          "findingId": "history-pr59-storage-parse",
+          "category": "bug",
+          "claim": "Invalid JSON in localStorage must fall back to the default UI state instead of throwing during state initialization."
+        }
+      ]
+    }
+  ]
+}

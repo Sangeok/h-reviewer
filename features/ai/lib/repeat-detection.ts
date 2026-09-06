@@ -21,6 +21,12 @@ export type RepeatAnnotation = {
   repeat: RepeatBadgeInfo | null;
 };
 
+export type RepeatCandidateEmbedding = {
+  id: string;
+  category: string;
+  embedding: unknown;
+};
+
 function isCompatibleEmbedding(value: unknown): value is number[] {
   return (
     Array.isArray(value) &&
@@ -31,7 +37,10 @@ function isCompatibleEmbedding(value: unknown): value is number[] {
   );
 }
 
-function cosineSimilarity(a: number[], b: number[]): number {
+function cosineSimilarity(
+  a: readonly number[],
+  b: readonly number[],
+): number {
   let dot = 0, normA = 0, normB = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
@@ -40,6 +49,29 @@ function cosineSimilarity(a: number[], b: number[]): number {
   }
   if (normA === 0 || normB === 0) return 0;
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+export function findBestRepeatCandidate(input: {
+  category: string;
+  embedding: readonly number[];
+  candidates: readonly RepeatCandidateEmbedding[];
+}): { id: string; similarity: number } | null {
+  let best: { id: string; similarity: number } | null = null;
+
+  for (const candidate of input.candidates) {
+    if (candidate.category !== input.category) continue;
+    if (!isCompatibleEmbedding(candidate.embedding)) continue;
+
+    const similarity = cosineSimilarity(input.embedding, candidate.embedding);
+    if (
+      similarity >= REPEAT_SIMILARITY_THRESHOLD &&
+      (!best || similarity > best.similarity)
+    ) {
+      best = { id: candidate.id, similarity };
+    }
+  }
+
+  return best;
 }
 
 function buildIssueEmbeddingText(issue: StructuredIssue): string {
@@ -94,29 +126,25 @@ export async function detectRepeatIssues(params: {
 
     const embedding = await generateEmbedding(text);
 
-    let best: { id: string; similarity: number; prUrl: string; createdAt: Date } | null = null;
-    for (const candidate of candidates) {
-      if (candidate.category !== issue.category) continue; // category-primary
-      if (!isCompatibleEmbedding(candidate.embedding)) continue;
-
-      const similarity = cosineSimilarity(embedding, candidate.embedding);
-      if (similarity >= REPEAT_SIMILARITY_THRESHOLD && (!best || similarity > best.similarity)) {
-        best = {
-          id: candidate.id,
-          similarity,
-          prUrl: candidate.review.prUrl,
-          createdAt: candidate.createdAt,
-        };
-      }
-    }
+    const bestMatch = findBestRepeatCandidate({
+      category: issue.category,
+      embedding,
+      candidates,
+    });
+    const best = bestMatch
+      ? candidates.find((candidate) => candidate.id === bestMatch.id) ?? null
+      : null;
 
     annotations.push({
       embedding,
       isRepeat: best !== null,
       repeatOfIssueId: best?.id ?? null,
-      repeatSimilarity: best?.similarity ?? null,
+      repeatSimilarity: bestMatch?.similarity ?? null,
       repeat: best
-        ? { prUrl: best.prUrl, date: new Date(best.createdAt).toISOString().slice(0, 10) }
+        ? {
+            prUrl: best.review.prUrl,
+            date: new Date(best.createdAt).toISOString().slice(0, 10),
+          }
         : null,
     });
   }

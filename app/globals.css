@@ -175,24 +175,6 @@
   }
 }
 /* Custom Animations for Login UI */
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0) translateX(0);
-  }
-  50% {
-    transform: translateY(-20px) translateX(10px);
-  }
-}
-
-@keyframes float-delayed {
-  0%, 100% {
-    transform: translateY(0) translateX(0);
-  }
-  50% {
-    transform: translateY(-15px) translateX(-10px);
-  }
-}
-
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -211,14 +193,6 @@
   50% {
     opacity: 0.12;
   }
-}
-
-.animate-float {
-  animation: float 8s ease-in-out infinite;
-}
-
-.animate-float-delayed {
-  animation: float-delayed 10s ease-in-out infinite;
 }
 
 .animate-fade-in {

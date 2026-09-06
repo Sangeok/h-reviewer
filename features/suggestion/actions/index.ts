@@ -71,7 +71,12 @@ export async function applySuggestion(suggestionId: string): Promise<ApplySugges
   const { prNumber } = suggestion.review;
 
   try {
-    const prInfo = await getPullRequestHeadInfo(account.accessToken, owner, repo, prNumber);
+    const prInfo = await getPullRequestHeadInfo({
+      token: account.accessToken,
+      owner,
+      repo,
+      prNumber,
+    });
 
     const prStatusError = checkPrStatus(prInfo);
     if (prStatusError === "ALREADY_MERGED") {

@@ -257,6 +257,45 @@ describe("buildDeterministicPrContext", () => {
     );
   });
 
+  it("uses an injected repository reader without calling the GitHub default", async () => {
+    const contents = new Map([
+      ["src/foo.ts", 'import { dependency } from "./dependency";'],
+      ["src/dependency.ts", "export const dependency = 1;"],
+    ]);
+    const repositoryReader = {
+      getFileContent: vi.fn(async (params: { path: string }) => {
+        const content = contents.get(params.path);
+        return content ? { content, sha: `${params.path}-sha` } : null;
+      }),
+      getRepositoryFileTree: vi.fn(async () => ({
+        files: [...contents].map(([filePath, content]) => ({
+          path: filePath,
+          size: content.length,
+        })),
+        truncated: false,
+      })),
+    };
+
+    const result = await buildDeterministicPrContext({
+      token: "local-git",
+      owner: "fixture",
+      repo: "fixture",
+      headSha: "head-sha",
+      diff: createAddedFileDiff(),
+      sizeMode: "small",
+      repositoryReader,
+    });
+
+    expect(result.manifest.map((entry) => entry.path)).toEqual([
+      "src/foo.ts",
+      "src/dependency.ts",
+    ]);
+    expect(repositoryReader.getFileContent).toHaveBeenCalled();
+    expect(repositoryReader.getRepositoryFileTree).toHaveBeenCalled();
+    expect(githubMocks.getFileContent).not.toHaveBeenCalled();
+    expect(githubMocks.getRepositoryFileTree).not.toHaveBeenCalled();
+  });
+
   it("does not fetch deleted files and returns a truly empty context", async () => {
     const result = await buildDeterministicPrContext({
       token: "token",

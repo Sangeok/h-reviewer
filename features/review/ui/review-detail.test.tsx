@@ -3,6 +3,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+vi.mock("@/features/review/actions", () => ({ retryReview: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 
 import type { ReviewStatus } from "@/lib/generated/prisma/enums";
 
@@ -102,7 +106,17 @@ describe("ReviewDetail", () => {
 
     expect(markup).toContain("Review verification failed safely.");
     expect(markup).toContain("This review can be retried.");
+    expect(markup).toContain("Retry review");
     expect(markup).not.toContain("RAW FAILURE BODY MUST NOT RENDER");
+  });
+
+  it("does not render retry for a legacy failure", () => {
+    const markup = renderReviewDetail(
+      createReviewDetail({ status: "FAILED", failureStage: "LEGACY" }),
+    );
+
+    expect(markup).toContain("Retry is unavailable");
+    expect(markup).not.toContain("Retry review");
   });
 
   it("renders a safe superseded explanation instead of stale markdown", () => {

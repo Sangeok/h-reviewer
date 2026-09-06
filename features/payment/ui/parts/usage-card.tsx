@@ -2,14 +2,55 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import type { ReactNode } from "react";
 import type { SubscriptionData } from "../../actions/config";
 
-interface UsageCardProps {
+type UsageCardProps = {
   limits: NonNullable<SubscriptionData["limits"]>;
   isPro: boolean;
+};
+
+type TrialUsageCopy = {
+  label: string;
+  badge: string;
+  description: string;
+  isAvailable: boolean;
+};
+
+function getTrialUsageCopy(
+  limits: UsageCardProps["limits"],
+  isPro: boolean,
+): TrialUsageCopy {
+  if (isPro) {
+    return {
+      label: "AI code reviews",
+      badge: "Unlimited",
+      description: "No limits on reviews",
+      isAvailable: true,
+    };
+  }
+
+  if (!limits.trialReviews.enabled) {
+    return {
+      label: "AI code reviews",
+      badge: "Pro only",
+      description: "Free tier cannot create reviews",
+      isAvailable: false,
+    };
+  }
+
+  const remaining = limits.trialReviews.remaining ?? 0;
+  return {
+    label: "AI code review trial",
+    badge: `${limits.trialReviews.used} / ${limits.trialReviews.limit ?? 0}`,
+    description: remaining > 0 ? `${remaining} reviews remaining` : "Trial exhausted",
+    isAvailable: limits.trialReviews.canReview,
+  };
 }
 
-export function UsageCard({ limits, isPro }: UsageCardProps) {
+export function UsageCard({ limits, isPro }: UsageCardProps): ReactNode {
+  const trialUsage = getTrialUsageCopy(limits, isPro);
+
   return (
     <Card>
       <CardHeader>
@@ -38,11 +79,13 @@ export function UsageCard({ limits, isPro }: UsageCardProps) {
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Reviews per Repository</span>
-              <Badge variant="outline">{isPro ? "Unlimited" : "0 per repo"}</Badge>
+              <span className="text-sm font-medium">{trialUsage.label}</span>
+              <Badge variant={trialUsage.isAvailable ? "outline" : "destructive"}>
+                {trialUsage.badge}
+              </Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              {isPro ? "No limits on reviews" : "Free tier cannot create reviews"}
+              {trialUsage.description}
             </p>
           </div>
         </div>

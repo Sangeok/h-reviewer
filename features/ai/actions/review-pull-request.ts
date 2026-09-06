@@ -1,20 +1,22 @@
 import { createReviewRequest } from "@/features/review/lib/review-request";
 
 import type {
-  PullRequestIdentityInput,
+  ReviewPullRequestInput,
   ReviewPullRequestResult,
 } from "../types";
 
 export async function reviewPullRequest(
-  input: PullRequestIdentityInput,
+  input: ReviewPullRequestInput,
 ): Promise<ReviewPullRequestResult> {
   try {
+    const { requestSource, ...identity } = input;
     const result = await createReviewRequest({
-      ...input,
+      ...identity,
       reviewType: "FULL_REVIEW",
       reviewMode: "FULL",
-      requestSource: "AUTOMATIC",
-      dispatchMode: "DIRECT",
+      requestSource,
+      dispatchMode:
+        requestSource === "AUTOMATIC" ? "DEBOUNCED" : "DIRECT",
     });
 
     if (result.kind === "rejected") {

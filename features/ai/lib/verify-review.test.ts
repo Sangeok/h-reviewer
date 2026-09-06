@@ -1,5 +1,24 @@
-import { describe, expect, it } from "vitest";
-import { applyVerification, buildVerificationReviewBody } from "./verify-review";
+import { describe, expect, it, vi } from "vitest";
+
+const verifyMocks = vi.hoisted(() => ({
+  generateText: vi.fn(),
+  google: vi.fn((model: string) => model),
+}));
+
+vi.mock("ai", () => ({
+  generateText: verifyMocks.generateText,
+  Output: { object: vi.fn((input: unknown) => input) },
+}));
+
+vi.mock("@ai-sdk/google", () => ({
+  google: verifyMocks.google,
+}));
+
+import {
+  applyVerification,
+  buildVerificationReviewBody,
+  verifyReview,
+} from "./verify-review";
 import type { VerificationResult } from "./verify-review";
 import type { StructuredReviewOutput } from "./review-schema";
 import type { CodeSuggestion, StructuredIssue } from "../types";
@@ -25,6 +44,40 @@ function makeOutput(issues: StructuredIssue[], suggestions: CodeSuggestion[]): S
     issues, suggestions,
   };
 }
+
+describe("verifyReview", () => {
+  it("preserves provider token usage with aligned verdicts", async () => {
+    verifyMocks.generateText.mockResolvedValueOnce({
+      experimental_output: {
+        issueVerdicts: [{ index: 0, verdict: "CONFIRMED", reason: "supported" }],
+        suggestionVerdicts: [],
+      },
+      usage: {
+        inputTokens: 120,
+        outputTokens: 30,
+        reasoningTokens: 10,
+        totalTokens: 160,
+      },
+    });
+
+    const result = await verifyReview({
+      diff: "diff --git a/src/a.ts b/src/a.ts",
+      issues: [makeIssue("guard is missing")],
+      suggestions: [],
+      langCode: "en",
+    });
+
+    expect(result.usage).toEqual({
+      inputTokens: 120,
+      outputTokens: 30,
+      reasoningTokens: 10,
+      totalTokens: 160,
+    });
+    expect(result.issueVerdicts).toEqual([
+      { verdict: "CONFIRMED", reason: "supported" },
+    ]);
+  });
+});
 
 describe("applyVerification", () => {
   const output = makeOutput(

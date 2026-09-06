@@ -1,11 +1,19 @@
-export interface PRCommand {
-  type: "summary" | "review";
-}
+import type { GithubWebhookTransportBinding } from "@/lib/github/github-webhook-delivery";
+
+export type PRCommand =
+  | { type: "summary" }
+  | { type: "review" }
+  | { type: "unsupported" };
 
 export type PullRequestIdentityInput = {
   owner: string;
   repo: string;
   prNumber: number;
+  transportBinding?: GithubWebhookTransportBinding;
+};
+
+export type ReviewPullRequestInput = PullRequestIdentityInput & {
+  requestSource: "AUTOMATIC" | "COMMAND";
 };
 
 export type ReviewRequestMetadata = {

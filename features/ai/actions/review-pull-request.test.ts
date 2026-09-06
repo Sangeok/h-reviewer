@@ -26,6 +26,50 @@ describe("reviewPullRequest", () => {
       owner: "octo",
       repo: "sample",
       prNumber: 42,
+      requestSource: "AUTOMATIC",
+      transportBinding: {
+        kind: "GITHUB_WEBHOOK",
+        deliveryRowId: "delivery-row-1",
+        leaseToken: "delivery-lease-1",
+      },
+    });
+
+    expect(reviewRequestMocks.createReviewRequest).toHaveBeenCalledWith({
+      owner: "octo",
+      repo: "sample",
+      prNumber: 42,
+      transportBinding: {
+        kind: "GITHUB_WEBHOOK",
+        deliveryRowId: "delivery-row-1",
+        leaseToken: "delivery-lease-1",
+      },
+      reviewType: "FULL_REVIEW",
+      reviewMode: "FULL",
+      requestSource: "AUTOMATIC",
+      dispatchMode: "DEBOUNCED",
+    });
+    expect(result).toEqual({
+      success: true,
+      message: "Review Queued",
+      reviewId: "review-1",
+      requestKey: "request-1",
+      status: "PENDING",
+    });
+  });
+
+  it("preserves a command request source when delegating", async () => {
+    reviewRequestMocks.createReviewRequest.mockResolvedValue({
+      kind: "created",
+      reviewId: "review-1",
+      requestKey: "request-1",
+      status: "PENDING",
+    });
+
+    await reviewPullRequest({
+      owner: "octo",
+      repo: "sample",
+      prNumber: 42,
+      requestSource: "COMMAND",
     });
 
     expect(reviewRequestMocks.createReviewRequest).toHaveBeenCalledWith({
@@ -34,15 +78,8 @@ describe("reviewPullRequest", () => {
       prNumber: 42,
       reviewType: "FULL_REVIEW",
       reviewMode: "FULL",
-      requestSource: "AUTOMATIC",
+      requestSource: "COMMAND",
       dispatchMode: "DIRECT",
-    });
-    expect(result).toEqual({
-      success: true,
-      message: "Review Queued",
-      reviewId: "review-1",
-      requestKey: "request-1",
-      status: "PENDING",
     });
   });
 
@@ -57,12 +94,41 @@ describe("reviewPullRequest", () => {
     });
 
     await expect(
-      reviewPullRequest({ owner: "octo", repo: "sample", prNumber: 42 }),
+      reviewPullRequest({
+        owner: "octo",
+        repo: "sample",
+        prNumber: 42,
+        requestSource: "AUTOMATIC",
+      }),
     ).resolves.toMatchObject({
       success: false,
       reason: "internal_error",
       status: "FAILED",
       failureStage: "QUEUE",
+    });
+  });
+
+  it.each([
+    ["PLAN_RESTRICTED", "plan_restricted"],
+    ["TRIAL_EXHAUSTED", "trial_exhausted"],
+  ] as const)("maps the %s entitlement rejection", async (reason, expectedReason) => {
+    reviewRequestMocks.createReviewRequest.mockResolvedValue({
+      kind: "rejected",
+      reason,
+      message: "Review entitlement rejected",
+    });
+
+    await expect(
+      reviewPullRequest({
+        owner: "octo",
+        repo: "sample",
+        prNumber: 42,
+        requestSource: "AUTOMATIC",
+      }),
+    ).resolves.toEqual({
+      success: false,
+      reason: expectedReason,
+      message: "Review entitlement rejected",
     });
   });
 
@@ -78,7 +144,12 @@ describe("reviewPullRequest", () => {
     });
 
     await expect(
-      reviewPullRequest({ owner: "octo", repo: "sample", prNumber: 42 }),
+      reviewPullRequest({
+        owner: "octo",
+        repo: "sample",
+        prNumber: 42,
+        requestSource: "AUTOMATIC",
+      }),
     ).resolves.toMatchObject({ success: false, reason, status });
   });
 
@@ -96,7 +167,12 @@ describe("reviewPullRequest", () => {
     });
 
     await expect(
-      reviewPullRequest({ owner: "octo", repo: "sample", prNumber: 42 }),
+      reviewPullRequest({
+        owner: "octo",
+        repo: "sample",
+        prNumber: 42,
+        requestSource: "AUTOMATIC",
+      }),
     ).resolves.toMatchObject({ success: true, message, status });
   });
 });

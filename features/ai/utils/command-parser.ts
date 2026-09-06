@@ -1,18 +1,22 @@
-import { PRCommand } from "../types";
+import type { PRCommand } from "../types";
 
 export function parseCommand(comment: string): PRCommand | null {
   const normalizedComment = comment.trim().toLowerCase();
-  const commandPattern = /^[/@]hreviewer\s+(summary|review)\b/;
-  const match = normalizedComment.match(commandPattern);
+  const tokens = normalizedComment.split(/\s+/);
+  const commandPrefix = tokens[0];
 
-  if (!match) {
+  if (commandPrefix !== "@hreviewer" && commandPrefix !== "/hreviewer") {
     return null;
   }
 
-  const type = match[1];
+  if (tokens.length !== 2) {
+    return { type: "unsupported" };
+  }
+
+  const type = tokens[1];
 
   if (type !== "summary" && type !== "review") {
-    return null;
+    return { type: "unsupported" };
   }
 
   return { type };

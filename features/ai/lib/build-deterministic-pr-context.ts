@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   getFileContent,
   getRepositoryFileTree,
+  type RepositoryFileTree,
   type RepositoryTreeFile,
 } from "@/lib/github/github";
 import {
@@ -116,6 +117,34 @@ export type DeterministicPrContext = {
   treeStatus: PrContextTreeStatus;
 };
 
+type DeterministicPrContextFile = {
+  content: string;
+  sha: string;
+};
+
+export type DeterministicPrContextRepositoryReader = {
+  getFileContent(params: {
+    token: string;
+    owner: string;
+    repo: string;
+    path: string;
+    ref: string;
+    signal?: AbortSignal;
+  }): Promise<DeterministicPrContextFile | null>;
+  getRepositoryFileTree(params: {
+    token: string;
+    owner: string;
+    repo: string;
+    commitSha: string;
+    signal?: AbortSignal;
+  }): Promise<RepositoryFileTree>;
+};
+
+const githubRepositoryReader: DeterministicPrContextRepositoryReader = {
+  getFileContent,
+  getRepositoryFileTree,
+};
+
 export type BuildDeterministicPrContextParams = {
   token: string;
   owner: string;
@@ -124,6 +153,7 @@ export type BuildDeterministicPrContextParams = {
   diff: string;
   sizeMode: ReviewSizeMode;
   signal?: AbortSignal;
+  repositoryReader?: DeterministicPrContextRepositoryReader;
 };
 
 type ChangedFileContent = {
@@ -147,15 +177,19 @@ type ContextFileSelection = {
 
 type ChangedFileFetchResult = {
   change: ChangedFileInfo;
-  file: Awaited<ReturnType<typeof getFileContent>>;
+  file: DeterministicPrContextFile | null;
 };
 
 type RelatedFileFetchResult = {
   candidate: RelatedCandidate;
-  file: Awaited<ReturnType<typeof getFileContent>>;
+  file: DeterministicPrContextFile | null;
 };
 
-type FindRelatedCandidatesParams = BuildDeterministicPrContextParams & {
+type FindRelatedCandidatesParams = Omit<
+  BuildDeterministicPrContextParams,
+  "repositoryReader"
+> & {
+  repositoryReader: DeterministicPrContextRepositoryReader;
   changedFiles: ChangedFileContent[];
   allChangedPaths: ReadonlySet<string>;
   maxRelatedFiles: number;
@@ -530,6 +564,7 @@ export async function findRelatedCandidates({
   changedFiles,
   allChangedPaths,
   maxRelatedFiles,
+  repositoryReader,
 }: FindRelatedCandidatesParams): Promise<{
   candidates: RelatedCandidate[];
   treeStatus: PrContextTreeStatus;
@@ -552,7 +587,7 @@ export async function findRelatedCandidates({
   let treeStatus: PrContextTreeStatus;
 
   try {
-    const tree = await getRepositoryFileTree({
+    const tree = await repositoryReader.getRepositoryFileTree({
       token,
       owner,
       repo,
@@ -750,6 +785,7 @@ export function createEmptyDeterministicPrContext(
 export async function buildDeterministicPrContext(
   params: BuildDeterministicPrContextParams,
 ): Promise<DeterministicPrContext> {
+  const repositoryReader = params.repositoryReader ?? githubRepositoryReader;
   const budget = getDeterministicContextBudget(params.sizeMode);
   const parsedChanges = parseDiffFiles(params.diff);
   const {
@@ -766,7 +802,7 @@ export async function buildDeterministicPrContext(
   const changedResults = await Promise.allSettled(
     changes.map(async (change): Promise<ChangedFileFetchResult> => ({
       change,
-      file: await getFileContent({
+      file: await repositoryReader.getFileContent({
         token: params.token,
         owner: params.owner,
         repo: params.repo,
@@ -788,6 +824,7 @@ export async function buildDeterministicPrContext(
     omittedByBudgetCount: relatedCandidateOmissionCount,
   } = await findRelatedCandidates({
     ...params,
+    repositoryReader,
     changedFiles,
     allChangedPaths,
     maxRelatedFiles: budget.maxRelatedFiles,
@@ -796,7 +833,7 @@ export async function buildDeterministicPrContext(
   const relatedResults = await Promise.allSettled(
     relatedCandidates.map(async (candidate): Promise<RelatedFileFetchResult> => ({
       candidate,
-      file: await getFileContent({
+      file: await repositoryReader.getFileContent({
         token: params.token,
         owner: params.owner,
         repo: params.repo,
