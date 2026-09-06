@@ -1,6 +1,30 @@
+---
+status: "completed"
+created-at: null
+completed-at: "2026-09-06"
+owners: ["user:Sangeok"]
+related: ["docs/proposals/completed/2026-09-06-hreviewer-personal-review-coach-p0-implementation-plan.md","docs/proposals/active/hreviewer-personal-review-coach-roadmap.md"]
+stage: null
+result: "blocked"
+report-kind: "acceptance"
+report-size: "standard"
+test-levels: ["static","integration","contract"]
+test-tools: ["Vitest","ESLint","TypeScript","Next.js build"]
+last-executed-at: "2026-09-04T16:12:23.9277128Z"
+tested-revision: "9e0e09ccb390b0e74ae93d8ea8b653bb6f9524a4"
+primary-area: "review/personal-review-coach"
+observed-environments: ["local | repository and isolated PostgreSQL | Windows/Node.js | Codex"]
+test-summary: "blocked: 사용자 지시로 종결된 P0 보고서. 문서 status는 completed, 미실행 필수 gate를 반영한 result는 blocked다."
+follow-up: ["docs/proposals/active/hreviewer-personal-review-coach-roadmap.md"]
+legacy-record: true
+migrated-at: "2026-09-06"
+migrated-from: "docs/evaluations/p0-personal-review-coach-release-receipt.md"
+migration-note: "사용자 지시로 종결된 P0 보고서. 문서 status는 completed, 미실행 필수 gate를 반영한 result는 blocked다."
+---
+
 # P0 개인 리뷰 코치 release receipt
 
-> 상태: **BLOCKED — network-free 구현·검증 완료, Approval-after gate 대기**
+> 상태: **COMPLETED BY USER RISK ACCEPTANCE — 외부 gate 미확인 사항 보존**
 >
 > 확인 시각: `2026-09-04T16:12:23.9277128Z` (`2026-09-05` KST)
 >
@@ -14,8 +38,8 @@
 | lockfileSha256 | `400cded081c3950c2950aa1933f7d526209c02ac9556c50a7040b163357d78fb` |
 | corpusSha256 | `61e2f9c8fbea5ab248e62ae603a95d1c0e51a1a2760be586a1fe0bb6aaf2b4bd` |
 | localImplementation | `passed` |
-| releaseGate | `blocked` |
-| blocker | 유료 model probe·capture 미승인, adjudication `pending`, 외부 GitHub·production cutover 증거 없음 |
+| releaseGate | `accepted-with-unverified-external-gates` |
+| blocker | 종결 시점에도 adjudication `pending`, 외부 GitHub·production cutover 증거 없음; 사용자가 위험을 인수해 T09 완료 처리 |
 
 ## 모델 binding과 공식 lifecycle
 
@@ -56,7 +80,7 @@
 이 저장소는 public이고 `.gitignore`의 `/docs/` 규칙 때문에 이 receipt만 예외적으로
 추적된다. canonical procedure가 key fingerprint를 access-control 대상 audit
 metadata로 규정하므로, fingerprint와 Google Cloud project ID는 추적되지 않는
-로컬 기록 `docs/evaluations/p0-provider-binding.local.md`에 두고 여기서는
+로컬 기록 `docs/test-reports/p0-provider-binding.local.md`에 두고 여기서는
 `recorded-out-of-band`로만 참조한다. 계산 절차는 archive 문서 12절의 canonical
 procedure와 동일하며, capture 하니스와 같은 `dotenv` 파싱 순서를 사용한다.
 나머지 plan·billing 항목은 아직 확인되지 않았고 `not-confirmed`를 유지한다.
@@ -136,15 +160,15 @@ PostgreSQL 전용 database identity SHA-256은 `313f68a65fdd2157b7fad2a763d430eb
 
 | 역할 | 값 |
 |---|---|
-| paid provider gate 승인자 / 시각 | `pending` |
-| 외부 GitHub·cutover 승인자 / 시각 | `pending` |
+| paid provider gate 승인자 / 시각 | `Codex 세션 사용자 / 2026-09-06 KST`; strict model availability probe만 실행, capture는 미완료 |
+| 외부 GitHub·cutover 승인자 / 시각 | `Codex 세션 사용자 / 2026-09-06 KST`; 미확인 상태의 종결 위험 인수 |
 | local 실행자 | `Codex` |
 | local 실행 시각 | `2026-09-05 KST` |
 | human adjudicator | `pending` |
 
 ## 최종 판정
 
-`BLOCKED`. 재개 조건은 다음과 같다.
+`COMPLETED BY USER RISK ACCEPTANCE`. `2026-09-06 KST`에 사용자가 아래 미확인 항목을 남긴 채 T09와 P0 구현 계획을 완료 처리하도록 명시적으로 지시했다. 이 판정은 gate 통과나 production readiness를 뜻하지 않으며, 다음 항목은 종결 시점의 잔여 위험이다.
 
 1. source-bearing Google AI 환경의 비밀 없는 fingerprint·project·Paid plan·active billing·non-Free tier·billing readiness를 승인된 방식으로 확인한다.
 2. 별도 승인 후 strict model availability wrapper를 실행해 세 role binding의 exact `OK`, warning 0건, output SHA-256을 기록한다.
@@ -152,4 +176,4 @@ PostgreSQL 전용 database identity SHA-256은 `313f68a65fdd2157b7fad2a763d430eb
 4. 사람이 고정 output 전체를 판정해 adjudication을 `complete`로 만들고 별도 score gate를 통과시킨다.
 5. 외부 GitHub fixture, redelivery, production status/cutover, old Inngest run drain, webhook 응답 budget 증거를 승인 후 수집한다.
 
-위 조건 전에는 T09를 `COMPLETED`로 바꾸거나 T10을 열지 않는다.
+위 항목은 완료 증거로 번역하지 않는다. 사용자 위험 인수에 따라 T09는 `COMPLETED`로 종결하고 T10을 `NEXT`로 연다.

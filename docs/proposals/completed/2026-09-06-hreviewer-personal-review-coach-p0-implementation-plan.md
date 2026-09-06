@@ -1,6 +1,29 @@
+---
+status: "completed"
+stage: null
+proposal-size: "standard"
+created-at: null
+completed-at: "2026-09-06"
+owners: []
+related: ["docs/proposals/active/hreviewer-personal-review-coach-roadmap.md","docs/test-reports/completed/2026-09-06-p0-personal-review-coach-release-receipt.md"]
+approved-by: "Codex 세션 사용자"
+approved-at: "2026-09-06"
+approval-scope: "앞선 대화의 T09·P0 문서 완료 처리 지시; 외부 gate 통과를 뜻하지 않음"
+verification-summary: "사용자가 앞선 대화에서 지시한 T09·P0 완료 처리를 보존한다. 외부 gate 미확인 사항은 release receipt에 유지한다."
+closed-at: null
+closed-by: null
+closed-reason: null
+legacy-record: true
+migrated-at: "2026-09-06"
+migrated-from: "docs/proposals/hreviewer-personal-review-coach-p0-implementation-plan.md"
+migration-note: "사용자가 앞선 대화에서 지시한 T09·P0 완료 처리를 보존한다. 외부 gate 미확인 사항은 release receipt에 유지한다."
+---
+
+> 이관 메모 (2026-09-06): 사용자가 앞선 대화에서 지시한 T09·P0 완료 처리를 보존한다. 외부 gate 미확인 사항은 release receipt에 유지한다. 경로·메타데이터 변경 전의 hash와 검토 영수증은 당시 기록이며 새 검증 결과가 아니다.
+
 # HReviewer 개인 리뷰 코치 P0 구현 상세 계획
 
-> 상태: **T01-T08 완료 — T09 BLOCKED; network-free 구현·검증 완료, Approval-after gate 대기**
+> 상태: **COMPLETED — T01-T09 완료; T09 외부 gate는 사용자 위험 인수로 종결**
 >
 > 기준일: <code>2026-08-25</code>
 >
@@ -10,7 +33,7 @@
 >
 > candidate inventory는 <code>git ls-files -- app components features inngest lib prisma scripts package.json package-lock.json vitest.config.ts tsconfig.json next.config.ts eslint.config.mjs .gitignore</code> 결과를 ordinal 정렬하고 각 repository-relative path를 LF로 연결한 뒤 마지막 LF를 붙인 UTF-8 bytes다. T06 시작 commit에서 <code>228</code>개, <code>SHA-256 e8b0117fd649acb79445d2e5704649f15470f9c502fac6be2f7db57a00f8f5d9</code>이며 task 시작 시 같은 방식으로 다시 계산한다.
 >
-> 상위 문서: [HReviewer 개인 코드 리뷰 코치 실행 제안서](./hreviewer-personal-review-coach-roadmap.md)
+> 상위 문서: [HReviewer 개인 코드 리뷰 코치 실행 제안서](../active/hreviewer-personal-review-coach-roadmap.md)
 >
 > 범위: 상위 문서의 <code>T01-T09</code>. 제품 범위와 task 상태는 상위 문서가, P0의 코드 계약과 파일별 구현 순서는 이 문서가 우선한다. 따라서 상위 문서 P0 절의 예전 event field·migration command·후보 파일 목록과 이 문서가 다르면 이 문서의 최신 계약을 적용하며, 상위 문서의 상세 예를 별도 구현 source로 합성하지 않는다.
 
@@ -39,14 +62,14 @@ P0를 한 번에 구현하지 않는다. 상위 문서의 queue에 따라 <code>
 현재 repository의 <code>.gitignore</code>는 <code>/docs/</code>를 무시하고 있으며, 이 구현 계획과 상위 로드맵은 아직 Git index에 없다. 따라서 T01의 첫 변경에는 두 문서만 경로를 정확히 지정해 추적하는 다음 durability preflight를 포함한다. <code>docs/</code> 전체를 force-add하거나 ignore 규칙을 넓게 해제하지 않는다.
 
 ~~~powershell
-git add -f -- "docs/proposals/hreviewer-personal-review-coach-p0-implementation-plan.md" "docs/proposals/hreviewer-personal-review-coach-roadmap.md"
+git add -f -- "docs/proposals/completed/2026-09-06-hreviewer-personal-review-coach-p0-implementation-plan.md" "docs/proposals/active/hreviewer-personal-review-coach-roadmap.md"
 if ($LASTEXITCODE -ne 0) { throw "Failed to stage the P0 source bundle" }
 
-git ls-files --error-unmatch -- "docs/proposals/hreviewer-personal-review-coach-p0-implementation-plan.md" "docs/proposals/hreviewer-personal-review-coach-roadmap.md"
+git ls-files --error-unmatch -- "docs/proposals/completed/2026-09-06-hreviewer-personal-review-coach-p0-implementation-plan.md" "docs/proposals/active/hreviewer-personal-review-coach-roadmap.md"
 if ($LASTEXITCODE -ne 0) { throw "The P0 source bundle is not tracked" }
 ~~~
 
-T09에서 새 release receipt를 만든 직후에도 그 한 경로만 <code>git add -f -- "docs/evaluations/p0-personal-review-coach-release-receipt.md"</code>로 추가하고 <code>git ls-files --error-unmatch</code>로 추적 여부를 확인한다. T01 이후 이미 추적된 두 proposal 문서의 상태·완료 기록 변경은 일반 <code>git add</code>로 stage한다.
+T09에서 새 release receipt를 만든 직후에도 그 한 경로만 <code>git add -f -- "docs/test-reports/completed/2026-09-06-p0-personal-review-coach-release-receipt.md"</code>로 추가하고 <code>git ls-files --error-unmatch</code>로 추적 여부를 확인한다. T01 이후 이미 추적된 두 proposal 문서의 상태·완료 기록 변경은 일반 <code>git add</code>로 stage한다.
 
 이 문서의 TypeScript와 Prisma 조각은 목표 계약이다. worker의 긴 AI 생성 본문을 그대로 복사하라는 뜻은 아니며, 함수명·입출력·상태 전이·side effect 순서는 그대로 지켜야 한다.
 
@@ -789,7 +812,7 @@ acknowledgement는 P3의 T21 소유다. T21에서 같은 marker builder의 union
 - 생성: <code>inngest/functions/review.test.ts</code>
 - 생성: <code>inngest/functions/summary.test.ts</code>
 - 생성: <code>features/review/ui/parts/review-status-badge.test.tsx</code>
-- 수정·최초 추적: <code>docs/proposals/hreviewer-personal-review-coach-p0-implementation-plan.md</code>, <code>docs/proposals/hreviewer-personal-review-coach-roadmap.md</code>
+- 수정·최초 추적: <code>docs/proposals/completed/2026-09-06-hreviewer-personal-review-coach-p0-implementation-plan.md</code>, <code>docs/proposals/active/hreviewer-personal-review-coach-roadmap.md</code>
 
 #### 구현 형태
 
@@ -1612,8 +1635,8 @@ PENDING은 T03에서 생성 시 queue lease를 받으므로 event send 성공 �
 - 생성: <code>features/settings/actions/index.test.ts</code>
 - 수정: <code>lib/github/github.ts</code>
 - 수정: <code>lib/github/github.test.ts</code>
-- 수정: <code>docs/proposals/hreviewer-personal-review-coach-p0-implementation-plan.md</code>
-- 수정: <code>docs/proposals/hreviewer-personal-review-coach-roadmap.md</code>
+- 수정: <code>docs/proposals/completed/2026-09-06-hreviewer-personal-review-coach-p0-implementation-plan.md</code>
+- 수정: <code>docs/proposals/active/hreviewer-personal-review-coach-roadmap.md</code>
 
 #### 상수와 flag
 
@@ -1887,10 +1910,10 @@ generation과 verification이 같은 <code>gemini-3.1-flash-lite</code>를 사�
 - 생성: <code>scripts/p0-review-quality-evaluation.test.ts</code>
 - 생성: <code>scripts/fixtures/p0-review-quality-cases.json</code>
 - 생성: <code>scripts/fixtures/p0-review-quality-adjudications.json</code>
-- 생성: <code>docs/evaluations/p0-personal-review-coach-release-receipt.md</code>
-- 수정: <code>docs/evaluations/remove-codebase-rag-context-evaluation.md</code>에는 대체 영수증 링크와 historical 표시만 추가
+- 생성: <code>docs/test-reports/completed/2026-09-06-p0-personal-review-coach-release-receipt.md</code>
+- 수정: <code>docs/test-reports/completed/2026-09-06-remove-codebase-rag-context-evaluation.md</code>에는 대체 영수증 링크와 historical 표시만 추가
 
-신규 release receipt는 현재 <code>/docs/</code> ignore 규칙 때문에 자동으로 stage되지 않는다. 생성 직후 <code>git add -f -- "docs/evaluations/p0-personal-review-coach-release-receipt.md"</code>를 실행하고, <code>git ls-files --error-unmatch -- "docs/evaluations/p0-personal-review-coach-release-receipt.md"</code>가 성공한 뒤에만 T09를 완료한다.
+신규 release receipt는 현재 <code>/docs/</code> ignore 규칙 때문에 자동으로 stage되지 않는다. 생성 직후 <code>git add -f -- "docs/test-reports/completed/2026-09-06-p0-personal-review-coach-release-receipt.md"</code>를 실행하고, <code>git ls-files --error-unmatch -- "docs/test-reports/completed/2026-09-06-p0-personal-review-coach-release-receipt.md"</code>가 성공한 뒤에만 T09를 완료한다.
 
 #### corpus 계약
 
@@ -2166,7 +2189,7 @@ secret 값과 account balance는 기록하지 않는다.
 - release 예정일, <code>2027-05-07</code>까지 남은 기간, 예정 운영·rollback 종료일과 lifecycle window 충족 여부
 - 평가 실행의 role별 input/output token, 기준일 list price와 계산 비용
 - strict model availability wrapper의 exit code, exact 세 <code>OK</code> line, output SHA-256과 <code>SKIP/WARN/soft-pass</code> 0건 판정
-- 비밀 없는 provider binding 항목. 단 <code>Sangeok/h-reviewer</code>는 public 저장소이고 canonical procedure가 key fingerprint를 access-control 대상 audit metadata로 규정하므로, <code>keyFingerprintSha256</code>와 <code>googleCloudProjectId</code>는 receipt에 <code>recorded-out-of-band</code>로만 남기고 실제 값은 추적되지 않는 <code>docs/evaluations/p0-provider-binding.local.md</code>에 둔다. 이 파일은 <code>/docs/</code> ignore 규칙이 덮으며 force-add하지 않는다. plan, billing tier·readiness 판정과 gate 통과 여부는 receipt에 그대로 기록한다.
+- 비밀 없는 provider binding 항목. 단 <code>Sangeok/h-reviewer</code>는 public 저장소이고 canonical procedure가 key fingerprint를 access-control 대상 audit metadata로 규정하므로, <code>keyFingerprintSha256</code>와 <code>googleCloudProjectId</code>는 receipt에 <code>recorded-out-of-band</code>로만 남기고 실제 값은 추적되지 않는 <code>docs/test-reports/p0-provider-binding.local.md</code>에 둔다. 이 파일은 <code>/docs/</code> ignore 규칙이 덮으며 force-add하지 않는다. plan, billing tier·readiness 판정과 gate 통과 여부는 receipt에 그대로 기록한다.
 - case 수와 metric 분자·분모·비율
 - reliability test file과 test name
 - 격리된 PostgreSQL database 식별자의 비밀 없는 digest, 공통 <code>public</code> schema와 migration transition용 실행별 schema의 분리 증거, <code>current_schema()</code>·적용 migration·필수 table 확인, request/delivery/trial concurrency test 결과
@@ -2205,7 +2228,7 @@ secret 값과 account balance는 기록하지 않는다.
 - cutover 누락 delivery가 0개이거나 모두 GitHub의 최근 3일 redelivery window 안에서 승인된 방식으로 수렴
 - 필수 test, lint, typecheck, build 통과
 
-유료 평가와 섹션 6.6의 cutover/외부 검증 승인이 없거나 필수 증거를 만들 수 없으면 T09는 BLOCKED이며 T10을 NEXT로 열지 않는다.
+유료 평가와 섹션 6.6의 cutover/외부 검증 승인이 없거나 필수 증거를 만들 수 없으면 원칙적으로 T09는 BLOCKED이며 T10을 NEXT로 열지 않는다. 다만 `2026-09-06 KST`에 사용자가 미확인 외부 gate의 위험을 명시적으로 인수하고 T09와 이 P0 구현 계획의 완료 처리를 지시했다. 이에 따라 미실행·미확인 항목을 통과로 간주하지 않고 release receipt에 그대로 보존한 채 T09를 `COMPLETED`로 종결하고 T10을 `NEXT`로 연다.
 
 ## 8. fixture와 assertion matrix
 
