@@ -48,7 +48,8 @@ describe("reviewPullRequest", () => {
       requestSource: "AUTOMATIC",
       dispatchMode: "DEBOUNCED",
     });
-    expect(result).toEqual({
+    expect(reviewRequestMocks.createReviewRequest).toHaveBeenCalledOnce();
+    expect(result).toStrictEqual({
       success: true,
       message: "Review Queued",
       reviewId: "review-1",
@@ -83,75 +84,105 @@ describe("reviewPullRequest", () => {
     });
   });
 
-  it("does not report a confirmed dispatch failure as queued", async () => {
-    reviewRequestMocks.createReviewRequest.mockResolvedValue({
-      kind: "dispatch-failed",
-      reviewId: "review-1",
-      requestKey: "request-1",
-      status: "FAILED",
-      failureStage: "QUEUE",
-      message: "The review request could not be dispatched.",
-    });
+  it.each(["QUEUE", "POST", "RECONCILE"] as const)(
+    "does not report a %s dispatch failure as queued",
+    async (failureStage) => {
+      reviewRequestMocks.createReviewRequest.mockResolvedValue({
+        kind: "dispatch-failed",
+        reviewId: "review-1",
+        requestKey: "request-1",
+        status: "FAILED",
+        failureStage,
+        message: "The review request could not be dispatched.",
+      });
 
-    await expect(
-      reviewPullRequest({
+      const result = await reviewPullRequest({
         owner: "octo",
         repo: "sample",
         prNumber: 42,
         requestSource: "AUTOMATIC",
-      }),
-    ).resolves.toMatchObject({
-      success: false,
-      reason: "internal_error",
-      status: "FAILED",
-      failureStage: "QUEUE",
-    });
-  });
+      });
+
+      expect(result).toStrictEqual({
+        success: false,
+        message: "The review request could not be dispatched.",
+        reason: "internal_error",
+        reviewId: "review-1",
+        requestKey: "request-1",
+        status: "FAILED",
+        failureStage,
+      });
+    },
+  );
 
   it.each([
     ["PLAN_RESTRICTED", "plan_restricted"],
     ["TRIAL_EXHAUSTED", "trial_exhausted"],
-  ] as const)("maps the %s entitlement rejection", async (reason, expectedReason) => {
-    reviewRequestMocks.createReviewRequest.mockResolvedValue({
-      kind: "rejected",
-      reason,
-      message: "Review entitlement rejected",
-    });
+    ["PR_NOT_REVIEWABLE", "pr_not_reviewable"],
+  ] as const)(
+    "maps the %s entitlement rejection",
+    async (reason, expectedReason) => {
+      reviewRequestMocks.createReviewRequest.mockResolvedValue({
+        kind: "rejected",
+        reason,
+        message: "Review entitlement rejected",
+      });
 
-    await expect(
-      reviewPullRequest({
+      const result = await reviewPullRequest({
         owner: "octo",
         repo: "sample",
         prNumber: 42,
         requestSource: "AUTOMATIC",
-      }),
-    ).resolves.toEqual({
-      success: false,
-      reason: expectedReason,
-      message: "Review entitlement rejected",
-    });
-  });
+      });
+
+      expect(result).toStrictEqual({
+        success: false,
+        reason: expectedReason,
+        message: "Review entitlement rejected",
+      });
+      expect(result).not.toHaveProperty("reviewId");
+    },
+  );
 
   it.each([
-    ["FAILED", "review_failed"],
-    ["SUPERSEDED", "review_superseded"],
-  ] as const)("maps factual %s status without queued success", async (status, reason) => {
-    reviewRequestMocks.createReviewRequest.mockResolvedValue({
-      kind: "existing",
-      reviewId: "review-1",
-      requestKey: "request-1",
-      status,
-    });
+    [
+      "FAILED",
+      "review_failed",
+      "The review failed. Retry it from the pull request page.",
+    ],
+    [
+      "SUPERSEDED",
+      "review_superseded",
+      "A newer pull request head superseded this review.",
+    ],
+  ] as const)(
+    "maps factual %s status without queued success",
+    async (status, reason, message) => {
+      reviewRequestMocks.createReviewRequest.mockResolvedValue({
+        kind: "existing",
+        reviewId: "review-1",
+        requestKey: "request-1",
+        status,
+      });
 
-    await expect(
-      reviewPullRequest({
+      const result = await reviewPullRequest({
         owner: "octo",
         repo: "sample",
         prNumber: 42,
         requestSource: "AUTOMATIC",
-      }),
-    ).resolves.toMatchObject({ success: false, reason, status });
-  });
+      });
+
+      expect(result).toStrictEqual({
+        success: false,
+        message,
+        reason,
+        reviewId: "review-1",
+        requestKey: "request-1",
+        status,
+      });
+      expect(result).not.toHaveProperty("failureStage");
+    },
+  );
 
   it.each([
     ["PENDING", "Review already queued"],
@@ -166,13 +197,40 @@ describe("reviewPullRequest", () => {
       status,
     });
 
-    await expect(
-      reviewPullRequest({
-        owner: "octo",
-        repo: "sample",
-        prNumber: 42,
-        requestSource: "AUTOMATIC",
-      }),
-    ).resolves.toMatchObject({ success: true, message, status });
+    const result = await reviewPullRequest({
+      owner: "octo",
+      repo: "sample",
+      prNumber: 42,
+      requestSource: "AUTOMATIC",
+    });
+
+    expect(result).toStrictEqual({
+      success: true,
+      message,
+      reviewId: "review-1",
+      requestKey: "request-1",
+      status,
+    });
+    expect(result).not.toHaveProperty("failureStage");
+  });
+
+  it("keeps coordinator exceptions as metadata-free internal errors", async () => {
+    reviewRequestMocks.createReviewRequest.mockRejectedValue(
+      new Error("coordinator failed"),
+    );
+
+    const result = await reviewPullRequest({
+      owner: "octo",
+      repo: "sample",
+      prNumber: 42,
+      requestSource: "COMMAND",
+    });
+
+    expect(result).toStrictEqual({
+      success: false,
+      message: "Error Reviewing Pull Request",
+      reason: "internal_error",
+    });
+    expect(result).not.toHaveProperty("reviewId");
   });
 });

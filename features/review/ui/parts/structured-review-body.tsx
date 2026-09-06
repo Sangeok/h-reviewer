@@ -1,10 +1,10 @@
 import type { StructuredReviewOutput } from "@/features/ai";
-import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "@/features/ai/constants/review-emoji";
+import { formatReviewBodyIssue } from "@/features/ai/lib/issue-format";
 import {
   formatSuggestionSummaryItem,
   SUGGESTION_SECTION_HINT,
 } from "@/features/ai/lib/suggestion-format";
-import { SECTION_HEADERS, ISSUE_FIELD_LABELS } from "@/shared/constants";
+import { SECTION_HEADERS } from "@/shared/constants";
 import type { LanguageCode } from "@/shared/types/language";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -215,42 +215,9 @@ function RemainingMarkdownSections({
   const bodyIssues = data.issues ?? [];
 
   if (bodyIssues.length > 0) {
-    const labels = ISSUE_FIELD_LABELS[langCode];
-    const issueLines = bodyIssues.map((issue) => {
-      const severity = `${SEVERITY_EMOJI[issue.severity]} ${issue.severity}`;
-      const category = `${CATEGORY_EMOJI[issue.category]} ${issue.category}`;
-      const lineTag = issue.line === null ? "" : `:${issue.line}`;
-      const fileTag = issue.file ? ` \u00b7 \`${issue.file}${lineTag}\`` : "";
-
-      const title = (issue.title ?? "").trim();
-      const rawBody = (issue.body ?? (issue as { description?: string }).description ?? "").trim();
-      const impact = (issue.impact ?? "").trim();
-      const recommendation = (issue.recommendation ?? "").trim();
-
-      const titleSuffix = title && rawBody.startsWith(title) ? rawBody.slice(title.length) : null;
-      const body =
-        titleSuffix !== null && (titleSuffix === "" || /^[\s.,:;-]/.test(titleSuffix))
-          ? titleSuffix.replace(/^[\s.,:;-]+/, "")
-          : rawBody;
-
-      const lines: string[] = [
-        `### ${severity} \u00b7 ${category}${fileTag}${title ? ` - ${title}` : ""}`,
-      ];
-
-      if (body) {
-        lines.push("", body);
-      }
-
-      if (impact) {
-        lines.push("", `**${labels.impact}:** ${impact}`);
-      }
-
-      if (recommendation) {
-        lines.push("", `**${labels.recommendation}:** ${recommendation}`);
-      }
-
-      return lines.join("\n");
-    });
+    const issueLines = bodyIssues.map((issue) =>
+      formatReviewBodyIssue(issue, langCode),
+    );
 
     sections.push(`## ${headers.issues}\n\n${issueLines.join("\n\n")}`);
   }

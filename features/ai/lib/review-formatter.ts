@@ -2,12 +2,12 @@ import type { StructuredReviewOutput } from "./review-schema";
 import type { LanguageCode } from "@/shared/types/language";
 import {
   SECTION_HEADERS,
-  ISSUE_FIELD_LABELS,
   REVIEW_NOTICE_LABELS,
   VERDICT_LINE_LABELS,
   ISSUE_SECTION_HINT,
 } from "@/shared/constants";
-import { CATEGORY_EMOJI, SEVERITY_EMOJI } from "../constants/review-emoji";
+import { SEVERITY_EMOJI } from "../constants/review-emoji";
+import { formatReviewBodyIssue } from "./issue-format";
 import {
   formatSuggestionSummaryItem,
   SUGGESTION_SECTION_HINT,
@@ -92,7 +92,11 @@ export function formatStructuredReviewToMarkdown(
   if (output.issues.length > 0) {
     const parts: string[] = [`## ${headers.issues} (${output.issues.length})`];
     parts.push("", ISSUE_SECTION_HINT[langCode], "");
-    parts.push(formatBodyIssues(output.issues, langCode));
+    parts.push(
+      output.issues
+        .map((issue) => formatReviewBodyIssue(issue, langCode))
+        .join("\n\n"),
+    );
 
     sections.push(parts.join("\n"));
   }
@@ -140,50 +144,4 @@ export function formatStructuredReviewToMarkdown(
   }
 
   return sections.join("\n\n");
-}
-
-/** line === null \ub4f1 \uc778\ub77c\uc778 \ucf54\uba58\ud2b8\ub85c \ubabb \uac00\ub294 \uc774\uc288\uc758 \uc804\ubb38 \ub80c\ub354.
- *  SYNC:formatIssueBody \u2014 pr-review.ts \u00b7 structured-review-body.tsx \uc640 \ub3d9\uc77c \ub85c\uc9c1 \uc720\uc9c0 */
-function formatBodyIssues(
-  bodyIssues: StructuredReviewOutput["issues"],
-  langCode: LanguageCode,
-): string {
-  const labels = ISSUE_FIELD_LABELS[langCode];
-  return bodyIssues
-    .map((issue) => {
-      const severity = `${SEVERITY_EMOJI[issue.severity]} ${issue.severity}`;
-      const category = `${CATEGORY_EMOJI[issue.category]} ${issue.category}`;
-      const lineTag = issue.line === null ? "" : `:${issue.line}`;
-      const fileTag = issue.file ? ` \u00b7 \`${issue.file}${lineTag}\`` : "";
-
-      const title = (issue.title ?? "").trim();
-      const rawBody = (issue.body ?? (issue as { description?: string }).description ?? "").trim();
-      const impact = (issue.impact ?? "").trim();
-      const recommendation = (issue.recommendation ?? "").trim();
-
-      const titleSuffix = title && rawBody.startsWith(title) ? rawBody.slice(title.length) : null;
-      const body =
-        titleSuffix !== null && (titleSuffix === "" || /^[\s.,:;-]/.test(titleSuffix))
-          ? titleSuffix.replace(/^[\s.,:;-]+/, "")
-          : rawBody;
-
-      const lines: string[] = [
-        `### ${severity} \u00b7 ${category}${fileTag}${title ? ` - ${title}` : ""}`,
-      ];
-
-      if (body) {
-        lines.push("", body);
-      }
-
-      if (impact) {
-        lines.push("", `**${labels.impact}:** ${impact}`);
-      }
-
-      if (recommendation) {
-        lines.push("", `**${labels.recommendation}:** ${recommendation}`);
-      }
-
-      return lines.join("\n");
-    })
-    .join("\n\n");
 }

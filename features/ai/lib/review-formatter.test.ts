@@ -109,6 +109,18 @@ describe("formatStructuredReviewToMarkdown — 발견된 문제점", () => {
     expect(md).toContain("조치 B");
   });
 
+  it("renders a file-only location without a line suffix", () => {
+    const md = formatStructuredReviewToMarkdown(
+      makeOutput({
+        issues: [makeIssue({ file: "src/file-only.ts", line: null })],
+      }),
+      "en",
+    );
+
+    expect(md).toContain("`src/file-only.ts`");
+    expect(md).not.toContain("`src/file-only.ts:");
+  });
+
   it("file이 null이고 line만 있는 이슈도 본문 전문으로 렌더한다 (유실 edge 폐쇄)", () => {
     const md = formatStructuredReviewToMarkdown(
       makeOutput({
@@ -118,6 +130,69 @@ describe("formatStructuredReviewToMarkdown — 발견된 문제점", () => {
     );
     expect(md).toContain("file 없는 지적");
     expect(md).toContain("영향 C");
+  });
+
+  it.each([
+    ["Title more", "more"],
+    ["Title—more", "Title—more"],
+    ["Title: more", "more"],
+    ["TitleCase", "TitleCase"],
+  ] as const)("keeps the body title-boundary contract for %s", (rawBody, expectedBody) => {
+    const md = formatStructuredReviewToMarkdown(
+      makeOutput({
+        issues: [
+          makeIssue({
+            title: "Title",
+            body: rawBody,
+            impact: "",
+            recommendation: "",
+          }),
+        ],
+      }),
+      "en",
+    );
+
+    expect(md).toContain(` - Title\n\n${expectedBody}`);
+  });
+
+  it("omits a body that only repeats the title", () => {
+    const md = formatStructuredReviewToMarkdown(
+      makeOutput({
+        issues: [makeIssue({ title: "Title", body: "Title", impact: "", recommendation: "" })],
+      }),
+      "en",
+    );
+
+    expect(md).not.toContain(" - Title\n\nTitle");
+  });
+
+  it("renders legacy description data without weakening the product type", () => {
+    const legacyIssue = {
+      ...makeIssue({ body: "" }),
+      body: undefined,
+      description: "Legacy issue body",
+    } as unknown as StructuredIssue;
+
+    const md = formatStructuredReviewToMarkdown(
+      makeOutput({ issues: [legacyIssue] }),
+      "en",
+    );
+
+    expect(md).toContain("Legacy issue body");
+  });
+
+  it("keeps multiple issues in their input order", () => {
+    const md = formatStructuredReviewToMarkdown(
+      makeOutput({
+        issues: [
+          makeIssue({ title: "First issue" }),
+          makeIssue({ title: "Second issue" }),
+        ],
+      }),
+      "en",
+    );
+
+    expect(md.indexOf("First issue")).toBeLessThan(md.indexOf("Second issue"));
   });
 });
 

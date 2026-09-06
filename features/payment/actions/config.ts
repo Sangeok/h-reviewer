@@ -107,20 +107,15 @@ export async function syncSubscriptionStatus(): Promise<
 
     // Find the active subscription
     const activeSubscription = subscriptions.find((subscription) => subscription.status === "active");
-    const lastestSubscription = subscriptions[0]; // Assuming the latest subscription is the active one
+    const latestSubscription = subscriptions[0];
 
     if (activeSubscription) {
       await updateUserTier(user.id, "PRO", "ACTIVE");
       return { success: true, status: "ACTIVE" };
-    } else if (lastestSubscription) {
-      // if lastest is canceled/expired
-      const status = lastestSubscription.status === "canceled" ? "CANCELLED" : "EXPIRED";
-
-      // only downgrade if the lastest is not active
-      if (lastestSubscription.status !== "active") {
-        await updateUserTier(user.id, "FREE", status);
-        return { success: true, status };
-      }
+    } else if (latestSubscription) {
+      const status = latestSubscription.status === "canceled" ? "CANCELLED" : "EXPIRED";
+      await updateUserTier(user.id, "FREE", status);
+      return { success: true, status };
     }
 
     return { success: false, message: "No active subscription found" };

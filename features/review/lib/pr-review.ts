@@ -230,6 +230,7 @@ function formatIssueComment(
   const impact = (issue.impact ?? "").trim();
   const recommendation = (issue.recommendation ?? "").trim();
 
+  // 본문 포맷과 달리 인라인은 em dash(—)를 제목 경계로 인정하고 제목 구분자에도 사용한다.
   // 문장 경계 검사 + body 빈값 skip guard
   const titleSuffix = title && rawBody.startsWith(title) ? rawBody.slice(title.length) : null;
   const body =
@@ -250,7 +251,6 @@ function formatIssueComment(
   if (impact) lines.push("", `**${labels.impact}:** ${impact}`);
   if (recommendation) lines.push("", `**${labels.recommendation}:** ${recommendation}`);
   return lines.join("\n");
-  // SYNC:formatIssueBody — review-formatter.ts · structured-review-body.tsx 와 동일 로직 유지
 }
 
 /** 검수자 명의(동일 계정)의 body-only 리뷰 엔트리 게시.

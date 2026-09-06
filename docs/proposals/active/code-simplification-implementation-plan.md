@@ -1,14 +1,14 @@
 ---
 status: "pending"
-stage: "awaiting-approval"
+stage: "approved"
 proposal-size: "standard"
 created-at: "2026-09-06"
 completed-at: null
 owners: []
 related: []
-approved-by: null
-approved-at: null
-approval-scope: null
+approved-by: "Codex 세션 사용자"
+approved-at: "2026-09-06"
+approval-scope: "S01-S06 코드 단순화 구현과 V01-V06 검증"
 verification-summary: null
 closed-at: null
 closed-by: null
@@ -27,9 +27,10 @@ migration-note: "원문의 작업 범위와 상태를 보존한다. 이관은 �
 - 기준 저장소: `C:/Users/hamso/OneDrive/Desktop/git/hreviewer`
 - 기준 브랜치 / HEAD: `develop` / `3d3b6d88f883c933147347d945a035626153ca94`
 - 최초 작성 시 시작 상태: `git status --short` 출력 없음. 직전 미사용 코드 정리 커밋이 반영된 상태다.
+- 구현 브랜치 / 시작 HEAD: `refactor/code-simplification` / `9493756a827e33e96fc0585cd7f57b3bcdc49cf0`
 - 검토 위험도: HIGH-RISK (`reconciling-proposals-with-codebase` 기준). 수정 자체는 국소적이지만 S02의 외부 요청 결과, S04의 자동 리뷰 생략, S06의 유료 권한 갱신을 보존해야 한다. 변경 범위를 확대하지 않고 해당 경계의 반환값·호출 인자·순서·실패 처리를 검증한다.
-- 상태: **구현 명세 정리 완료 — 최종 준비 판정은 저장 후 수정 없는 전체 재검증 결과로 확정한다. 제품 구현과 V01–V06의 구현 후 검증은 미실행.**
-- 이번 작업의 산출물: 이 Markdown 파일 하나. 소스·테스트·설정·의존성·DB·Git 이력은 변경하지 않는다.
+- 상태: **S01–S06 구현 완료 / V01–V04·V06 및 필수 명령 통과 / V05 브라우저 상호작용 검증 대기.**
+- 구현 산출물: 기존 production 파일 10개와 기존 테스트 6개를 수정하고 helper 2개·계약 테스트 2개를 추가했다. 설정·의존성·Prisma schema·migration은 변경하지 않았다.
 
 ## 1. 결론과 우선순위
 
@@ -70,7 +71,7 @@ migration-note: "원문의 작업 범위와 상태를 보존한다. 이관은 �
 | [P0 상세 계획](../completed/2026-09-06-hreviewer-personal-review-coach-p0-implementation-plan.md)의 T07/T08 | 게시 복구·lease·trial credit·연결 해제 원자성 보존 | 보호 대상 식별에만 사용 |
 | [P0 release receipt](../../test-reports/completed/2026-09-06-p0-personal-review-coach-release-receipt.md) | 현재 기록된 `COMPLETED BY USER RISK ACCEPTANCE`, `releaseGate: accepted-with-unverified-external-gates`, front matter의 `status: completed` / `result: blocked`를 함께 보존 | 사용자 위험 인수에 따른 문서 종결과 미확인 외부 gate를 구분하며, 품질 평가·production readiness 통과 증거로 바꾸지 않음 |
 
-기존 문서의 과거 파일 위치나 구현 전 상태는 현재 코드의 사실로 재사용하지 않는다. 외부 API의 최신 계약을 새로 주장하지 않으며, 설치된 코드와 현재 응답 처리 계약을 보존한다. 현재 요청은 조사·문서 작성이므로 API 호출, 제품 test/lint/build, 로그인·결제·GitHub 쓰기는 수행하지 않았다.
+기존 문서의 과거 파일 위치나 구현 전 상태는 현재 코드의 사실로 재사용하지 않는다. 외부 API의 최신 계약을 새로 주장하지 않으며, 설치된 코드와 현재 응답 처리 계약을 보존한다. 이번 구현에서는 실제 Polar·GitHub·유료 AI·DB 쓰기를 수행하지 않았고, mock 기반 회귀 테스트와 로컬 build만 실행했다.
 
 위 receipt와 P0 상세 계획의 현재 상태는 HEAD에 커밋되지 않은 작업 트리 변경까지 읽은 결과다. 참조 문서의 상태가 달라지면 이 표도 함께 재대조한다. 이 단순화 작업에서 P0 문서나 release gate를 수정하지 않는다.
 
@@ -114,7 +115,7 @@ Prisma schema/migration, 인증·소유권 검사, Review 상태/lease/credit, w
 
 ## 4. Phase SIMPLIFY: 동작을 보존하는 6개 국소 단순화
 
-- status: Proposed
+- status: In Progress
 - satisfies: REQ-SIMPLE-001, REQ-SIMPLE-002, REQ-SIMPLE-003, REQ-SIMPLE-004, REQ-SIMPLE-005, REQ-SIMPLE-006
 - preserves: INV-SIMPLE-001
 - governed-by: CON-SIMPLE-001, CON-SIMPLE-002
@@ -123,7 +124,7 @@ Prisma schema/migration, 인증·소유권 검사, Review 상태/lease/credit, w
 - 검증 범위: V01–V06의 테스트 작성과 수동 확인은 구현 작업에 포함된다. 이전 지적 사항과 이번 재검증 내용은 §9에 기록한다. 문서 검증 통과와 제품 구현 완료를 구분한다.
 - 권장 순서: S01 → S02 → S03 → S04 → S05 → S06. 서로 의존하지 않으므로 작은 커밋으로 나눌 수 있다.
 - 완료 조건: Phase 전체는 S01–S06 여섯 항목의 변경, V01–V06, 전체 필수 검사와 필요한 UI 확인까지 완료해야 한다. 개별 항목 완료만으로 Phase를 완료 처리하지 않는다. UI나 검증 환경이 없어 수행하지 못한 경우 `구현 완료 / 검증 대기`로 기록하고 Phase 전체를 Complete로 쓰지 않는다. 모두 충족한 뒤 §8의 metadata 갱신·완료 폴더 이동·문서 검증까지 같은 작업에서 마친다.
-- 실행 경계: 현재 요청으로 수행하는 것은 이 계획 작성까지다. 이후 이 문서의 구현을 요청하면 위 여섯 항목을 수행할 수 있다. §6의 보류 항목은 이 Phase에 포함하지 않는다.
+- 실행 상태: 명시적인 구현 요청에 따라 S01–S06을 적용했다. V05의 로그인 가능한 실제 브라우저 검증만 남아 있으며 §6의 보류 항목은 수정하지 않았다.
 
 ## 5. 항목별 바로 적용할 수정 명세
 
@@ -459,7 +460,7 @@ onChange={(value) => updateField("verificationEnabled", value)}
 
 ## 7. 검증 명세
 
-아래 V01–V06 및 제품 명령은 모두 **Planned**다. 기존 테스트가 있다는 사실을 신규 변경 검증 통과로 기록하지 않는다. 검증이 기존 구현의 현재 출력까지 고정하는지 먼저 확인하고, 변경 후 같은 테스트를 실행한다.
+V01–V04와 V06, 집중·전체 suite, lint, typecheck, build는 **Executed**다. V05의 브라우저 상호작용은 브라우저 surface가 제공되지 않아 **Not executed**이며, 순수 SSR이나 새 DOM 테스트 환경으로 대체하지 않았다. 세부 결과는 §9에 기록한다.
 
 ### V01 — 본문 출력과 인라인 차이
 
@@ -606,7 +607,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 3. 새 runtime dependency 없이 기존 import 경계가 유지된다. `git diff --check`, `git diff --name-status`로 허용 경로를 확인한다.
 4. 새 helper 존재·직접 소비자 수·삭제된 중복을 파일 본문으로 확인한다. `rg`에서 문자열이 사라졌다는 이유만으로 동작 보존을 확정하지 않는다.
 
-**문서 완료 처리**: 현재는 `status: pending`, `stage: awaiting-approval`로 구현 요청을 기다리며, 이번 검증을 제품 구현 승인으로 기록하지 않는다. 이후 명시적인 구현 요청이 주어지면 같은 대화의 권한을 적용하고 실제 요청 근거로 `approved-by`, `approved-at`, `approval-scope`와 `stage: approved`를 기록한다. 이미 받은 구현 요청을 metadata 입력 때문에 다시 승인받지 않는다.
+**문서 완료 처리**: 명시적인 구현 요청을 승인 근거로 front matter의 `approved-by`, `approved-at`, `approval-scope`와 `stage: approved`를 기록했다. 구현은 끝났지만 V05가 남아 있으므로 `status: pending`과 현재 `active/` 경로를 유지한다.
 
 위 완료 조건과 §4를 모두 충족하면 `status: completed`, `stage: null`, 실제 완료일의 `completed-at`, 실제 결과의 `verification-summary`를 기록한다. 이어 이 파일을 `docs/proposals/completed/YYYY-MM-DD-code-simplification-implementation-plan.md`로 이동한다. `YYYY-MM-DD`는 실제 완료일이며 검토일로 미리 채우지 않는다. 이동 직전에 원본 존재, 완료 폴더 존재, 대상 파일 미존재와 양쪽 절대 경로가 이 저장소 `docs/proposals/` 안에 있음을 확인한 후 `Move-Item -LiteralPath`를 사용한다. 같은 이름의 기존 완료 기록을 덮어쓰지 않는다.
 
@@ -618,11 +619,34 @@ if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 
 ## 9. 문서 작성·보완에서 실제 수행한 검증
 
+### 구현 후 검증 (2026-09-06)
+
+| 상태 | 수행 내용 | 결과 / 한계 |
+| --- | --- | --- |
+| Executed | S01–S06 production 변경과 영속 테스트 보강 | 허용된 기존 production 10개·기존 테스트 6개, 신규 helper 2개·신규 테스트 2개만 코드 쓰기 범위에 포함. dependency·설정·schema·migration 변경 없음 |
+| Executed | V01 본문 Markdown·React SSR·GitHub 게시 mock | ko/en, 위치, 빈 필드, 제목 경계, legacy description, 여러 이슈와 인라인 전용 경계·배지·marker·게시 호출 보존 |
+| Executed | V02 두 요청 facade와 webhook 회귀 | 두 facade의 rejected 3종, created/PENDING, existing 상태 6종, dispatch stage 3종, 예외와 호출 설정을 검증. webhook 운영 실패/업무 거절 계약 통과 |
+| Executed | V03 신규 parser 테스트 | 32개 테스트 통과. 주·일 구조, 숫자·level·합계 경계, 전체 실패, 추가 필드 제거와 순서 보존 확인 |
+| Executed | V04 신규 matcher 테스트와 기존 reconciliation/webhook 테스트 | 신규 9개 테스트에서 early return, Stage A/B, ambiguity 우선순위, 부분 매칭, removed/renamed/null, CRLF, 입력 불변 확인 |
+| Not executed | V05 `/dashboard/settings` 실제 상호작용 | `next dev`는 `http://localhost:3000`에서 정상 기동했으나 Computer Use에 사용 가능한 Chrome·Edge·in-app browser surface가 없어 로그인·입력·저장·캡처를 수행하지 못함. 계획에 따라 자동 테스트로 대체하지 않음 |
+| Executed | V06 구독 sync mock 회귀 | `config.test.ts` 19개 테스트 통과. customer 없음, active/CANCELLED/EXPIRED, invalid·empty 응답, 조회·갱신 실패, 인증·사용자 조회 예외와 호출 횟수·인자 확인 |
+| Executed | 집중 회귀 | 환경 사전 점검을 통과한 격리 복사본에서 11개 파일, 155개 테스트 통과 |
+| Executed | 전체 `npm.cmd run test` | 원본 환경의 `TEST_DATABASE_URL` 감지로 최초 실행을 중단한 뒤 환경 파일 없는 격리 복사본에서 실행. 49개 파일 통과, 6개 파일 skip; 464개 테스트 통과, 17개 skip. skip은 DB integration 16개와 calibration 1개 |
+| Executed | `npm.cmd run lint` | exit 0. 작업 범위 밖 `components/layouts/app-sidebar/ui/parts/user-avatar.tsx:21`의 기존 `@next/next/no-img-element` warning 1개, error 0개 |
+| Executed | `npx.cmd tsc --noEmit` | exit 0 |
+| Executed | `npm.cmd run build` | exit 0. Next.js production compile, TypeScript, page data, 7개 static page 생성 완료 |
+
+전체 test는 원본 환경 파일을 수정하지 않기 위해 임시 복사본에서 실행했다. `.env`·`.env.local`·`.git`·`.next`는 복사하지 않았고, 설치된 `node_modules`를 junction으로 연결했다. P0 고정 커밋 검증에는 원본 Git object database를 읽기 전용으로 지정했다. 실제 DB integration, Polar·GitHub 쓰기, 유료 AI 평가는 수행하지 않았다.
+
+Phase 완료를 막는 항목은 V05 하나다. 브라우저 surface가 제공되는 로그인 가능한 로컬 환경에서 §7의 입력·저장 시나리오와 전후 캡처를 확인한 뒤에만 `status: completed`, `stage: null`로 바꾸고 `completed/`로 이동한다.
+
+### 구현 전 문서 검증 기록
+
 앞선 검토에서 S01의 지역 `labels` 삭제 지시 누락과 Windows 환경 점검의 대소문자 처리 오류를 발견해 수정했다. 최초 가상 타입 검사는 `labels` 선언까지 암묵적으로 삭제한 코드를 사용했기 때문에 문서의 누락이 드러나지 않았다. 삭제 지시와 V01의 정적 확인을 명시한 뒤 보완 검증을 수행했다.
 
 이관 전 전체 재대조에서는 참조 receipt의 상태가 사용자 위험 인수에 따른 종결로 바뀌었는데도 §2가 `BLOCKED 유지`를 요구하는 불일치를 발견해 고쳤다. 같은 외부 효과·권한 경계에 맞춰 검토 위험도를 HIGH-RISK로 정정하고, Phase 완료에 여섯 항목 전체가 필요함을 명시했다. 아래 메모리 검증은 제품 코드를 변경하지 않은 사전 검증이며, 수정 후 최종 준비 판정에는 저장된 문서를 다시 읽는 무수정 전체 검토가 필요하다.
 
-2026-09-06 이관 후의 이번 재검증에서는 완료 시 metadata·`completed/` 이동·참조 갱신 절차가 빠진 점을 보완했다(§4·§8). Settings 선행 제안을 필수 규칙으로 부르던 설명도 현재 분류에 맞췄으며, P0 receipt의 문서 완료와 `result: blocked`를 명시했다. S01–S06 코드 예시는 추가 수정할 문제가 발견되지 않았다. 현재 경로의 예시로 아래 메모리 비교와 가상 타입 검사, 환경 점검 fixture를 다시 실행해 같은 결과를 확인했다. 제품 적용·브라우저 상호작용 확인은 여전히 미실행이다.
+2026-09-06 이관 후의 재검증에서는 완료 시 metadata·`completed/` 이동·참조 갱신 절차가 빠진 점을 보완했다(§4·§8). Settings 선행 제안을 필수 규칙으로 부르던 설명도 현재 분류에 맞췄으며, P0 receipt의 문서 완료와 `result: blocked`를 명시했다. 당시 S01–S06 코드 예시는 추가 수정할 문제가 발견되지 않았고, 아래 메모리 비교와 가상 타입 검사, 환경 점검 fixture로 사전 동등성을 확인했다. 이 표는 위 구현 후 검증과 구분하는 사전 기록이다.
 
 | 상태 | 수행 내용 | 결과 / 한계 |
 | --- | --- | --- |
@@ -654,4 +678,4 @@ node scripts/check-docs.mjs
 if ($LASTEXITCODE -ne 0) { throw 'Documentation validation failed.' }
 ```
 
-문서의 경로·Markdown fence·UTF-8과 Git 상태를 확인한다. 최초 작성·두 지적 보완 시점에는 추적 파일 diff가 없었으나, 이번 전체 재대조 시작 시에는 기존 P0 문서 3개의 수정과 `.playwright-mcp/`가 있었다. 이 작업의 수정 대상은 이 문서 하나이며 기존 변경은 보존한다. 제품 구현에 착수할 때는 문서의 상태 표시보다 **현재 코드와의 재대조 결과**를 우선한다.
+문서의 경로·Markdown fence·UTF-8과 Git 상태를 확인한다. 구현 시작 시 작업 트리는 깨끗했고, `refactor/code-simplification` 브랜치를 시작 HEAD에서 생성했다. 최종 diff는 §8의 허용 경로와 이 문서에 한정하고, 완료 전까지 제품 구현 상태보다 남은 V05를 우선해 active 상태를 유지한다.

@@ -29,6 +29,16 @@ export default function ProfileForm() {
     verificationEnabled: profile?.verificationEnabled ?? false,
   });
 
+  function updateField<K extends keyof ProfileFormState>(
+    field: K,
+    value: ProfileFormState[K],
+  ): void {
+    setFormState((previous) => ({
+      ...(previous ?? getInitialFormState()),
+      [field]: value,
+    }));
+  }
+
   const currentFormState = formState ?? getInitialFormState();
 
   const isDirty = formState !== null;
@@ -73,12 +83,7 @@ export default function ProfileForm() {
               type="text"
               placeholder="Enter your full name"
               value={currentFormState.name}
-              onChange={(e) =>
-                setFormState((prev) => ({
-                  ...(prev ?? getInitialFormState()),
-                  name: e.target.value,
-                }))
-              }
+              onChange={(event) => updateField("name", event.target.value)}
               disabled={updateMutation.isPending}
               className="border-border bg-card text-foreground placeholder:text-chart-4 transition-all duration-300 hover:border-ring/50 focus:border-ring focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
             />
@@ -93,12 +98,7 @@ export default function ProfileForm() {
               type="email"
               placeholder="Enter your email"
               value={currentFormState.email}
-              onChange={(e) =>
-                setFormState((prev) => ({
-                  ...(prev ?? getInitialFormState()),
-                  email: e.target.value,
-                }))
-              }
+              onChange={(event) => updateField("email", event.target.value)}
               disabled={updateMutation.isPending}
               className="border-border bg-card text-foreground placeholder:text-chart-4 transition-all duration-300 hover:border-ring/50 focus:border-ring focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
             />
@@ -110,12 +110,7 @@ export default function ProfileForm() {
             </label>
             <LanguageSelector
               value={currentFormState.preferredLanguage}
-              onChange={(value) =>
-                setFormState((prev) => ({
-                  ...(prev ?? getInitialFormState()),
-                  preferredLanguage: value,
-                }))
-              }
+              onChange={(value) => updateField("preferredLanguage", value)}
               disabled={updateMutation.isPending}
             />
           </div>
@@ -129,12 +124,7 @@ export default function ProfileForm() {
             </p>
             <VerificationToggle
               value={currentFormState.verificationEnabled}
-              onChange={(value) =>
-                setFormState((prev) => ({
-                  ...(prev ?? getInitialFormState()),
-                  verificationEnabled: value,
-                }))
-              }
+              onChange={(value) => updateField("verificationEnabled", value)}
               disabled={updateMutation.isPending}
             />
           </div>

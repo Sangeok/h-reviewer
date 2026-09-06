@@ -47,7 +47,8 @@ describe("generatePRSummary", () => {
       requestSource: "COMMAND",
       dispatchMode: "DIRECT",
     });
-    expect(result).toEqual({
+    expect(reviewRequestMocks.createReviewRequest).toHaveBeenCalledOnce();
+    expect(result).toStrictEqual({
       success: true,
       message: "Summary Queued",
       reviewId: "summary-1",
@@ -56,40 +57,148 @@ describe("generatePRSummary", () => {
     });
   });
 
-  it("preserves dispatch failure metadata", async () => {
-    reviewRequestMocks.createReviewRequest.mockResolvedValue({
-      kind: "dispatch-failed",
-      reviewId: "summary-1",
-      requestKey: "summary-request-1",
-      status: "FAILED",
-      failureStage: "QUEUE",
-      message: "The review request could not be dispatched.",
-    });
+  it.each(["QUEUE", "POST", "RECONCILE"] as const)(
+    "preserves %s dispatch failure metadata",
+    async (failureStage) => {
+      reviewRequestMocks.createReviewRequest.mockResolvedValue({
+        kind: "dispatch-failed",
+        reviewId: "summary-1",
+        requestKey: "summary-request-1",
+        status: "FAILED",
+        failureStage,
+        message: "The review request could not be dispatched.",
+      });
 
-    await expect(
-      generatePRSummary({ owner: "octo", repo: "sample", prNumber: 42 }),
-    ).resolves.toMatchObject({
-      success: false,
-      reason: "internal_error",
-      status: "FAILED",
-      failureStage: "QUEUE",
-    });
-  });
+      const result = await generatePRSummary({
+        owner: "octo",
+        repo: "sample",
+        prNumber: 42,
+      });
 
-  it("reports an existing completed summary as completed", async () => {
+      expect(result).toStrictEqual({
+        success: false,
+        message: "The review request could not be dispatched.",
+        reason: "internal_error",
+        reviewId: "summary-1",
+        requestKey: "summary-request-1",
+        status: "FAILED",
+        failureStage,
+      });
+    },
+  );
+
+  it.each([
+    ["PLAN_RESTRICTED", "plan_restricted"],
+    ["TRIAL_EXHAUSTED", "trial_exhausted"],
+    ["PR_NOT_REVIEWABLE", "pr_not_reviewable"],
+  ] as const)(
+    "maps the %s entitlement rejection",
+    async (reason, expectedReason) => {
+      reviewRequestMocks.createReviewRequest.mockResolvedValue({
+        kind: "rejected",
+        reason,
+        message: "Summary entitlement rejected",
+      });
+
+      const result = await generatePRSummary({
+        owner: "octo",
+        repo: "sample",
+        prNumber: 42,
+      });
+
+      expect(result).toStrictEqual({
+        success: false,
+        message: "Summary entitlement rejected",
+        reason: expectedReason,
+      });
+      expect(result).not.toHaveProperty("reviewId");
+    },
+  );
+
+  it.each([
+    ["PENDING", "Summary already queued"],
+    ["RUNNING", "Summary already in progress"],
+    ["POSTING", "Summary already in progress"],
+    ["COMPLETED", "Summary already completed"],
+  ] as const)("maps factual existing %s status", async (status, message) => {
     reviewRequestMocks.createReviewRequest.mockResolvedValue({
       kind: "existing",
       reviewId: "summary-1",
       requestKey: "summary-request-1",
-      status: "COMPLETED",
+      status,
     });
 
-    await expect(
-      generatePRSummary({ owner: "octo", repo: "sample", prNumber: 42 }),
-    ).resolves.toMatchObject({
-      success: true,
-      message: "Summary already completed",
-      status: "COMPLETED",
+    const result = await generatePRSummary({
+      owner: "octo",
+      repo: "sample",
+      prNumber: 42,
     });
+
+    expect(result).toStrictEqual({
+      success: true,
+      message,
+      reviewId: "summary-1",
+      requestKey: "summary-request-1",
+      status,
+    });
+    expect(result).not.toHaveProperty("failureStage");
+  });
+
+  it.each([
+    [
+      "FAILED",
+      "review_failed",
+      "The summary failed. Retry it from the pull request page.",
+    ],
+    [
+      "SUPERSEDED",
+      "review_superseded",
+      "A newer pull request head superseded this summary.",
+    ],
+  ] as const)(
+    "maps factual %s status without queued success",
+    async (status, reason, message) => {
+      reviewRequestMocks.createReviewRequest.mockResolvedValue({
+        kind: "existing",
+        reviewId: "summary-1",
+        requestKey: "summary-request-1",
+        status,
+      });
+
+      const result = await generatePRSummary({
+        owner: "octo",
+        repo: "sample",
+        prNumber: 42,
+      });
+
+      expect(result).toStrictEqual({
+        success: false,
+        message,
+        reason,
+        reviewId: "summary-1",
+        requestKey: "summary-request-1",
+        status,
+      });
+      expect(result).not.toHaveProperty("failureStage");
+    },
+  );
+
+  it("keeps coordinator exceptions as metadata-free internal errors", async () => {
+    reviewRequestMocks.createReviewRequest.mockRejectedValue(
+      new Error("coordinator failed"),
+    );
+
+    const result = await generatePRSummary({
+      owner: "octo",
+      repo: "sample",
+      prNumber: 42,
+    });
+
+    expect(result).toStrictEqual({
+      success: false,
+      message: "Error Queueing Summary",
+      reason: "internal_error",
+    });
+    expect(result).not.toHaveProperty("reviewId");
   });
 });

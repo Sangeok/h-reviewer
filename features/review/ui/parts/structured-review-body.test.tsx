@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import type { StructuredReviewOutput } from "@/features/ai";
+import type { StructuredIssue, StructuredReviewOutput } from "@/features/ai";
 
 import { StructuredReviewBody } from "./structured-review-body";
 
@@ -46,5 +46,35 @@ describe("StructuredReviewBody", () => {
     expect(markup).toContain("Validate the value first.");
     expect(markup).toContain("Guard the nullable value.");
     expect(markup).toContain("if (value) use(value)");
+  });
+
+  it("preserves body title boundaries and legacy descriptions in rendered HTML", () => {
+    const baseIssue = REVIEW_DATA.issues[0];
+    const legacyIssue = {
+      ...baseIssue,
+      title: "Archived issue",
+      body: undefined,
+      description: "Legacy body",
+    } as unknown as StructuredIssue;
+    const data: StructuredReviewOutput = {
+      ...REVIEW_DATA,
+      issues: [
+        { ...baseIssue, title: "Title", body: "Title more" },
+        { ...baseIssue, title: "Title", body: "Title—more" },
+        legacyIssue,
+      ],
+    };
+
+    const markup = renderToStaticMarkup(
+      <StructuredReviewBody
+        data={data}
+        langCode="en"
+        shouldRenderSuggestionSummary={false}
+      />,
+    );
+
+    expect(markup).toContain("<p>more</p>");
+    expect(markup).toContain("<p>Title—more</p>");
+    expect(markup).toContain("<p>Legacy body</p>");
   });
 });
