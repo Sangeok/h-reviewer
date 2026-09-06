@@ -13,7 +13,9 @@
 - Treat every document in `docs/conventions/` as required coding policy, not optional guidance.
 - Apply convention updates immediately when new files are added under `docs/conventions/`.
 - If a task conflicts with a convention, call out the conflict explicitly and ask for direction before proceeding.
-- When a spec under `docs/specs/` reaches `Implemented` status, move it to `docs/archive/` in the same task.
+- Follow `docs/README.md` for document placement. Keep implementation plans in `docs/proposals/active/`; when completed or explicitly closed, update lifecycle metadata and move them to `docs/proposals/completed/` in the same task.
+- Keep investigations and test reports in their own `active/` or `completed/` folders. A completed report may retain a `blocked` or `fail` test result; document completion does not imply a passing release gate.
+- After adding or moving documentation, update local references and run `node scripts/check-docs.mjs`.
 
 ## Build, Test, and Development Commands
 - `npm run dev`: start the Next.js dev server.

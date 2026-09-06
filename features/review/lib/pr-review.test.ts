@@ -108,6 +108,42 @@ describe("postPRReviewWithSuggestions", () => {
       postedAt: new Date("2026-08-29T00:00:00Z"),
     });
   });
+
+  it.each([
+    ["Title more", "Title more"],
+    ["Title—more", "more"],
+    ["Title: more", "more"],
+    ["TitleCase", "TitleCase"],
+  ] as const)("keeps the inline title-boundary contract for %s", async (body, expectedBody) => {
+    await postPRReviewWithSuggestions({
+      ...createPostInput(async () => undefined),
+      issues: [{ ...INLINE_ISSUE, id: "issue-1", title: "Title", body }],
+    });
+
+    const inlineBody = githubMocks.createReview.mock.calls[1][0].comments[0].body;
+    expect(inlineBody).toContain(`— Title\n\n${expectedBody}`);
+  });
+
+  it("preserves repeat and verifier badges in inline issue posts", async () => {
+    await postPRReviewWithSuggestions({
+      ...createPostInput(async () => undefined),
+      issues: [{
+        ...INLINE_ISSUE,
+        id: "issue-1",
+        repeat: {
+          prUrl: "https://github.com/octo/sample/pull/12",
+          date: "2026-08-20",
+        },
+        verifierConfirmed: true,
+      }],
+    });
+
+    const inlineBody = githubMocks.createReview.mock.calls[1][0].comments[0].body;
+    expect(inlineBody).toContain("⚠️");
+    expect(inlineBody).toContain("https://github.com/octo/sample/pull/12");
+    expect(inlineBody).toContain("✅");
+    expect(inlineBody).toContain("<!-- hreviewer:review:review-1:issue:issue-1 -->");
+  });
 });
 
 describe("postVerificationReview", () => {

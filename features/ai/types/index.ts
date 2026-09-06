@@ -45,12 +45,6 @@ export type ReviewPullRequestResult =
       reason: ReviewRequestFailureReason;
     } & Partial<ReviewRequestMetadata>);
 
-export type GeneratePRSummaryResult =
-  | ({ success: true; message: string } & ReviewRequestMetadata)
-  | ({
-      success: false;
-      message: string;
-      reason: ReviewRequestFailureReason;
-    } & Partial<ReviewRequestMetadata>);
+export type GeneratePRSummaryResult = ReviewPullRequestResult;
 
 export type { CodeSuggestion, StructuredIssue, SuggestionSeverity, IssueCategory } from "./suggestion";

@@ -136,46 +136,17 @@ export function matchSuggestionsAgainstCompare(input: MatchInput): MatchResult {
   const hasAnyMatch = matchedSuggestionIds.length > 0;
   const hasUnaccounted = unaccountedFilePaths.length > 0;
   const hasAmbiguous = ambiguousFilePaths.length > 0;
-
-  if (!hasAnyMatch) {
-    return {
-      matchedSuggestionIds: [],
-      matchedFilePaths: [],
-      unaccountedFilePaths,
-      ambiguousFilePaths,
-      skipReview: false,
-      reason: hasAmbiguous ? "ambiguous_match" : "partial_match",
-    };
-  }
-
-  if (hasAmbiguous) {
-    return {
-      matchedSuggestionIds,
-      matchedFilePaths,
-      unaccountedFilePaths,
-      ambiguousFilePaths,
-      skipReview: false,
-      reason: "ambiguous_match",
-    };
-  }
-
-  if (hasUnaccounted) {
-    return {
-      matchedSuggestionIds,
-      matchedFilePaths,
-      unaccountedFilePaths,
-      ambiguousFilePaths: [],
-      skipReview: false,
-      reason: "partial_match",
-    };
-  }
+  const skipReview = hasAnyMatch && !hasUnaccounted && !hasAmbiguous;
+  let reason: MatchResult["reason"] = "partial_match";
+  if (hasAmbiguous) reason = "ambiguous_match";
+  else if (skipReview) reason = "exact_match_all_files";
 
   return {
     matchedSuggestionIds,
     matchedFilePaths,
-    unaccountedFilePaths: [],
-    ambiguousFilePaths: [],
-    skipReview: true,
-    reason: "exact_match_all_files",
+    unaccountedFilePaths,
+    ambiguousFilePaths,
+    skipReview,
+    reason,
   };
 }
