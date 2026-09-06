@@ -1,6 +1,29 @@
+---
+status: "pending"
+stage: "draft"
+proposal-size: "standard"
+created-at: "2026-08-17"
+completed-at: null
+owners: []
+related: ["docs/proposals/completed/2026-09-06-hreviewer-personal-review-coach-p0-implementation-plan.md","docs/test-reports/completed/2026-09-06-p0-personal-review-coach-release-receipt.md"]
+approved-by: null
+approved-at: null
+approval-scope: null
+verification-summary: null
+closed-at: null
+closed-by: null
+closed-reason: null
+legacy-record: true
+migrated-at: "2026-09-06"
+migrated-from: "docs/proposals/hreviewer-personal-review-coach-roadmap.md"
+migration-note: "원문의 작업 범위와 상태를 보존한다. 이관은 후속 제품 구현의 자동 착수를 뜻하지 않는다."
+---
+
+> 이관 메모 (2026-09-06): 원문의 작업 범위와 상태를 보존한다. 이관은 후속 제품 구현의 자동 착수를 뜻하지 않는다. 경로·메타데이터 변경 전의 hash와 검토 영수증은 당시 기록이며 새 검증 결과가 아니다.
+
 # HReviewer 개인 코드 리뷰 코치 실행 제안서
 
-> 상태: **Proposed — T08 완료·T09 BLOCKED**
+> 상태: **P0 COMPLETED — T01-T09 완료; T10 NEXT**
 >
 > 작성일: `2026-08-17`
 >
@@ -133,8 +156,8 @@ HReviewer가 먼저 이겨야 하는 지점은 다음 세 가지다.
 | 6 | T06. head supersede, debounce, stale-post 방지 | P0 | `COMPLETED` | 2주차 | T05 |
 | 7 | T07. 실패 복구와 lossless GitHub 게시 | P0 | `COMPLETED` | 2주차 | T06 |
 | 8 | T08. 무료 5회 체험과 상품 UI 정합성 | P0 | `COMPLETED` | 2주차 | T07 |
-| 9 | T09. generation 모델 마이그레이션·품질 평가와 P0 release gate | P0 | `BLOCKED` | 2주차 | T08 |
-| 10 | T10. issue 피드백 데이터 모델과 API | P1 | `WAITING` | 3주차 | T09 + P0 gate |
+| 9 | T09. generation 모델 마이그레이션·품질 평가와 P0 release gate | P0 | `COMPLETED` | 2주차 | T08 |
+| 10 | T10. issue 피드백 데이터 모델과 API | P1 | `NEXT` | 3주차 | T09 + P0 gate |
 | 11 | T11. 리뷰 상세 피드백 UI | P1 | `WAITING` | 3주차 | T10 |
 | 12 | T12. 개인 리뷰 코치 지표와 dashboard | P1 | `WAITING` | 4주차 | T11 |
 | 13 | T13. 개인 규칙 후보 생성과 승인 흐름 | P1 | `WAITING` | 4-5주차 | T12 |
@@ -181,7 +204,7 @@ task를 `COMPLETED`로 바꿀 때 아래 형식의 행을 이 표에 추가한�
 
 | Task | 완료일 | 변경 경로 | migration·env | 자동 검증 | 수동·외부 검증 | 남은 위험 | 다음 task |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| T01 | 2026-08-25 | <code>vitest.config.ts</code>, <code>app/api/webhooks/github/route.ts</code>, <code>app/api/webhooks/github/github-webhook-handler.ts</code>, <code>app/api/webhooks/github/github-webhook-handler.test.ts</code>, <code>app/api/webhooks/github/route.test.ts</code>, <code>inngest/functions/review.ts</code>, <code>inngest/functions/review.test.ts</code>, <code>inngest/functions/summary.ts</code>, <code>inngest/functions/summary.test.ts</code>, <code>features/review/ui/parts/review-status-badge.test.tsx</code>, <code>docs/proposals/hreviewer-personal-review-coach-p0-implementation-plan.md</code>, <code>docs/proposals/hreviewer-personal-review-coach-roadmap.md</code> | migration·env 변경 없음 | T01 전용 17개 통과; 전체 135개 통과·1개 환경 의존 calibration 스킵; lint 오류 0개·기존 경고 1개; typecheck·build 통과 | 실제 GitHub·Google AI 요청 없음; 외부 경계를 주입한 fixture로 검증 | 현재 결함인 <code>review</code> command 미dispatch는 T05, delivery 미영속화는 T04, 실행 상태 schema는 T02 소유로 의도적으로 보존; 목표 주차는 재산정 없이 유지 | T02 |
+| T01 | 2026-08-25 | <code>vitest.config.ts</code>, <code>app/api/webhooks/github/route.ts</code>, <code>app/api/webhooks/github/github-webhook-handler.ts</code>, <code>app/api/webhooks/github/github-webhook-handler.test.ts</code>, <code>app/api/webhooks/github/route.test.ts</code>, <code>inngest/functions/review.ts</code>, <code>inngest/functions/review.test.ts</code>, <code>inngest/functions/summary.ts</code>, <code>inngest/functions/summary.test.ts</code>, <code>features/review/ui/parts/review-status-badge.test.tsx</code>, <code>docs/proposals/completed/2026-09-06-hreviewer-personal-review-coach-p0-implementation-plan.md</code>, <code>docs/proposals/active/hreviewer-personal-review-coach-roadmap.md</code> | migration·env 변경 없음 | T01 전용 17개 통과; 전체 135개 통과·1개 환경 의존 calibration 스킵; lint 오류 0개·기존 경고 1개; typecheck·build 통과 | 실제 GitHub·Google AI 요청 없음; 외부 경계를 주입한 fixture로 검증 | 현재 결함인 <code>review</code> command 미dispatch는 T05, delivery 미영속화는 T04, 실행 상태 schema는 T02 소유로 의도적으로 보존; 목표 주차는 재산정 없이 유지 | T02 |
 | T02 | 2026-08-25 | <code>prisma/schema.prisma</code>, <code>prisma/migrations/20260825110650_add_review_execution_state/migration.sql</code>, <code>features/review/lib/review-execution-state.ts</code>와 단위·migration integration 테스트, <code>features/review/constants/index.ts</code>, <code>features/review/types/index.ts</code>, review badge·card·detail과 테스트, 현재 Review create 3개 경로와 worker 테스트 2개, <code>lib/test/create-test-prisma-client.ts</code>와 테스트, <code>scripts/prepare-p0-test-database.mjs</code>, 두 proposal 문서 | schema와 migration 생성; 추적 env 파일 변경 없음; 로컬에서 운영·개발 URL과 다른 전용 Neon <code>hreviewer_test</code> database의 Direct connection을 사용했고 secret은 기록하지 않음 | 전체 180개 통과·환경 의존 calibration 1개 스킵; T02 PostgreSQL migration integration 2개 통과; lint 오류 0개·기존 경고 1개; typecheck·build·Prisma format/validate/generate 통과; 생성 client 18개 파일과 신규 enum·model·field 확인; production <code>legacy-runtime:</code> write 정확히 3개 | 준비 script가 전용 test database의 <code>public</code> schema에 전체 17개 migration을 적용하고 current schema·migration table·필수 table을 확인; 이전 status cast/backfill, 미지 status guard rollback, NOT NULL·UNIQUE를 격리 schema에서 검증; T02 migration 적용 1건·필수 table 3개·잔여 integration schema 0개를 재확인; 실제 GitHub·Google AI·production 요청 없음 | T02 enum migration은 T03·T07 runtime 변경과 함께 P0 cutover gate 전 production에 배포하지 않음; request coordinator는 T03 소유 | T03 |
 | T03 | 2026-08-25 | <code>features/review/lib/review-request.ts</code>와 단위·PostgreSQL integration 테스트, typed <code>inngest/events.ts</code>·client, review execution dispatch/retry helper, 두 AI action·webhook composition·두 worker와 테스트, GitHub snapshot·repository/account binding, FULL_REVIEW reconciliation selector, subscription legacy entitlement 제거, 두 proposal 문서 | migration·schema·추적 env 변경 없음; 전용 Neon <code>hreviewer_test</code> Direct connection을 기존 ignored <code>.env.local</code>에서만 사용하고 secret은 기록하지 않음 | T03 전용 78개 통과; 전체 210개 통과·환경 의존 4개 스킵; T02+T03 PostgreSQL gate 3개 통과; lint 오류 0개·기존 경고 1개; typecheck·production build 통과; legacy Review create·<code>legacy-runtime:</code>·<code>incrementReviewCount</code>·<code>canCreateReview</code> 검색 0건 | 준비 script가 전용 database의 <code>public</code> schema와 17개 migration·필수 table을 재확인; 실제 PostgreSQL의 동일 request key 동시 호출이 Review 1개·event 1개로 수렴; 실제 GitHub·Inngest Cloud·Google AI·production DB 요청 없음 | T03의 Inngest event·step 결과 변경은 기존 run과 병행 배포하지 않으며 T09 cutover drain gate 전 production에 승격하지 않음; delivery lease·redelivery idempotency는 T04 소유 | T04 |
 | T04 | 2026-08-25 | <code>lib/github/github-webhook-delivery.ts</code>와 단위·PostgreSQL integration 테스트, <code>features/review/lib/review-request.ts</code>와 단위·integration 테스트, AI action transport type·전달 테스트, route-private webhook handler·route 테스트, 두 proposal 문서 | migration·schema·추적 env 변경 없음; 기존 ignored <code>.env.local</code>의 전용 Neon <code>hreviewer_test</code> Direct connection만 사용하고 secret은 기록하지 않음 | T04 전용 53개 통과; 전체 232개 통과·환경 의존 6개 스킵; T02-T04 PostgreSQL gate 5개 통과; lint 오류 0개·기존 경고 1개; typecheck·production build 통과 | 준비 script가 전용 database의 <code>public</code> schema와 17개 migration·필수 table을 재확인; delivery 동시 acquire가 정확히 1개 owner로 수렴하고 Review create+delivery bind의 lease 실패 rollback을 검증; 실제 GitHub redelivery·write, Inngest Cloud, Google AI, production DB 요청은 실행하지 않음 | GitHub UI/API manual redelivery fixture는 Approval-after이며 자동 redelivery scheduler는 P0 범위 밖; collaborator 권한과 <code>review</code> command 라우팅은 T05 소유 | T05 |
@@ -193,7 +216,7 @@ task를 `COMPLETED`로 바꿀 때 아래 형식의 행을 이 표에 추가한�
 
 ## 7. P0 — 신뢰성과 첫 경험
 
-> 코드 수준 구현 계약, Prisma migration 순서, event payload, 상태 CAS, marker·credit 처리와 task별 파일은 [P0 구현 상세 계획](./hreviewer-personal-review-coach-p0-implementation-plan.md)을 따른다. 이 문서는 제품 범위, task 상태, release gate의 source of truth다.
+> 코드 수준 구현 계약, Prisma migration 순서, event payload, 상태 CAS, marker·credit 처리와 task별 파일은 [P0 구현 상세 계획](../completed/2026-09-06-hreviewer-personal-review-coach-p0-implementation-plan.md)을 따른다. 이 문서는 제품 범위, task 상태, release gate의 source of truth다.
 
 ### T01. 파이프라인 기준선과 테스트 하네스
 
@@ -694,8 +717,8 @@ conventions:
 
 ### P0 기존 파일
 
-- `docs/proposals/hreviewer-personal-review-coach-p0-implementation-plan.md`
-- `docs/proposals/hreviewer-personal-review-coach-roadmap.md`
+- `docs/proposals/completed/2026-09-06-hreviewer-personal-review-coach-p0-implementation-plan.md`
+- `docs/proposals/active/hreviewer-personal-review-coach-roadmap.md`
 - `vitest.config.ts`
 - `app/api/webhooks/github/route.ts`
 - `features/ai/actions/review-pull-request.ts`
@@ -774,7 +797,7 @@ conventions:
 - `scripts/p0-review-quality-evaluation.test.ts`
 - `scripts/fixtures/p0-review-quality-cases.json`
 - `scripts/fixtures/p0-review-quality-adjudications.json`
-- `docs/evaluations/p0-personal-review-coach-release-receipt.md`
+- `docs/test-reports/completed/2026-09-06-p0-personal-review-coach-release-receipt.md`
 
 ### P1 기존·신규 파일
 
@@ -1014,7 +1037,7 @@ Out of scope 기능은 P1 성공 지표가 확보되기 전 별도 task로 끌�
 - 각 phase의 마지막 task에서는 섹션 14의 release gate 결과도 같은 완료 기록에 포함한다.
 - 구현 중 제품 결정이 바뀌면 관련 task, 상태 머신, 검증, Definition of Done을 함께 수정한다.
 - T01-T21과 모든 release gate가 완료되면 상태를 `Implemented`로 변경한다.
-- `Implemented`가 되는 같은 작업에서 이 파일을 `docs/archive/`로 이동한다.
+- 전체 구현이 완료되는 같은 작업에서 front matter를 `status: "completed"`, `stage: null`로 갱신하고 완료일을 파일명에 붙여 `docs/proposals/completed/`로 이동한다.
 
 ## 20. Definition of Done
 
@@ -1031,7 +1054,7 @@ Out of scope 기능은 P1 성공 지표가 확보되기 전 별도 task로 끌�
 - 필수 test, lint, typecheck, build가 통과한다.
 - proposal 문서, task 완료 기록, phase release receipt가 Git index에 exact path로 추적된다.
 - 외부·유료·production 작업의 승인과 실행 결과가 별도 비밀 없는 영수증으로 남는다.
-- 완료 시 제안서가 `docs/archive/`로 이동한다.
+- 전체 범위 완료 시 제안서가 `docs/proposals/completed/`로 이동한다.
 
 ## 21. 공식 비교·런타임 자료
 

@@ -1,3 +1,27 @@
+---
+status: "completed"
+created-at: null
+completed-at: "2026-09-06"
+owners: ["user:Sangeok"]
+related: ["docs/test-reports/completed/2026-09-06-p0-personal-review-coach-release-receipt.md"]
+stage: null
+result: "blocked"
+report-kind: "acceptance"
+report-size: "standard"
+test-levels: ["static","integration","contract"]
+test-tools: ["Vitest","ESLint","TypeScript","Next.js build"]
+last-executed-at: "2026-08-03T23:11:51.959Z"
+tested-revision: "unknown (historical receipt)"
+primary-area: "review/deterministic-pr-context"
+observed-environments: ["local | repository and isolated PostgreSQL | Windows/Node.js | Codex"]
+test-summary: "blocked: P0 영수증으로 대체된 과거 보고서를 보존한다. 완료된 문서 생명주기와 당시 blocked 결과를 분리한다."
+follow-up: ["docs/test-reports/completed/2026-09-06-p0-personal-review-coach-release-receipt.md"]
+legacy-record: true
+migrated-at: "2026-09-06"
+migrated-from: "docs/evaluations/remove-codebase-rag-context-evaluation.md"
+migration-note: "P0 영수증으로 대체된 과거 보고서를 보존한다. 완료된 문서 생명주기와 당시 blocked 결과를 분리한다."
+---
+
 # Codebase RAG 제거 및 결정적 PR 컨텍스트 평가 영수증
 
 > 상태: **Core 로컬 구현 완료 / Release gate 차단**
@@ -6,7 +30,7 @@
 >
 > 이 문서는 비밀값, 저장소 좌표, 원문 diff, source context, prompt/response를 포함하지 않는다.
 >
-> 역사 문서: 이 영수증의 모델·품질 판정은 당시 snapshot이며 현재 release 근거로 재사용하지 않는다. T09 이후의 대체 영수증은 [P0 개인 리뷰 코치 release receipt](./p0-personal-review-coach-release-receipt.md)다.
+> 역사 문서: 이 영수증의 모델·품질 판정은 당시 snapshot이며 현재 release 근거로 재사용하지 않는다. T09 이후의 대체 영수증은 [P0 개인 리뷰 코치 release receipt](./2026-09-06-p0-personal-review-coach-release-receipt.md)다.
 
 ## 판정 요약
 

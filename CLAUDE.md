@@ -330,16 +330,21 @@ import AppSidebar from "@/components/app-sidebar/ui/app-sidebar";
 
 ```
 docs/
-├── README.md              # 문서 인덱스 (가장 먼저 확인)
+├── README.md              # 문서 분류와 사용법 (가장 먼저 확인)
+├── ADR/                   # 아키텍처 의사결정
+├── architecture/          # 구성 설명과 운영 절차
 ├── conventions/           # 코딩 표준 (반드시 준수)
-├── specs/                 # 기능 구현 명세
-└── archive/               # 완료된 분석 (참고용)
+├── dependencies/          # active/ · completed/ 의존성 변경
+├── investigations/        # active/ · completed/ 조사 기록
+├── proposals/             # active/ · completed/ 구현 계획
+└── test-reports/           # active/ · completed/ 검증 보고서
 ```
 
 ### 기능 구현 시
 1. `docs/conventions/` 확인 → 코딩 표준 준수
-2. `docs/specs/` 확인 → 구현 명세 참조
-3. `docs/archive/` → 참고용, 규칙 아님
+2. `docs/proposals/active/` 확인 → 현재 작업의 구현 명세 참조
+3. 각 분류의 `completed/` → 역사 기록; 보고서 완료와 테스트 판정은 별개
+4. 문서 추가·이동 후 `node scripts/check-docs.mjs` 실행
 
 ---
 
