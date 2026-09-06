@@ -55,4 +55,4 @@ export { verifyReview, applyVerification, buildVerificationReviewBody, countExcl
 export type { VerificationResult, AppliedVerification, VerdictEntry, StoredReviewData, ReviewVerification, VerificationVerdict } from "./lib";
 
 // ===== Utils =====
-export { parseCommand, stripFencedCodeBlocks, buildPRUrl } from "./utils";
+export { parseCommand, stripFencedCodeBlocks } from "./utils";

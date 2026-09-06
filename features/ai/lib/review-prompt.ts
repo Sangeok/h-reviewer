@@ -65,7 +65,7 @@ function extractFileMeta(diff: string): { file: string; changeType: string }[] {
  * 기존 review.ts에서 이동한 함수.
  * size 모드별 프롬프트 섹션 지시문을 생성한다.
  */
-export function buildSectionInstruction(
+function buildSectionInstruction(
   mode: ReviewSizeMode,
   headers: (typeof SECTION_HEADERS)[LanguageCode],
 ): string {
@@ -228,7 +228,7 @@ ${fileContext}
 // ⚠️ userPreference는 상한(cap)으로 적용, PR 크기 기본값을 초과하지 않음
 // 예: user=10, tiny PR(default=2) → min(2, 10, 15) = 2
 // 예: user=3, large PR(default=5) → min(5, 3, 15) = 3
-export function getSuggestionLimit(
+function getSuggestionLimit(
   mode: ReviewSizeMode,
   userPreference: number | null = null,
 ): number {

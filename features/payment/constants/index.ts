@@ -5,8 +5,8 @@ export const SUBSCRIPTION_QUERY_KEYS = {
 export const FREE_REVIEW_TRIAL_LIMIT = 5;
 
 export const PLAN_PRICING = {
-  FREE: { price: 0, label: "$0" },
-  PRO: { price: 99.99, label: "$99.99" },
+  FREE: { label: "$0" },
+  PRO: { label: "$99.99" },
 } as const;
 
 export const PLAN_FEATURES = {

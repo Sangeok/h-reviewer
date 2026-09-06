@@ -2,7 +2,7 @@
 export { getSuggestionsByReviewId, applySuggestion, dismissSuggestion } from "./actions";
 
 // ===== Types =====
-export type { ApplySuggestionResult, SuggestionsData, SuggestionItem } from "./types";
+export type { ApplySuggestionResult } from "./types";
 
 // ===== Constants =====
 export { SEVERITY_CONFIG, STATUS_CONFIG, SUGGESTION_QUERY_KEYS, SUGGESTIONS_STALE_TIME_MS } from "./constants";

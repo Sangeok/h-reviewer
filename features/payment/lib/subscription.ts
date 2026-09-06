@@ -106,19 +106,6 @@ export async function incrementRepositoryCount(
   });
 }
 
-export async function decrementRepositoryCount(userId: string): Promise<void> {
-  const usage = await getUserUsage(userId);
-
-  await prisma.userUsage.update({
-    where: {
-      userId,
-    },
-    data: {
-      repositoryCount: Math.max(0, usage.repositoryCount - 1),
-    },
-  });
-}
-
 export async function getRemainingLimits(userId: string): Promise<UserLimits> {
   const tier = await getUserTier(userId);
   const usage = await getUserUsage(userId);

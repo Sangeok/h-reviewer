@@ -14,7 +14,7 @@ export function normalizeSuggestionExplanation(explanation: string): string {
     .trim();
 }
 
-export function formatSuggestionLocation(suggestion: CodeSuggestion): string {
+function formatSuggestionLocation(suggestion: CodeSuggestion): string {
   const hasValidLine = Number.isFinite(suggestion.line) && suggestion.line > 0;
   if (!hasValidLine) {
     return suggestion.file;

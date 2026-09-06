@@ -63,7 +63,7 @@ export function applyCodeChange({
   return { content, changed: true };
 }
 
-export function replaceNearestOccurrence(
+function replaceNearestOccurrence(
   content: string,
   before: string,
   after: string,
